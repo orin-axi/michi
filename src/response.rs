@@ -243,6 +243,14 @@ mod tests {
     }
 
     #[test]
+    fn json_render_recovery_no_example_omits_key() {
+        let r = AgentResponse::new("body")
+            .with_recovery(RecoveryHint::new("retry", "wait and retry"));
+        let json = r.render(OutputFormat::Json);
+        assert!(!json.contains("\"example\""), "example key must be absent when None");
+    }
+
+    #[test]
     fn default_output_format_is_text() {
         assert_eq!(OutputFormat::default(), OutputFormat::Text);
     }
