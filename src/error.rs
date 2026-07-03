@@ -41,7 +41,6 @@ impl<T> std::fmt::Display for Sensitive<T> {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     // ── Domain errors (always compiled) ───────────────────────────────────
-
     /// The caller provided invalid or malformed input.
     #[error("Invalid input: {0}")]
     InvalidInput(String),
@@ -51,7 +50,6 @@ pub enum Error {
     NotFound(String),
 
     // ── Execution errors (pipeline feature — Plan 2) ───────────────────────
-
     #[cfg(feature = "pipeline")]
     #[error("HTTP {status}: {message}")]
     Http {
@@ -149,9 +147,7 @@ impl Error {
         match self {
             Self::InvalidInput(_) | Self::NotFound(_) => ErrorClass::User,
             #[cfg(feature = "pipeline")]
-            Self::Http { retryable: true, .. } | Self::Timeout { .. } | Self::Cancelled => {
-                ErrorClass::Transient
-            }
+            Self::Http { retryable: true, .. } | Self::Timeout { .. } | Self::Cancelled => ErrorClass::Transient,
             #[cfg(feature = "pipeline")]
             Self::Http { retryable: false, .. }
             | Self::StepFailed { .. }

@@ -15,24 +15,12 @@ pub struct RecoveryHint {
 impl RecoveryHint {
     /// Create a recovery hint with no example.
     pub fn new(action: impl Into<String>, description: impl Into<String>) -> Self {
-        Self {
-            action: action.into(),
-            description: description.into(),
-            example: None,
-        }
+        Self { action: action.into(), description: description.into(), example: None }
     }
 
     /// Create a recovery hint with an example command or call.
-    pub fn with_example(
-        action: impl Into<String>,
-        description: impl Into<String>,
-        example: impl Into<String>,
-    ) -> Self {
-        Self {
-            action: action.into(),
-            description: description.into(),
-            example: Some(example.into()),
-        }
+    pub fn with_example(action: impl Into<String>, description: impl Into<String>, example: impl Into<String>) -> Self {
+        Self { action: action.into(), description: description.into(), example: Some(example.into()) }
     }
 }
 
@@ -77,19 +65,12 @@ mod tests {
     #[test]
     fn single_hint_no_example() {
         let hints = [RecoveryHint::new("retry", "call the endpoint again after 1s")];
-        assert_eq!(
-            render_recovery(&hints),
-            "recovery[1]:\n  retry: call the endpoint again after 1s\n"
-        );
+        assert_eq!(render_recovery(&hints), "recovery[1]:\n  retry: call the endpoint again after 1s\n");
     }
 
     #[test]
     fn hint_with_example() {
-        let hints = [RecoveryHint::with_example(
-            "check_auth",
-            "verify your API key",
-            "get_token()",
-        )];
+        let hints = [RecoveryHint::with_example("check_auth", "verify your API key", "get_token()")];
         let out = render_recovery(&hints);
         assert!(out.contains("check_auth: verify your API key → get_token()"));
     }
@@ -101,10 +82,7 @@ mod tests {
 
     #[test]
     fn multiple_hints_renders_count() {
-        let hints = [
-            RecoveryHint::new("retry", "wait and retry"),
-            RecoveryHint::new("escalate", "contact support"),
-        ];
+        let hints = [RecoveryHint::new("retry", "wait and retry"), RecoveryHint::new("escalate", "contact support")];
         let out = render_recovery(&hints);
         assert!(out.starts_with("recovery[2]:\n"));
         assert!(out.contains("  retry: wait and retry\n"));

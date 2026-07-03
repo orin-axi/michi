@@ -37,10 +37,7 @@ mod tests {
     fn empty_state_with_hints_appends_help_block() {
         let hints = [Hint::new("Try a broader filter")];
         let out = empty_state_with_hints("issue", &hints);
-        assert_eq!(
-            out,
-            "issue[0]{}:\ntotalCount: 0\nhelp[1]:\n  Try a broader filter\n"
-        );
+        assert_eq!(out, "issue[0]{}:\ntotalCount: 0\nhelp[1]:\n  Try a broader filter\n");
     }
 
     #[test]

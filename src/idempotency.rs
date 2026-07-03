@@ -75,12 +75,7 @@ impl PartialSuccess {
     /// Render this partial success as an agent-readable string.
     #[must_use]
     pub fn render(&self) -> String {
-        format!(
-            "partial: {} completed, {} remaining — {}",
-            self.completed.len(),
-            self.remaining.len(),
-            self.reason
-        )
+        format!("partial: {} completed, {} remaining — {}", self.completed.len(), self.remaining.len(), self.reason)
     }
 }
 

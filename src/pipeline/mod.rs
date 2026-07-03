@@ -99,23 +99,12 @@ mod tests {
         let p = Pipeline {
             id: "my-pipeline".into(),
             steps: vec![
-                PipelineStep {
-                    id: "fetch".into(),
-                    name: "Fetch Data".into(),
-                    status: StepStatus::Completed,
-                },
-                PipelineStep {
-                    id: "upload".into(),
-                    name: "Upload".into(),
-                    status: StepStatus::Pending,
-                },
+                PipelineStep { id: "fetch".into(), name: "Fetch Data".into(), status: StepStatus::Completed },
+                PipelineStep { id: "upload".into(), name: "Upload".into(), status: StepStatus::Pending },
             ],
         };
         let out = p.render();
-        assert_eq!(
-            out,
-            "step[2]{id,name,status}:\n  fetch,Fetch Data,completed\n  upload,Upload,pending\n"
-        );
+        assert_eq!(out, "step[2]{id,name,status}:\n  fetch,Fetch Data,completed\n  upload,Upload,pending\n");
     }
 
     #[test]
@@ -128,11 +117,7 @@ mod tests {
     fn step_name_with_comma_is_quoted() {
         let p = Pipeline {
             id: "p".into(),
-            steps: vec![PipelineStep {
-                id: "s".into(),
-                name: "Parse, validate".into(),
-                status: StepStatus::Completed,
-            }],
+            steps: vec![PipelineStep { id: "s".into(), name: "Parse, validate".into(), status: StepStatus::Completed }],
         };
         let out = p.render();
         assert!(out.contains(r#""Parse, validate""#));

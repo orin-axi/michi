@@ -47,11 +47,7 @@ pub fn render_toon(opts: JsToonOptions) -> String {
     let rust_opts = michi::toon::ToonOptions {
         type_name: opts.type_name,
         fields: opts.fields,
-        rows: opts
-            .rows
-            .into_iter()
-            .map(|row| row.into_iter().map(js_value_to_rust).collect())
-            .collect(),
+        rows: opts.rows.into_iter().map(|row| row.into_iter().map(js_value_to_rust).collect()).collect(),
         total_count: opts.total_count.map(|n| n as usize),
         hints: opts.hints,
     };

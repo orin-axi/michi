@@ -43,20 +43,12 @@ pub struct StatusItem {
 impl StatusItem {
     /// Create a status item with no detail message.
     pub fn new(name: impl Into<String>, health: Health) -> Self {
-        Self {
-            name: name.into(),
-            health,
-            detail: None,
-        }
+        Self { name: name.into(), health, detail: None }
     }
 
     /// Create a status item with a detail message.
     pub fn with_detail(name: impl Into<String>, health: Health, detail: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            health,
-            detail: Some(detail.into()),
-        }
+        Self { name: name.into(), health, detail: Some(detail.into()) }
     }
 }
 
@@ -75,11 +67,7 @@ impl StatusResponse {
     /// Create a status response. `overall` is the caller-supplied aggregate — michi
     /// does not recompute it from `items` so the caller controls the roll-up logic.
     pub fn new(overall: Health, items: Vec<StatusItem>) -> Self {
-        Self {
-            overall,
-            items,
-            hints: Vec::new(),
-        }
+        Self { overall, items, hints: Vec::new() }
     }
 
     /// Attach contextual hints.
@@ -144,10 +132,7 @@ mod tests {
 
     #[test]
     fn basic_status_renders() {
-        let resp = StatusResponse::new(
-            Health::Ok,
-            vec![StatusItem::new("db", Health::Ok)],
-        );
+        let resp = StatusResponse::new(Health::Ok, vec![StatusItem::new("db", Health::Ok)]);
         assert_eq!(resp.render(), "status: ok\ndb: ok\n");
     }
 
@@ -155,10 +140,7 @@ mod tests {
     fn degraded_with_detail_renders() {
         let resp = StatusResponse::new(
             Health::Degraded,
-            vec![
-                StatusItem::new("db", Health::Ok),
-                StatusItem::with_detail("cache", Health::Degraded, "high latency"),
-            ],
+            vec![StatusItem::new("db", Health::Ok), StatusItem::with_detail("cache", Health::Degraded, "high latency")],
         );
         let out = resp.render();
         assert!(out.starts_with("status: degraded\n"));

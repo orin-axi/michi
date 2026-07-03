@@ -43,22 +43,12 @@ pub struct AgentResponse {
 impl AgentResponse {
     /// Create a new response with the given body. Hints and recovery are empty.
     pub fn new(body: impl Into<String>) -> Self {
-        Self {
-            body: body.into(),
-            hints: Vec::new(),
-            recovery: Vec::new(),
-            is_error: false,
-        }
+        Self { body: body.into(), hints: Vec::new(), recovery: Vec::new(), is_error: false }
     }
 
     /// Create a new response that represents an error state.
     pub fn error(body: impl Into<String>) -> Self {
-        Self {
-            body: body.into(),
-            hints: Vec::new(),
-            recovery: Vec::new(),
-            is_error: true,
-        }
+        Self { body: body.into(), hints: Vec::new(), recovery: Vec::new(), is_error: true }
     }
 
     /// Append a contextual hint.
@@ -186,8 +176,7 @@ mod tests {
 
     #[test]
     fn text_render_with_recovery() {
-        let r = AgentResponse::new("err\n")
-            .with_recovery(RecoveryHint::new("retry", "wait and retry"));
+        let r = AgentResponse::new("err\n").with_recovery(RecoveryHint::new("retry", "wait and retry"));
         let out = r.render(OutputFormat::Text);
         assert_eq!(out, "err\nrecovery[1]:\n  retry: wait and retry\n");
     }
@@ -235,8 +224,7 @@ mod tests {
 
     #[test]
     fn json_render_with_recovery() {
-        let r = AgentResponse::new("body")
-            .with_recovery(RecoveryHint::with_example("retry", "wait 1s", "retry()"));
+        let r = AgentResponse::new("body").with_recovery(RecoveryHint::with_example("retry", "wait 1s", "retry()"));
         let json = r.render(OutputFormat::Json);
         assert!(json.contains("\"action\":\"retry\""));
         assert!(json.contains("\"example\":\"retry()\""));
@@ -244,8 +232,7 @@ mod tests {
 
     #[test]
     fn json_render_recovery_no_example_omits_key() {
-        let r = AgentResponse::new("body")
-            .with_recovery(RecoveryHint::new("retry", "wait and retry"));
+        let r = AgentResponse::new("body").with_recovery(RecoveryHint::new("retry", "wait and retry"));
         let json = r.render(OutputFormat::Json);
         assert!(!json.contains("\"example\""), "example key must be absent when None");
     }

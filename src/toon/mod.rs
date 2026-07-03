@@ -32,11 +32,5 @@ pub struct ToonOptions {
 /// Does not panic.
 #[must_use]
 pub fn render_toon(opts: &ToonOptions) -> String {
-    render::render(
-        &opts.type_name,
-        &opts.fields,
-        &opts.rows,
-        opts.total_count,
-        &opts.hints,
-    )
+    render::render(&opts.type_name, &opts.fields, &opts.rows, opts.total_count, &opts.hints)
 }

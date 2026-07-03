@@ -10,21 +10,9 @@ fn snapshot_toon_basic_list() {
         type_name: "issue".into(),
         fields: vec!["number".into(), "title".into(), "state".into()],
         rows: vec![
-            vec![
-                Value::Int(42),
-                Value::Str("Fix login redirect".into()),
-                Value::Str("open".into()),
-            ],
-            vec![
-                Value::Int(43),
-                Value::Str("Add dark mode".into()),
-                Value::Str("open".into()),
-            ],
-            vec![
-                Value::Int(44),
-                Value::Str("Update deps, bump major".into()),
-                Value::Str("closed".into()),
-            ],
+            vec![Value::Int(42), Value::Str("Fix login redirect".into()), Value::Str("open".into())],
+            vec![Value::Int(43), Value::Str("Add dark mode".into()), Value::Str("open".into())],
+            vec![Value::Int(44), Value::Str("Update deps, bump major".into()), Value::Str("closed".into())],
         ],
         total_count: Some(47),
         hints: vec![

@@ -29,10 +29,7 @@ fn renders_empty_state() {
         hints: vec!["Try list_issues with a broader filter".into()],
     };
     let out = render_toon(&opts);
-    assert_eq!(
-        out,
-        "issue[0]{}:\ntotalCount: 0\nhelp[1]:\n  Try list_issues with a broader filter\n"
-    );
+    assert_eq!(out, "issue[0]{}:\ntotalCount: 0\nhelp[1]:\n  Try list_issues with a broader filter\n");
 }
 
 #[test]
