@@ -39,7 +39,7 @@ default  = []
 pipeline = ["dep:tokio", "dep:tokio-util", "dep:async-trait", "dep:uuid"]
 fuzzy    = ["dep:nucleo-matcher", "pipeline"]
 cache    = ["dep:moka", "dep:sha2", "pipeline"]
-cli      = ["dep:indicatif", "dep:inquire", "dep:crossterm", "dep:ctrlc", "dep:atty", "pipeline"]
+cli      = ["dep:indicatif", "dep:inquire", "dep:crossterm", "dep:ctrlc", "pipeline"]
 mcp      = ["pipeline"]
 napi     = ["dep:napi", "dep:napi-derive"]
 full     = ["pipeline", "fuzzy", "cache", "cli", "mcp"]
@@ -67,14 +67,10 @@ indicatif = { version = "0.17", optional = true }
 inquire   = { version = "0.7", optional = true }
 crossterm = { version = "0.27", optional = true }
 ctrlc     = { version = "3", optional = true }
-atty      = { version = "0.2", optional = true }
 
 # napi feature
 napi        = { version = "3", features = ["napi6"], optional = true }
 napi-derive = { version = "3", optional = true }
-
-[build-dependencies]
-napi-build = { version = "2", optional = true }
 
 [dev-dependencies]
 divan    = "0.1"
