@@ -21,6 +21,8 @@ pub struct RetryConfig {
     pub jitter_factor: f64,
 }
 
+// Manually implemented because the defaults are meaningful non-zero values
+// that `#[derive(Default)]` cannot express (it would set all durations to zero).
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
@@ -131,5 +133,18 @@ mod tests {
         assert!(!is_retryable_status(201));
         assert!(!is_retryable_status(301));
         assert!(!is_retryable_status(401));
+    }
+
+    #[test]
+    fn jitter_increases_delay() {
+        let config = RetryConfig {
+            jitter_factor: 1.0,
+            base_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(30),
+            max_retries: 3,
+        };
+        let no_jitter = next_retry_delay(&RetryConfig { jitter_factor: 0.0, ..config.clone() }, 0, 0.0).unwrap();
+        let with_jitter = next_retry_delay(&config, 0, 1.0).unwrap();
+        assert!(with_jitter > no_jitter, "jitter seed 1.0 should produce longer delay");
     }
 }
