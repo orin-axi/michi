@@ -8,6 +8,7 @@ pub mod idempotency;
 pub mod kv;
 pub mod recovery;
 pub mod resilience;
+pub mod response;
 pub mod status;
 pub mod toon;
 pub mod truncate;
