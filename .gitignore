@@ -1,4 +1,8 @@
-/target/
-Cargo.lock
+/target
+/packages/michi-node/target
+*.node
+/packages/michi-node/node_modules
+/packages/michi-node/pnpm-lock.yaml
 lcov.info
-*.snap.new
+/packages/michi-node/index.d.ts
+/packages/michi-node/index.js
