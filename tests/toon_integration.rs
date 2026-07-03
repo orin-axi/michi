@@ -99,3 +99,43 @@ fn multiple_hints_render_correctly() {
     let out = render_toon(&opts);
     assert!(out.contains("help[2]:\n  hint one\n  hint two\n"));
 }
+
+#[test]
+fn float_value_renders() {
+    let opts = ToonOptions {
+        type_name: "measurement".into(),
+        fields: vec!["value".into()],
+        rows: vec![vec![Value::Float(3.14)]],
+        total_count: None,
+        hints: vec![],
+    };
+    let out = render_toon(&opts);
+    assert!(out.contains("3.14"), "expected 3.14 in output, got: {out}");
+}
+
+#[test]
+fn quote_in_value_is_escaped() {
+    let opts = ToonOptions {
+        type_name: "item".into(),
+        fields: vec!["description".into()],
+        rows: vec![vec![Value::Str(r#"say "hello""#.into())]],
+        total_count: None,
+        hints: vec![],
+    };
+    let out = render_toon(&opts);
+    assert!(out.contains(r#""say \"hello\"""#), "expected escaped quotes in output, got: {out}");
+}
+
+#[test]
+fn newline_in_value_is_quoted() {
+    let opts = ToonOptions {
+        type_name: "item".into(),
+        fields: vec!["body".into()],
+        rows: vec![vec![Value::Str("line1\nline2".into())]],
+        total_count: None,
+        hints: vec![],
+    };
+    let out = render_toon(&opts);
+    // The value must be wrapped in quotes because it contains a newline
+    assert!(out.contains("\"line1\nline2\""), "expected quoted newline value, got: {out}");
+}

@@ -25,10 +25,12 @@ pub struct ToonOptions {
 
 /// Render a TOON document to a string.
 ///
-/// # Panics
+/// Row lengths differing from `fields.len()` produce misaligned output —
+/// the caller is responsible for ensuring each row has the same number of
+/// values as `fields`.
 ///
-/// Does not panic. Row lengths differing from `fields.len()` produce
-/// misaligned output — caller's responsibility to match lengths.
+/// Does not panic.
+#[must_use]
 pub fn render_toon(opts: &ToonOptions) -> String {
     render::render(
         &opts.type_name,

@@ -1,12 +1,17 @@
 use super::escape::escape_value;
 
-/// Cell value variants for a TOON row.
+/// A single cell value in a TOON row.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    /// UTF-8 string. Escaped if it contains commas, quotes, carriage returns, or newlines.
     Str(String),
+    /// Signed integer.
     Int(i64),
+    /// Floating-point number.
     Float(f64),
+    /// Boolean renders as `true` or `false`.
     Bool(bool),
+    /// Null renders as empty string (delimiter still emitted by the caller).
     Null,
 }
 
