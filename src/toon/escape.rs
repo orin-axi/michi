@@ -7,8 +7,8 @@ pub(crate) fn escape_value(v: &str) -> std::borrow::Cow<'_, str> {
     if v.is_empty() {
         return std::borrow::Cow::Borrowed(v);
     }
-    if v.contains(',') || v.contains('"') || v.contains('\n') {
-        let mut out = String::with_capacity(v.len() + 2);
+    if v.contains(',') || v.contains('"') || v.contains('\n') || v.contains('\r') {
+        let mut out = String::with_capacity(v.len() * 2 + 2);
         out.push('"');
         for ch in v.chars() {
             if ch == '"' {
@@ -50,5 +50,10 @@ mod tests {
     #[test]
     fn value_with_newline_is_quoted() {
         assert_eq!(escape_value("line\nbreak"), "\"line\nbreak\"");
+    }
+
+    #[test]
+    fn value_with_cr_is_quoted() {
+        assert_eq!(escape_value("line\rend"), "\"line\rend\"");
     }
 }

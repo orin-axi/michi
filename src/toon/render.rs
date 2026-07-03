@@ -1,7 +1,6 @@
 use super::escape::escape_value;
 
 /// Cell value variants for a TOON row.
-/// Defined here for use by render; re-exported from mod.rs in Task 3.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Value {
     Str(String),
