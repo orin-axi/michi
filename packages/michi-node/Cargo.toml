@@ -1,5 +1,18 @@
 [package]
-name    = "michi-node"
-version = "0.1.0"
-publish = false
-edition.workspace = true
+name        = "michi-node"
+version     = "0.1.0"
+publish     = false
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+michi       = { path = "../.." }
+napi        = { version = "3", features = ["napi6"] }
+napi-derive = { version = "3" }
+
+[build-dependencies]
+napi-build = "2"
