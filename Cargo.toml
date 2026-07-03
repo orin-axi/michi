@@ -1,0 +1,90 @@
+[workspace]
+members  = [".", "packages/michi-node"]
+resolver = "2"
+
+[workspace.package]
+edition      = "2021"
+rust-version = "1.96"
+license      = "AGPL-3.0-or-later"
+repository   = "https://github.com/orin-axi/michi"
+authors      = ["orin-axi"]
+
+[workspace.dependencies]
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror  = "2"
+
+[profile.release]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"
+debug    = true
+
+[package]
+name        = "michi"
+version     = "0.1.0"
+description = "AXI response primitives for agent-ergonomic tools"
+keywords    = ["axi", "agent", "mcp", "cli", "llm"]
+categories  = ["text-processing", "encoding", "development-tools"]
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+
+[features]
+default  = []
+pipeline = ["dep:tokio", "dep:tokio-util", "dep:async-trait", "dep:uuid"]
+fuzzy    = ["dep:nucleo-matcher", "pipeline"]
+cache    = ["dep:moka", "dep:sha2", "pipeline"]
+cli      = ["dep:indicatif", "dep:inquire", "dep:crossterm", "dep:ctrlc", "dep:atty", "pipeline"]
+mcp      = ["pipeline"]
+napi     = ["dep:napi", "dep:napi-derive"]
+full     = ["pipeline", "fuzzy", "cache", "cli", "mcp"]
+
+[dependencies]
+serde.workspace      = true
+serde_json.workspace = true
+thiserror.workspace  = true
+
+# pipeline feature
+tokio        = { version = "1", features = ["full"], optional = true }
+tokio-util   = { version = "0.7", features = ["rt"], optional = true }
+async-trait  = { version = "0.1", optional = true }
+uuid         = { version = "1", features = ["v4"], optional = true }
+
+# fuzzy feature
+nucleo-matcher = { version = "0.3", optional = true }
+
+# cache feature
+moka = { version = "0.12", features = ["future"], optional = true }
+sha2 = { version = "0.10", optional = true }
+
+# cli feature
+indicatif = { version = "0.17", optional = true }
+inquire   = { version = "0.7", optional = true }
+crossterm = { version = "0.27", optional = true }
+ctrlc     = { version = "3", optional = true }
+atty      = { version = "0.2", optional = true }
+
+# napi feature
+napi        = { version = "3", features = ["napi6"], optional = true }
+napi-derive = { version = "3", optional = true }
+
+[build-dependencies]
+napi-build = { version = "2", optional = true }
+
+[dev-dependencies]
+divan    = "0.1"
+proptest = "1"
+insta    = { version = "1", features = ["yaml"] }
+
+[[bench]]
+name    = "toon_render"
+harness = false
+
+[[bench]]
+name    = "kv_render"
+harness = false
