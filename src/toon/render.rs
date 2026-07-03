@@ -2,7 +2,7 @@ use super::escape::escape_value;
 
 /// Cell value variants for a TOON row.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Value {
+pub enum Value {
     Str(String),
     Int(i64),
     Float(f64),
@@ -13,7 +13,7 @@ pub(crate) enum Value {
 /// Render a TOON document string from its parts.
 ///
 /// Pre-allocates output capacity based on row count × estimated row width.
-pub(crate) fn render(
+pub fn render(
     type_name: &str,
     fields: &[String],
     rows: &[Vec<Value>],
