@@ -13,10 +13,17 @@
   "scripts": {
     "build": "napi build --platform --js index.js --dts index.d.ts",
     "test": "node --test __test__/index.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware .",
+    "check": "pnpm typecheck && pnpm lint",
     "prepublishOnly": "napi prepublish -t npm"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.0.0"
+    "@napi-rs/cli": "^3.0.0",
+    "@types/node": "^26.1.0",
+    "oxlint": "^1.72.0",
+    "oxlint-tsgolint": "^0.24.0",
+    "typescript": "^6.0.3"
   },
   "engines": {
     "node": ">= 18"

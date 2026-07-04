@@ -69,6 +69,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo bench --no-run --workspace
 
+  lint-js:
+    name: Lint (JS/TS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/michi-node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: packages/michi-node/pnpm-lock.yaml
+      - run: pnpm install
+      - run: pnpm typecheck
+      - run: pnpm lint
+
   napi:
     name: NAPI (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}

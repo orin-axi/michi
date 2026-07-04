@@ -9,14 +9,15 @@
 // Pedantic allows — idiomatic patterns that pedantic flags as noise
 #![allow(clippy::module_name_repetitions)] // ToonOptions in toon::, render_toon in toon:: — idiomatic
 #![allow(clippy::single_char_lifetime_names)] // 'a, 'b are idiomatic
-#![allow(clippy::wildcard_imports)]        // use super::* in test modules is standard
-#![allow(clippy::missing_errors_doc)]      // add # Errors sections incrementally
-#![allow(clippy::missing_panics_doc)]      // add # Panics sections incrementally
-#![allow(clippy::must_use_candidate)]      // rendering fns — callers choose whether to use return value
+#![allow(clippy::wildcard_imports)] // use super::* in test modules is standard
+#![allow(clippy::missing_errors_doc)] // add # Errors sections incrementally
+#![allow(clippy::missing_panics_doc)] // add # Panics sections incrementally
+#![allow(clippy::must_use_candidate)] // rendering fns — callers choose whether to use return value
 #![allow(clippy::return_self_not_must_use)] // builder chains — #[must_use] applied where appropriate
-#![allow(clippy::exhaustive_enums)]        // intentional: users can match exhaustively
-#![allow(clippy::exhaustive_structs)]      // adding fields is not a breaking change for us
-#![allow(clippy::doc_markdown)]            // too picky about backticks in comments
+#![allow(clippy::exhaustive_enums)] // intentional: users can match exhaustively
+#![allow(clippy::exhaustive_structs)] // adding fields is not a breaking change for us
+#![allow(clippy::doc_markdown)]
+// too picky about backticks in comments
 // ── Clippy restriction (safety + performance + style) ────────────────────────
 #![warn(clippy::unwrap_used)]
 #![warn(clippy::expect_used)]
