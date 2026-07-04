@@ -23,11 +23,11 @@ pub fn truncate(content: &str, max_chars: usize, hint: &str) -> Truncated {
         return Truncated { content: content.to_string(), original_len: content.len(), was_truncated: false };
     }
 
-    let suffix = format!(" ({} chars truncated — use {})", char_count, hint);
+    let suffix = format!(" ({char_count} chars truncated — use {hint})");
     let suffix_chars = suffix.chars().count();
     let keep_chars = max_chars.saturating_sub(suffix_chars);
 
-    let byte_end = content.char_indices().nth(keep_chars).map(|(i, _)| i).unwrap_or(content.len());
+    let byte_end = content.char_indices().nth(keep_chars).map_or(content.len(), |(i, _)| i);
 
     let mut result = String::with_capacity(byte_end + suffix.len());
     result.push_str(&content[..byte_end]);
@@ -36,7 +36,7 @@ pub fn truncate(content: &str, max_chars: usize, hint: &str) -> Truncated {
     // Hard-cap to max_chars via char boundaries in case the suffix alone
     // exceeds max_chars (e.g. very small max_chars or long hint string).
     if result.chars().count() > max_chars {
-        let cap_byte = result.char_indices().nth(max_chars).map(|(i, _)| i).unwrap_or(result.len());
+        let cap_byte = result.char_indices().nth(max_chars).map_or(result.len(), |(i, _)| i);
         result.truncate(cap_byte);
     }
 

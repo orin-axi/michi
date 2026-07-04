@@ -42,6 +42,9 @@ impl Default for RetryConfig {
 ///
 /// Returns `None` when `attempt >= config.max_retries`.
 #[must_use]
+// Casts are safe: delays are capped at max_delay (≤ 30 s by default, well within u64 ms range).
+// jitter_seed is documented as [0.0, 1.0], so the f64 product is non-negative and bounded.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
 pub fn next_retry_delay(config: &RetryConfig, attempt: u32, jitter_seed: f64) -> Option<Duration> {
     if attempt >= config.max_retries {
         return None;

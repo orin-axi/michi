@@ -1,3 +1,17 @@
 msrv                         = "1.96"
 too-many-arguments-threshold = 6
 too-many-lines-threshold     = 150
+
+# Allow unwrap/expect in test code — idiomatic and avoids hundreds of #[allow] attrs
+allow-unwrap-in-tests  = true
+allow-expect-in-tests  = true
+
+# Cognitive complexity (default is 25, we lower slightly)
+cognitive-complexity-threshold = 20
+
+# Ban debug/print macros in library code
+disallowed-macros = [
+    { path = "std::println",  reason = "library code must not print to stdout" },
+    { path = "std::eprintln", reason = "library code must not print to stderr" },
+    { path = "std::dbg",      reason = "debug macro must not ship in library code" },
+]

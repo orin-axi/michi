@@ -1,4 +1,12 @@
 #![deny(clippy::all)]
+// Panics crash the Node.js process — hard errors, not warnings
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![deny(clippy::panic)]
+#![deny(clippy::indexing_slicing)]
+// Style
+#![warn(clippy::use_self)]
+#![warn(clippy::implicit_clone)]
 
 use napi_derive::napi;
 

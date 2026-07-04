@@ -18,7 +18,7 @@ pub enum Value {
 /// Render a TOON document string from its parts.
 ///
 /// Pre-allocates output capacity based on row count × estimated row width.
-pub fn render(
+pub(crate) fn render(
     type_name: &str,
     fields: &[String],
     rows: &[Vec<Value>],
