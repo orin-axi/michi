@@ -1,5 +1,7 @@
+/// Circuit breaker state machine (requires the `pipeline` feature).
 #[cfg(feature = "pipeline")]
 pub mod circuit;
+/// Retry and back-off policy execution (requires the `pipeline` feature).
 #[cfg(feature = "pipeline")]
 pub mod policy;
 

@@ -50,6 +50,7 @@ pub enum Error {
     NotFound(String),
 
     // ── Execution errors (pipeline feature — Plan 2) ───────────────────────
+    /// An HTTP request returned a non-success status code.
     #[cfg(feature = "pipeline")]
     #[error("HTTP {status}: {message}")]
     Http {
@@ -63,6 +64,7 @@ pub enum Error {
         retry_after: Option<Duration>,
     },
 
+    /// An operation exceeded its allotted time budget.
     #[cfg(feature = "pipeline")]
     #[error("Timeout after {elapsed:?}")]
     Timeout {
@@ -70,6 +72,7 @@ pub enum Error {
         elapsed: Duration,
     },
 
+    /// A pipeline step failed during execution.
     #[cfg(feature = "pipeline")]
     #[error("Step {id} failed")]
     StepFailed {
@@ -77,9 +80,10 @@ pub enum Error {
         id: String,
         /// Underlying cause.
         #[source]
-        source: Box<Error>,
+        source: Box<Self>,
     },
 
+    /// A circuit breaker is open and rejecting calls.
     #[cfg(feature = "pipeline")]
     #[error("Circuit {name} is open, retry after {retry_after:?}")]
     CircuitOpen {
@@ -89,6 +93,7 @@ pub enum Error {
         retry_after: Duration,
     },
 
+    /// A fuzzy-match query produced no candidates.
     #[cfg(feature = "pipeline")]
     #[error("No match for query: {query}")]
     NoMatch {
@@ -96,6 +101,7 @@ pub enum Error {
         query: String,
     },
 
+    /// A fuzzy-match query produced multiple equally-likely candidates.
     #[cfg(feature = "pipeline")]
     #[error("Ambiguous match for '{query}': {count} candidates")]
     AmbiguousMatch {
@@ -105,6 +111,7 @@ pub enum Error {
         count: usize,
     },
 
+    /// A pipeline's step dependencies form a cycle.
     #[cfg(feature = "pipeline")]
     #[error("Cyclic dependency detected: {cycle:?}")]
     CyclicDependency {
@@ -112,14 +119,17 @@ pub enum Error {
         cycle: Vec<String>,
     },
 
+    /// The operation was cancelled before completion.
     #[cfg(feature = "pipeline")]
     #[error("Operation was cancelled")]
     Cancelled,
 
+    /// The cache backend encountered an error.
     #[cfg(feature = "pipeline")]
     #[error("Cache error: {0}")]
     Cache(String),
 
+    /// An underlying I/O operation failed.
     #[cfg(feature = "pipeline")]
     #[error(transparent)]
     Io(#[from] std::io::Error),

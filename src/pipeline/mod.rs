@@ -1,3 +1,4 @@
+/// Pipeline execution engine (requires the `pipeline` feature).
 #[cfg(feature = "pipeline")]
 pub mod executor;
 
