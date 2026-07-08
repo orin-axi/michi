@@ -83,6 +83,10 @@ pub fn next_retry_delay(
 /// for malformed or absent values.
 #[must_use]
 pub fn parse_retry_after(header_value: &str) -> Option<Duration> {
+    // The only `SystemTime::now()` call in this crate — every other function
+    // stays pure and deterministically testable by taking `now` as a
+    // parameter instead (see `parse_retry_after_at`). New time-sensitive code
+    // should follow that pattern rather than reading the clock directly.
     parse_retry_after_at(header_value, std::time::SystemTime::now())
 }
 
@@ -154,8 +158,15 @@ fn month_number(name: &str) -> Option<u64> {
 }
 
 /// Days since the Unix epoch for a given proleptic-Gregorian civil date.
-/// Howard Hinnant's `days_from_civil` algorithm — no external date library,
-/// correct for the full range this parser can produce (years > 1970).
+///
+/// Howard Hinnant's `days_from_civil` algorithm (no external date library
+/// needed) — see <http://howardhinnant.github.io/date_algorithms.html> for
+/// the derivation and the `era`/`yoe`/`doy`/`doe` names used below.
+///
+/// `parse_http_date` calls this with the raw parsed year (`0..=9999`, bounds
+/// checked above) *before* the pre-1970 rejection happens downstream (a
+/// negative result fails the `u64::try_from` in the caller), so this must be
+/// correct across the full 4-digit year range, not just years after 1970.
 #[allow(
     clippy::cast_possible_wrap,
     clippy::cast_possible_truncation,
@@ -254,7 +265,29 @@ mod tests {
     fn malformed_http_date_returns_none() {
         let now = std::time::SystemTime::UNIX_EPOCH;
         assert_eq!(parse_retry_after_at("not a date", now), None);
+        // Invalid month name — rejected by `month_number`, before the day
+        // bound check ever runs (day=32 is coincidental, not what this exercises).
         assert_eq!(parse_retry_after_at("Wed, 32 Foo 2026 00:00:00 GMT", now), None);
+    }
+
+    #[test]
+    fn http_date_with_day_out_of_range_returns_none() {
+        // Exercises the `day == 0 || day > 31` branch specifically, with an
+        // otherwise-valid month/year/time so it can't short-circuit earlier.
+        let now = std::time::SystemTime::UNIX_EPOCH;
+        assert_eq!(parse_retry_after_at("Thu, 32 Jan 2026 00:00:00 GMT", now), None);
+        assert_eq!(parse_retry_after_at("Thu, 00 Jan 2026 00:00:00 GMT", now), None);
+    }
+
+    #[test]
+    fn http_date_with_time_out_of_range_returns_none() {
+        // Exercises the hour/minute/second bound checks and the
+        // trailing-component check, each otherwise dark.
+        let now = std::time::SystemTime::UNIX_EPOCH;
+        assert_eq!(parse_retry_after_at("Thu, 01 Jan 2026 24:00:00 GMT", now), None);
+        assert_eq!(parse_retry_after_at("Thu, 01 Jan 2026 00:60:00 GMT", now), None);
+        assert_eq!(parse_retry_after_at("Thu, 01 Jan 2026 00:00:61 GMT", now), None);
+        assert_eq!(parse_retry_after_at("Thu, 01 Jan 2026 00:00:00:00 GMT", now), None);
     }
 
     #[test]
