@@ -68,6 +68,16 @@ pub(crate) fn render(
 ) -> String {
     let row_count = rows.len();
     let field_count = fields.len();
+
+    #[cfg(debug_assertions)]
+    for row in rows {
+        debug_assert!(
+            row.len() == field_count,
+            "row length {} does not match field count {field_count} (fields: {fields:?})",
+            row.len()
+        );
+    }
+
     let capacity = 60 + row_count * (field_count * 12 + 10) + hints.len() * 60;
     let mut out = String::with_capacity(capacity);
 
@@ -172,5 +182,19 @@ mod value_conversion_tests {
     fn from_option_string_none() {
         let v: Value = None::<String>.into();
         assert_eq!(v, Value::Null);
+    }
+}
+
+#[cfg(test)]
+mod row_length_tests {
+    use super::{render, Value};
+
+    #[test]
+    #[should_panic(expected = "row length")]
+    #[cfg(debug_assertions)]
+    fn mismatched_row_length_panics_in_debug() {
+        let fields = vec!["a".to_string(), "b".to_string()];
+        let rows = vec![vec![Value::Int(1)]]; // 1 value, 2 fields declared
+        render("t", &fields, &rows, None, &[]);
     }
 }
