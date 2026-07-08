@@ -16,6 +16,7 @@ fn make_opts(n: usize) -> ToonOptions {
             .collect(),
         total_count: Some(1000),
         hints: vec!["Call get_issue with number=<number>".into()],
+        ..Default::default()
     }
 }
 
@@ -32,7 +33,7 @@ fn render_with_comma_escaping(b: Bencher) {
         fields: vec!["name".into()],
         rows: (0..100).map(|i| vec![Value::Str(format!("Item {i}, with comma"))]).collect(),
         total_count: None,
-        hints: vec![],
+        ..Default::default()
     };
     b.bench(|| render_toon(&opts));
 }

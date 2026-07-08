@@ -65,6 +65,7 @@ pub(crate) fn render(
     rows: &[Vec<Value>],
     total_count: Option<usize>,
     hints: &[String],
+    max_cell_len: usize,
 ) -> String {
     let row_count = rows.len();
     let field_count = fields.len();
@@ -102,7 +103,10 @@ pub(crate) fn render(
                 out.push(',');
             }
             match val {
-                Value::Str(s) => out.push_str(&escape_value(s)),
+                Value::Str(s) => {
+                    let truncated = crate::truncate::truncate_inline(s, max_cell_len, "full=true");
+                    out.push_str(&escape_value(&truncated));
+                }
                 Value::Int(n) => {
                     let _ = write!(out, "{n}");
                 }
@@ -194,6 +198,6 @@ mod row_length_tests {
     fn mismatched_row_length_panics_in_debug() {
         let fields = vec!["a".to_string(), "b".to_string()];
         let rows = vec![vec![Value::Int(1)]]; // 1 value, 2 fields declared
-        render("t", &fields, &rows, None, &[]);
+        render("t", &fields, &rows, None, &[], 200);
     }
 }

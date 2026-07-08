@@ -120,6 +120,7 @@ pub fn render_toon(opts: JsToonOptions) -> napi::Result<String> {
         rows: opts.rows.into_iter().map(|row| row.into_iter().map(js_value_to_rust).collect()).collect(),
         total_count: opts.total_count.map(|n| n.max(0) as usize),
         hints: opts.hints,
+        max_cell_len: 200,
     };
     Ok(crate::toon::render_toon(&rust_opts))
 }

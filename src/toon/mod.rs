@@ -22,6 +22,23 @@ pub struct ToonOptions {
     pub total_count: Option<usize>,
     /// Agent-facing usage hints. Emitted as `help[N]:` block when non-empty.
     pub hints: Vec<String>,
+    /// Max `Value::Str` cell length in Unicode scalar values before inline
+    /// truncation via [`crate::truncate::truncate_inline`]. Non-string cells
+    /// are never truncated.
+    pub max_cell_len: usize,
+}
+
+impl Default for ToonOptions {
+    fn default() -> Self {
+        Self {
+            type_name: String::new(),
+            fields: Vec::new(),
+            rows: Vec::new(),
+            total_count: None,
+            hints: Vec::new(),
+            max_cell_len: 200,
+        }
+    }
 }
 
 /// Render a TOON document to a string.
@@ -34,5 +51,5 @@ pub struct ToonOptions {
 /// input before calling this in release builds).
 #[must_use]
 pub fn render_toon(opts: &ToonOptions) -> String {
-    render::render(&opts.type_name, &opts.fields, &opts.rows, opts.total_count, &opts.hints)
+    render::render(&opts.type_name, &opts.fields, &opts.rows, opts.total_count, &opts.hints, opts.max_cell_len)
 }
