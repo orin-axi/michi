@@ -39,11 +39,12 @@ impl RecoveryHint {
 /// Render a single [`KvValue`] as plain text (no key, no trailing newline).
 pub(crate) fn kv_value_str(v: &KvValue) -> std::borrow::Cow<'_, str> {
     match v {
-        KvValue::Str(s) => std::borrow::Cow::Borrowed(s.as_str()),
+        KvValue::Text(s) => std::borrow::Cow::Borrowed(s.as_str()),
         KvValue::Int(n) => std::borrow::Cow::Owned(n.to_string()),
-        KvValue::Float(f) => std::borrow::Cow::Owned(f.to_string()),
+        KvValue::Float(f, _) => std::borrow::Cow::Owned(f.to_string()),
         KvValue::Bool(b) => std::borrow::Cow::Borrowed(if *b { "true" } else { "false" }),
-        KvValue::Null => std::borrow::Cow::Borrowed(""),
+        KvValue::Duration(d) => std::borrow::Cow::Owned(format!("{:.1}s", d.as_secs_f64())),
+        KvValue::Missing => std::borrow::Cow::Borrowed("—"),
     }
 }
 
@@ -108,7 +109,7 @@ mod tests {
 
     #[test]
     fn hint_with_params_renders_suggested_params() {
-        let hints = [RecoveryHint::new("assign_user").param("user", KvValue::Str("alice".to_string()))];
+        let hints = [RecoveryHint::new("assign_user").param("user", KvValue::Text("alice".to_string()))];
         let out = render_recovery(&hints);
         assert!(out.contains("assign_user: suggestedParams: { user: alice }"), "got: {out}");
     }
@@ -116,8 +117,8 @@ mod tests {
     #[test]
     fn hint_with_multiple_params_renders_all() {
         let hints = [RecoveryHint::new("create_item")
-            .param("project", KvValue::Str("PROJ".to_string()))
-            .param("type", KvValue::Str("Task".to_string()))];
+            .param("project", KvValue::Text("PROJ".to_string()))
+            .param("type", KvValue::Text("Task".to_string()))];
         let out = render_recovery(&hints);
         assert!(out.contains("project: PROJ"), "got: {out}");
         assert!(out.contains("type: Task"), "got: {out}");
@@ -134,7 +135,7 @@ mod tests {
     #[test]
     fn hint_with_params_and_reason_renders_both_in_order() {
         let hints = [RecoveryHint::new("assign_user")
-            .param("user", KvValue::Str("alice".to_string()))
+            .param("user", KvValue::Text("alice".to_string()))
             .reason("user 'ghost' not found")];
         let out = render_recovery(&hints);
         assert_eq!(out, "recovery[1]:\n  assign_user: suggestedParams: { user: alice } — user 'ghost' not found\n");

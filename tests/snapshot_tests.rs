@@ -33,12 +33,12 @@ fn snapshot_toon_empty_state() {
 #[test]
 fn snapshot_kv_single_item() {
     let items = vec![
-        KvItem { key: "id".into(), value: KvValue::Str("abc-123".into()) },
-        KvItem { key: "title".into(), value: KvValue::Str("Fix login".into()) },
-        KvItem { key: "state".into(), value: KvValue::Str("open".into()) },
+        KvItem { key: "id".into(), value: KvValue::Text("abc-123".into()) },
+        KvItem { key: "title".into(), value: KvValue::Text("Fix login".into()) },
+        KvItem { key: "state".into(), value: KvValue::Text("open".into()) },
         KvItem { key: "count".into(), value: KvValue::Int(3) },
     ];
-    insta::assert_snapshot!(render_kv(&items));
+    insta::assert_snapshot!(render_kv(&items, None, &[]));
 }
 
 #[test]
