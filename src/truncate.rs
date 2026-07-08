@@ -7,6 +7,9 @@ pub struct Truncated {
     pub original_len: usize,
     /// Whether truncation actually occurred.
     pub was_truncated: bool,
+    /// The truncation signal text alone (e.g. `"(N chars truncated — use
+    /// full=true)"`), separate from `content`. `None` when not truncated.
+    pub signal: Option<String>,
 }
 
 /// Truncate `content` to at most `max_chars` Unicode scalar values, appending
@@ -21,12 +24,22 @@ pub fn truncate(content: &str, max_chars: usize, hint: &str) -> Truncated {
     // Byte length is always >= char count, so if it already fits within
     // max_chars the char count does too — skip the full UTF-8 scan.
     if content.len() <= max_chars {
-        return Truncated { content: content.to_string(), original_len: content.len(), was_truncated: false };
+        return Truncated {
+            content: content.to_string(),
+            original_len: content.len(),
+            was_truncated: false,
+            signal: None,
+        };
     }
 
     let char_count = content.chars().count();
     if char_count <= max_chars {
-        return Truncated { content: content.to_string(), original_len: content.len(), was_truncated: false };
+        return Truncated {
+            content: content.to_string(),
+            original_len: content.len(),
+            was_truncated: false,
+            signal: None,
+        };
     }
 
     let suffix = format!(" ({char_count} chars truncated — use {hint})");
@@ -46,7 +59,7 @@ pub fn truncate(content: &str, max_chars: usize, hint: &str) -> Truncated {
         result.truncate(cap_byte);
     }
 
-    Truncated { content: result, original_len: content.len(), was_truncated: true }
+    Truncated { content: result, original_len: content.len(), was_truncated: true, signal: Some(suffix) }
 }
 
 /// Truncate content for inline use (e.g. inside a TOON field).
@@ -118,5 +131,22 @@ mod tests {
         assert!(!t.was_truncated);
         assert_eq!(t.content, content);
         assert_eq!(t.original_len, 5000);
+    }
+
+    #[test]
+    fn signal_is_populated_when_truncated() {
+        let content = "a".repeat(200);
+        let t = truncate(&content, 50, "full=true");
+        assert!(t.was_truncated);
+        let signal = t.signal.as_deref().expect("signal present when truncated");
+        assert!(signal.contains("200 chars truncated"));
+        assert!(signal.contains("full=true"));
+    }
+
+    #[test]
+    fn signal_is_none_when_not_truncated() {
+        let t = truncate("hello", 100, "full=true");
+        assert!(!t.was_truncated);
+        assert_eq!(t.signal, None);
     }
 }
