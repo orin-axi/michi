@@ -68,6 +68,9 @@ pub fn next_retry_delay(
     let jitter_ms = (raw_ms as f64 * config.jitter_factor * jitter_seed) as u64;
     let jittered_ms = raw_ms.saturating_add(jitter_ms);
     let retry_after_ms = retry_after.map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+    // Combine (max) before capping (min): retry_after must be able to raise the
+    // delay above the jittered backoff, but max_delay must still be the final
+    // word. Swapping this order would let retry_after bypass max_delay.
     let capped_ms = jittered_ms.max(retry_after_ms).min(max_ms);
     Some(Duration::from_millis(capped_ms))
 }
@@ -226,9 +229,20 @@ mod tests {
     }
 
     #[test]
-    fn none_retry_after_behaves_as_before() {
-        let config = RetryConfig { jitter_factor: 0.0, ..Default::default() };
-        let delay = next_retry_delay(&config, 0, 0.0, None).unwrap();
-        assert_eq!(delay, config.base_delay);
+    fn retry_after_wins_over_backoff_with_jitter_applied() {
+        let config = RetryConfig { jitter_factor: 1.0, base_delay: Duration::from_secs(1), ..Default::default() };
+        // jitter_seed 1.0 -> full jitter: jittered backoff is 1s + 1s = 2s,
+        // still less than a 5s Retry-After.
+        let delay = next_retry_delay(&config, 0, 1.0, Some(Duration::from_secs(5))).unwrap();
+        assert_eq!(delay, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn jittered_backoff_wins_over_smaller_retry_after() {
+        let config = RetryConfig { jitter_factor: 1.0, base_delay: Duration::from_secs(1), ..Default::default() };
+        // jitter_seed 1.0 -> full jitter: jittered backoff is 1s + 1s = 2s,
+        // which exceeds the 500ms Retry-After.
+        let delay = next_retry_delay(&config, 0, 1.0, Some(Duration::from_millis(500))).unwrap();
+        assert_eq!(delay, Duration::from_secs(2));
     }
 }
