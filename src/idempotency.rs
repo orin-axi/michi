@@ -165,6 +165,16 @@ mod tests {
     }
 
     #[test]
+    fn from_hash_zero_pads_short_hex_digests() {
+        // fnv1a_64(b"aa") == 0x089c4307b54596b7, which has a leading zero
+        // nibble. Confirms `{:016x}` keeps the hash segment a fixed 16
+        // characters instead of trimming it to 15, which would make key
+        // width inconsistent across inputs.
+        let key = IdempotencyKey::from_hash("op", b"aa");
+        assert_eq!(key.as_str(), "op:089c4307b54596b7");
+    }
+
+    #[test]
     fn partial_success_renders() {
         let ps = PartialSuccess {
             completed: vec!["step-a".into(), "step-b".into()],
