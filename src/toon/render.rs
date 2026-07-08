@@ -17,6 +17,45 @@ pub enum Value {
     Null,
 }
 
+impl From<&str> for Value {
+    fn from(s: &str) -> Self {
+        Self::Str(s.to_string())
+    }
+}
+
+impl From<String> for Value {
+    fn from(s: String) -> Self {
+        Self::Str(s)
+    }
+}
+
+impl From<i64> for Value {
+    fn from(n: i64) -> Self {
+        Self::Int(n)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(f: f64) -> Self {
+        Self::Float(f)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(b: bool) -> Self {
+        Self::Bool(b)
+    }
+}
+
+impl From<Option<String>> for Value {
+    fn from(s: Option<String>) -> Self {
+        match s {
+            Some(s) => Self::Str(s),
+            None => Self::Null,
+        }
+    }
+}
+
 /// Render a TOON document string from its parts.
 ///
 /// Pre-allocates output capacity based on row count × estimated row width.
@@ -87,4 +126,51 @@ pub(crate) fn render(
     }
 
     out
+}
+
+#[cfg(test)]
+mod value_conversion_tests {
+    use super::Value;
+
+    #[test]
+    fn from_str_slice() {
+        let v: Value = "hello".into();
+        assert_eq!(v, Value::Str("hello".to_string()));
+    }
+
+    #[test]
+    fn from_string() {
+        let v: Value = "hello".to_string().into();
+        assert_eq!(v, Value::Str("hello".to_string()));
+    }
+
+    #[test]
+    fn from_i64() {
+        let v: Value = 42i64.into();
+        assert_eq!(v, Value::Int(42));
+    }
+
+    #[test]
+    fn from_f64() {
+        let v: Value = 1.5f64.into();
+        assert_eq!(v, Value::Float(1.5));
+    }
+
+    #[test]
+    fn from_bool() {
+        let v: Value = true.into();
+        assert_eq!(v, Value::Bool(true));
+    }
+
+    #[test]
+    fn from_option_string_some() {
+        let v: Value = Some("x".to_string()).into();
+        assert_eq!(v, Value::Str("x".to_string()));
+    }
+
+    #[test]
+    fn from_option_string_none() {
+        let v: Value = None::<String>.into();
+        assert_eq!(v, Value::Null);
+    }
 }
