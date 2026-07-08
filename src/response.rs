@@ -1,4 +1,5 @@
 use crate::hints::Hint;
+use crate::recovery::kv_value_str as kv_value_json_str;
 use crate::recovery::RecoveryHint;
 
 /// The serialisation format for `AgentResponse::render`.
@@ -90,7 +91,7 @@ impl AgentResponse {
     ///
     /// **Text format:** `body` + optional `help[N]:` block + optional `recovery[N]:` block.
     ///
-    /// **Json format:** `{"body":"...","hints":[...],"recovery":[{"action":"...","description":"...","example":"..."}],"isError":false}`
+    /// **Json format:** `{"body":"...","hints":[...],"recovery":[{"tool":"...","params":{...},"reason":"..."}],"isError":false}`
     #[must_use]
     pub fn render(&self, format: OutputFormat) -> String {
         match format {
@@ -129,13 +130,21 @@ impl AgentResponse {
             if i > 0 {
                 out.push(',');
             }
-            out.push_str("{\"action\":");
-            json_string(&mut out, &r.action);
-            out.push_str(",\"description\":");
-            json_string(&mut out, &r.description);
-            if let Some(ex) = &r.example {
-                out.push_str(",\"example\":");
-                json_string(&mut out, ex);
+            out.push_str("{\"tool\":");
+            json_string(&mut out, &r.tool);
+            out.push_str(",\"params\":{");
+            for (j, (k, v)) in r.params.iter().enumerate() {
+                if j > 0 {
+                    out.push(',');
+                }
+                json_string(&mut out, k);
+                out.push(':');
+                json_string(&mut out, &kv_value_json_str(v));
+            }
+            out.push('}');
+            if let Some(reason) = &r.reason {
+                out.push_str(",\"reason\":");
+                json_string(&mut out, reason);
             }
             out.push('}');
         }
@@ -195,25 +204,25 @@ mod tests {
 
     #[test]
     fn text_render_with_recovery() {
-        let r = AgentResponse::new("err\n").with_recovery(RecoveryHint::new("retry", "wait and retry"));
+        let r = AgentResponse::new("err\n").with_recovery(RecoveryHint::new("retry").reason("wait and retry"));
         let out = r.render(OutputFormat::Text);
-        assert_eq!(out, "err\nrecovery[1]:\n  retry: wait and retry\n");
+        assert_eq!(out, "err\nrecovery[1]:\n  retry — wait and retry\n");
     }
 
     #[test]
     fn text_render_with_hints_and_recovery_combined() {
         let r = AgentResponse::new("body\n")
             .with_hint(Hint::new("hint one"))
-            .with_recovery(RecoveryHint::new("retry", "wait and retry"));
+            .with_recovery(RecoveryHint::new("retry").reason("wait and retry"));
         let out = r.render(OutputFormat::Text);
-        assert_eq!(out, "body\nhelp[1]:\n  hint one\nrecovery[1]:\n  retry: wait and retry\n");
+        assert_eq!(out, "body\nhelp[1]:\n  hint one\nrecovery[1]:\n  retry — wait and retry\n");
     }
 
     #[test]
     fn text_render_hints_before_recovery() {
         let r = AgentResponse::new("body\n")
             .with_hint(Hint::new("hint"))
-            .with_recovery(RecoveryHint::new("retry", "try again"));
+            .with_recovery(RecoveryHint::new("retry").reason("try again"));
         let out = r.render(OutputFormat::Text);
         let hint_pos = out.find("help[").unwrap();
         let recovery_pos = out.find("recovery[").unwrap();
@@ -273,17 +282,18 @@ mod tests {
 
     #[test]
     fn json_render_with_recovery() {
-        let r = AgentResponse::new("body").with_recovery(RecoveryHint::with_example("retry", "wait 1s", "retry()"));
+        let r = AgentResponse::new("body").with_recovery(RecoveryHint::new("retry").reason("wait 1s"));
         let json = r.render(OutputFormat::Json);
-        assert!(json.contains("\"action\":\"retry\""));
-        assert!(json.contains("\"example\":\"retry()\""));
+        assert!(json.contains("\"tool\":\"retry\""));
+        assert!(json.contains("\"reason\":\"wait 1s\""));
     }
 
     #[test]
-    fn json_render_recovery_no_example_omits_key() {
-        let r = AgentResponse::new("body").with_recovery(RecoveryHint::new("retry", "wait and retry"));
+    fn json_render_recovery_no_reason_omits_key() {
+        let r = AgentResponse::new("body").with_recovery(RecoveryHint::new("retry"));
         let json = r.render(OutputFormat::Json);
-        assert!(!json.contains("\"example\""), "example key must be absent when None");
+        assert!(!json.contains("\"reason\""), "reason key must be absent when None");
+        assert!(json.contains("\"params\":{}"), "params must render as empty object when no params");
     }
 
     #[test]
