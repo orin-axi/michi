@@ -151,7 +151,7 @@ impl DomainError {
         1
     }
 
-    /// Render to an agent-readable KV block with exit code and hints.
+    /// Render to an agent-readable KV block with exit code, hints, and recovery.
     ///
     /// Format:
     /// ```text
@@ -170,6 +170,9 @@ impl DomainError {
         out.push_str(&self.message);
         out.push_str("\nexit_code: 1\n");
         crate::hints::append_hints(&mut out, &self.hints);
+        if let Some(r) = &self.recovery {
+            crate::recovery::append_recovery(&mut out, std::slice::from_ref(r));
+        }
         out
     }
 }
@@ -458,6 +461,19 @@ mod tests {
     fn domain_error_carries_recovery() {
         let e = DomainError::new(ErrorCode::Conflict, "already exists").recovery(RecoveryHint::new("get_issue"));
         assert_eq!(e.recovery.as_ref().unwrap().tool, "get_issue");
+    }
+
+    #[test]
+    fn domain_error_render_includes_recovery_block() {
+        let e = DomainError::new(ErrorCode::Conflict, "already exists").recovery(RecoveryHint::new("get_issue"));
+        let out = e.render();
+        assert_eq!(out, "error: conflict\nmessage: already exists\nexit_code: 1\nrecovery[1]:\n  get_issue\n");
+    }
+
+    #[test]
+    fn domain_error_render_with_no_hints_has_no_dangling_help_block() {
+        let e = DomainError::new(ErrorCode::Timeout, "took too long");
+        assert_eq!(e.render(), "error: timeout\nmessage: took too long\nexit_code: 1\n");
     }
 
     #[test]
