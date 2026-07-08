@@ -110,6 +110,9 @@ fn parse_http_date(s: &str) -> Option<std::time::SystemTime> {
     let day: u64 = parts.next()?.parse().ok()?;
     let month = month_number(parts.next()?)?;
     let year: i64 = parts.next()?.parse().ok()?;
+    if !(0..=9999).contains(&year) {
+        return None; // imf-fixdate year is always 4 digits; also guards days_from_civil from overflow
+    }
     let time = parts.next()?;
     if parts.next().is_some() {
         return None; // trailing garbage
@@ -252,6 +255,16 @@ mod tests {
         let now = std::time::SystemTime::UNIX_EPOCH;
         assert_eq!(parse_retry_after_at("not a date", now), None);
         assert_eq!(parse_retry_after_at("Wed, 32 Foo 2026 00:00:00 GMT", now), None);
+    }
+
+    #[test]
+    fn http_date_with_absurd_year_returns_none_instead_of_panicking() {
+        // year is parsed as i64 with no bounds check before flowing into
+        // days_from_civil's unchecked era/doe arithmetic; a syntactically
+        // valid but absurd year must not panic (overflow-checks are on by
+        // default in this crate's dev/test profile).
+        let now = std::time::SystemTime::UNIX_EPOCH;
+        assert_eq!(parse_retry_after_at("Wed, 21 Oct 999999999999999999 07:28:00 GMT", now), None);
     }
 
     #[test]
