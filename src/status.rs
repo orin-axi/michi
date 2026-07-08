@@ -74,19 +74,10 @@ impl StatusResponse {
     }
 }
 
-fn kv_value_display(v: &KvValue) -> String {
-    match v {
-        KvValue::Text(s) => s.clone(),
-        KvValue::Int(n) => n.to_string(),
-        KvValue::Float(f, decimals) => format!("{f:.*}", *decimals as usize),
-        KvValue::Bool(b) => (if *b { "true" } else { "false" }).to_string(),
-        KvValue::Duration(d) => format!("{:.1}s", d.as_secs_f64()),
-        KvValue::Missing => "—".to_string(),
-    }
-}
-
 fn annotate(value: &KvValue, label: &str, reason: &str) -> KvValue {
-    KvValue::Text(format!("{}  [{label}: {reason}]", kv_value_display(value)))
+    let mut display = String::new();
+    crate::kv::push_kv_value(&mut display, value);
+    KvValue::Text(format!("{display}  [{label}: {reason}]"))
 }
 
 #[cfg(test)]

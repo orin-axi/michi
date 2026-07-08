@@ -29,7 +29,10 @@ pub enum KvValue {
     Missing,
 }
 
-fn push_kv_value(out: &mut String, value: &KvValue) {
+/// Append a single [`KvValue`]'s plain-text rendering to `out` (no key, no
+/// trailing newline). Shared with [`crate::status`], which reuses this to
+/// keep the `KvValue` match in one place.
+pub(crate) fn push_kv_value(out: &mut String, value: &KvValue) {
     match value {
         KvValue::Text(s) => out.push_str(s),
         KvValue::Int(n) => {
