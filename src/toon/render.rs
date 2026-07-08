@@ -185,13 +185,12 @@ mod value_conversion_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, debug_assertions))]
 mod row_length_tests {
     use super::{render, Value};
 
     #[test]
     #[should_panic(expected = "row length")]
-    #[cfg(debug_assertions)]
     fn mismatched_row_length_panics_in_debug() {
         let fields = vec!["a".to_string(), "b".to_string()];
         let rows = vec![vec![Value::Int(1)]]; // 1 value, 2 fields declared
