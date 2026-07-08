@@ -59,7 +59,12 @@ pub fn truncate(content: &str, max_chars: usize, hint: &str) -> Truncated {
         result.truncate(cap_byte);
     }
 
-    Truncated { content: result, original_len: content.len(), was_truncated: true, signal: Some(suffix) }
+    Truncated {
+        content: result,
+        original_len: content.len(),
+        was_truncated: true,
+        signal: Some(suffix.trim_start().to_string()),
+    }
 }
 
 /// Truncate content for inline use (e.g. inside a TOON field).
@@ -141,6 +146,7 @@ mod tests {
         let signal = t.signal.as_deref().expect("signal present when truncated");
         assert!(signal.contains("200 chars truncated"));
         assert!(signal.contains("full=true"));
+        assert_eq!(signal, "(200 chars truncated — use full=true)");
     }
 
     #[test]
