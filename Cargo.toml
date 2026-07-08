@@ -10,9 +10,7 @@ repository   = "https://github.com/orin-axi/michi"
 authors      = ["orin-axi"]
 
 [workspace.dependencies]
-serde      = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror  = "2"
+thiserror = "2"
 
 [profile.release]
 opt-level     = 3
@@ -45,12 +43,10 @@ napi     = ["dep:napi", "dep:napi-derive"]
 full     = ["pipeline", "fuzzy", "cache", "cli", "mcp"]
 
 [dependencies]
-serde.workspace      = true
-serde_json.workspace = true
-thiserror.workspace  = true
+thiserror.workspace = true
 
 # pipeline feature
-tokio        = { version = "1", features = ["full"], optional = true }
+tokio        = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync"], optional = true }
 tokio-util   = { version = "0.7", features = ["rt"], optional = true }
 async-trait  = { version = "0.1", optional = true }
 uuid         = { version = "1", features = ["v4"], optional = true }

@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 /// A single key-value pair for [`render_kv`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct KvItem {
@@ -40,8 +42,12 @@ pub fn render_kv(items: &[KvItem]) -> String {
         out.push_str(": ");
         match &item.value {
             KvValue::Str(s) => out.push_str(s),
-            KvValue::Int(n) => out.push_str(&n.to_string()),
-            KvValue::Float(f) => out.push_str(&f.to_string()),
+            KvValue::Int(n) => {
+                let _ = write!(out, "{n}");
+            }
+            KvValue::Float(f) => {
+                let _ = write!(out, "{f}");
+            }
             KvValue::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
             KvValue::Null => {}
         }
@@ -88,5 +94,20 @@ mod tests {
     fn renders_float() {
         let items = vec![KvItem { key: "ratio".into(), value: KvValue::Float(0.5) }];
         assert!(render_kv(&items).contains("ratio: 0.5"));
+    }
+
+    #[test]
+    fn renders_numeric_formatting_exact() {
+        let items = vec![
+            KvItem { key: "neg".into(), value: KvValue::Int(-42) },
+            KvItem { key: "zero".into(), value: KvValue::Int(0) },
+            KvItem { key: "big".into(), value: KvValue::Int(i64::MAX) },
+            KvItem { key: "neg_float".into(), value: KvValue::Float(-1.25) },
+            KvItem { key: "whole_float".into(), value: KvValue::Float(2.0) },
+        ];
+        assert_eq!(
+            render_kv(&items),
+            "neg: -42\nzero: 0\nbig: 9223372036854775807\nneg_float: -1.25\nwhole_float: 2\n"
+        );
     }
 }

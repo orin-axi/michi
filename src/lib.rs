@@ -1,4 +1,8 @@
 // ── Rust compiler lints ──────────────────────────────────────────────────────
+// `deny`, not `forbid`: the napi module needs an inner `#![allow(unsafe_code)]`
+// override for napi-derive's macro-generated FFI glue, which `forbid` (unlike
+// `deny`) can never permit, even from macro expansion — see src/napi.rs.
+#![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(unreachable_pub)]
 #![warn(unused_qualifications)]
@@ -13,7 +17,6 @@
 #![allow(clippy::missing_errors_doc)] // add # Errors sections incrementally
 #![allow(clippy::missing_panics_doc)] // add # Panics sections incrementally
 #![allow(clippy::must_use_candidate)] // rendering fns — callers choose whether to use return value
-#![allow(clippy::return_self_not_must_use)] // builder chains — #[must_use] applied where appropriate
 #![allow(clippy::exhaustive_enums)] // intentional: users can match exhaustively
 #![allow(clippy::exhaustive_structs)] // adding fields is not a breaking change for us
 #![allow(clippy::doc_markdown)]
@@ -65,6 +68,9 @@ pub mod hints;
 pub mod idempotency;
 /// Key-value single-item rendering (`key: value\n` blocks).
 pub mod kv;
+/// NAPI export surface for the `michi` npm package (used by `packages/michi-node`).
+#[cfg(feature = "napi")]
+pub mod napi;
 /// Pipeline step definitions and run-state rendering.
 pub mod pipeline;
 /// Structured recovery hints (`recovery[N]:` blocks).

@@ -41,6 +41,18 @@ pub fn render_recovery(hints: &[RecoveryHint]) -> String {
     }
     let capacity = 16 + hints.len() * 60;
     let mut out = String::with_capacity(capacity);
+    append_recovery(&mut out, hints);
+    out
+}
+
+/// Append a `recovery[N]:` block to an existing string in-place, without
+/// allocating an intermediate buffer.
+///
+/// No-op when `hints` is empty.
+pub fn append_recovery(out: &mut String, hints: &[RecoveryHint]) {
+    if hints.is_empty() {
+        return;
+    }
     out.push_str("recovery[");
     out.push_str(&hints.len().to_string());
     out.push_str("]:\n");
@@ -55,7 +67,6 @@ pub fn render_recovery(hints: &[RecoveryHint]) -> String {
         }
         out.push('\n');
     }
-    out
 }
 
 #[cfg(test)]
@@ -87,5 +98,19 @@ mod tests {
         assert!(out.starts_with("recovery[2]:\n"));
         assert!(out.contains("  retry: wait and retry\n"));
         assert!(out.contains("  escalate: contact support\n"));
+    }
+
+    #[test]
+    fn append_recovery_modifies_string() {
+        let mut s = "body\n".to_string();
+        append_recovery(&mut s, &[RecoveryHint::new("retry", "wait and retry")]);
+        assert_eq!(s, "body\nrecovery[1]:\n  retry: wait and retry\n");
+    }
+
+    #[test]
+    fn append_recovery_noop_when_empty() {
+        let mut s = "base".to_string();
+        append_recovery(&mut s, &[]);
+        assert_eq!(s, "base");
     }
 }

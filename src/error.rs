@@ -159,8 +159,9 @@ impl Error {
             #[cfg(feature = "pipeline")]
             Self::Http { retryable: true, .. } | Self::Timeout { .. } | Self::Cancelled => ErrorClass::Transient,
             #[cfg(feature = "pipeline")]
+            Self::StepFailed { source, .. } => source.class(),
+            #[cfg(feature = "pipeline")]
             Self::Http { retryable: false, .. }
-            | Self::StepFailed { .. }
             | Self::CircuitOpen { .. }
             | Self::NoMatch { .. }
             | Self::AmbiguousMatch { .. }
@@ -222,5 +223,24 @@ mod tests {
     fn sensitive_redacts_display() {
         let s = Sensitive("secret-token");
         assert_eq!(format!("{s}"), "<redacted>");
+    }
+
+    #[cfg(feature = "pipeline")]
+    #[test]
+    fn step_failed_delegates_class_to_transient_source() {
+        let e = Error::StepFailed {
+            id: "fetch".into(),
+            source: Box::new(Error::Http { status: 503, message: "busy".into(), retryable: true, retry_after: None }),
+        };
+        assert_eq!(e.class(), ErrorClass::Transient);
+        assert!(e.is_retryable());
+    }
+
+    #[cfg(feature = "pipeline")]
+    #[test]
+    fn step_failed_delegates_class_to_user_source() {
+        let e = Error::StepFailed { id: "validate".into(), source: Box::new(Error::InvalidInput("bad field".into())) };
+        assert_eq!(e.class(), ErrorClass::User);
+        assert!(!e.is_retryable());
     }
 }

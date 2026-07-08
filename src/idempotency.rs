@@ -1,7 +1,10 @@
 /// An opaque idempotency key derived from operation inputs.
 ///
 /// Used to detect already-completed operations without re-executing them.
-/// Callers derive the key from stable operation parameters.
+/// Callers derive the key from stable operation parameters, look it up in
+/// their own store, and pass the lookup result — not the key itself — to
+/// [`already_done`]: the key selects *which* record to check, and
+/// `already_done` only needs to know what (if anything) that lookup found.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IdempotencyKey(pub String);
 
@@ -41,11 +44,12 @@ pub enum AlreadyDone {
     No,
 }
 
-/// Check whether an operation identified by `key` has already completed.
+/// Check whether an operation has already completed.
 ///
-/// Pass `stored` as `Some(result)` if your store contains an entry for this
-/// key; `None` if not. michi does not own any persistence — the caller
-/// retrieves and persists results in their own store.
+/// Pass `stored` as `Some(result)` if a lookup in your own store by
+/// [`IdempotencyKey`] found an entry; `None` if not. michi does not own any
+/// persistence — the caller derives the key, retrieves and persists results
+/// in their own store, and passes only the lookup outcome here.
 ///
 /// Returns [`AlreadyDone::Yes`] when `stored` is `Some`, [`AlreadyDone::No`]
 /// otherwise.

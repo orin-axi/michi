@@ -98,6 +98,19 @@ fn multiple_hints_render_correctly() {
 }
 
 #[test]
+fn mixed_numeric_row_uses_comma_separators() {
+    let opts = ToonOptions {
+        type_name: "point".into(),
+        fields: vec!["x".into(), "y".into(), "z".into()],
+        rows: vec![vec![Value::Int(-7), Value::Float(2.5), Value::Int(0)]],
+        total_count: None,
+        hints: vec![],
+    };
+    let out = render_toon(&opts);
+    assert!(out.contains("  -7,2.5,0\n"), "expected comma-separated numeric row, got: {out}");
+}
+
+#[test]
 fn float_value_renders() {
     let opts = ToonOptions {
         type_name: "measurement".into(),
@@ -124,7 +137,7 @@ fn quote_in_value_is_escaped() {
 }
 
 #[test]
-fn newline_in_value_is_quoted() {
+fn newline_in_value_is_stripped() {
     let opts = ToonOptions {
         type_name: "item".into(),
         fields: vec!["body".into()],
@@ -133,6 +146,7 @@ fn newline_in_value_is_quoted() {
         hints: vec![],
     };
     let out = render_toon(&opts);
-    // The value must be wrapped in quotes because it contains a newline
-    assert!(out.contains("\"line1\nline2\""), "expected quoted newline value, got: {out}");
+    // Embedded newlines must be stripped so each row stays a single physical line
+    assert!(out.contains("line1line2"), "expected stripped newline value, got: {out}");
+    assert!(!out.contains('"'), "value should not need quoting once newline is stripped, got: {out}");
 }

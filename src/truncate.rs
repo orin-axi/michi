@@ -18,6 +18,12 @@ pub struct Truncated {
 /// Returns the original string unchanged when `content.chars().count() <= max_chars`.
 #[must_use]
 pub fn truncate(content: &str, max_chars: usize, hint: &str) -> Truncated {
+    // Byte length is always >= char count, so if it already fits within
+    // max_chars the char count does too — skip the full UTF-8 scan.
+    if content.len() <= max_chars {
+        return Truncated { content: content.to_string(), original_len: content.len(), was_truncated: false };
+    }
+
     let char_count = content.chars().count();
     if char_count <= max_chars {
         return Truncated { content: content.to_string(), original_len: content.len(), was_truncated: false };
@@ -103,5 +109,14 @@ mod tests {
         let t = truncate(&content, 40, "full=true");
         assert!(t.was_truncated);
         assert!(t.content.contains("100 chars truncated"));
+    }
+
+    #[test]
+    fn large_short_content_not_truncated() {
+        let content = "a".repeat(5000);
+        let t = truncate(&content, 10_000, "full=true");
+        assert!(!t.was_truncated);
+        assert_eq!(t.content, content);
+        assert_eq!(t.original_len, 5000);
     }
 }

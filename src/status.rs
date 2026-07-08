@@ -71,6 +71,7 @@ impl StatusResponse {
     }
 
     /// Attach contextual hints.
+    #[must_use]
     pub fn with_hints(mut self, hints: Vec<Hint>) -> Self {
         self.hints = hints;
         self

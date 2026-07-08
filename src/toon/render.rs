@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use super::escape::escape_value;
 
 /// A single cell value in a TOON row.
@@ -50,14 +52,17 @@ pub(crate) fn render(
             if i > 0 {
                 out.push(',');
             }
-            let s = match val {
-                Value::Str(s) => escape_value(s),
-                Value::Int(n) => std::borrow::Cow::Owned(n.to_string()),
-                Value::Float(f) => std::borrow::Cow::Owned(f.to_string()),
-                Value::Bool(b) => std::borrow::Cow::Borrowed(if *b { "true" } else { "false" }),
-                Value::Null => std::borrow::Cow::Borrowed(""),
-            };
-            out.push_str(&s);
+            match val {
+                Value::Str(s) => out.push_str(&escape_value(s)),
+                Value::Int(n) => {
+                    let _ = write!(out, "{n}");
+                }
+                Value::Float(f) => {
+                    let _ = write!(out, "{f}");
+                }
+                Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+                Value::Null => {}
+            }
         }
         out.push('\n');
     }

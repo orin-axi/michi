@@ -2,6 +2,8 @@
 #[cfg(feature = "pipeline")]
 pub mod executor;
 
+use std::fmt::Write as _;
+
 /// Status of an individual pipeline step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepStatus {
@@ -67,21 +69,14 @@ impl Pipeline {
         let mut out = String::with_capacity(capacity);
 
         out.push_str("step[");
-        out.push_str(&n.to_string());
+        let _ = write!(out, "{n}");
         out.push_str("]{id,name,status}:\n");
 
         for step in &self.steps {
             out.push_str("  ");
-            out.push_str(&step.id);
+            out.push_str(&crate::toon::escape_value(&step.id));
             out.push(',');
-            // Escape name if it contains a comma
-            if step.name.contains(',') {
-                out.push('"');
-                out.push_str(&step.name);
-                out.push('"');
-            } else {
-                out.push_str(&step.name);
-            }
+            out.push_str(&crate::toon::escape_value(&step.name));
             out.push(',');
             out.push_str(step.status.label());
             out.push('\n');
@@ -122,6 +117,30 @@ mod tests {
         };
         let out = p.render();
         assert!(out.contains(r#""Parse, validate""#));
+    }
+
+    #[test]
+    fn step_id_with_comma_is_escaped() {
+        let p = Pipeline {
+            id: "p".into(),
+            steps: vec![PipelineStep { id: "s,extra".into(), name: "ok".into(), status: StepStatus::Completed }],
+        };
+        let out = p.render();
+        assert_eq!(out, "step[1]{id,name,status}:\n  \"s,extra\",ok,completed\n");
+    }
+
+    #[test]
+    fn step_name_with_embedded_quote_is_escaped() {
+        let p = Pipeline {
+            id: "p".into(),
+            steps: vec![PipelineStep {
+                id: "s".into(),
+                name: r#"he said "hi, there""#.into(),
+                status: StepStatus::Completed,
+            }],
+        };
+        let out = p.render();
+        assert_eq!(out, "step[1]{id,name,status}:\n  s,\"he said \\\"hi, there\\\"\",completed\n");
     }
 
     #[test]

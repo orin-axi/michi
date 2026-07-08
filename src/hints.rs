@@ -37,8 +37,19 @@ pub fn render_hints(hints: &[Hint]) -> String {
     if hints.is_empty() {
         return String::new();
     }
-    let capacity = 12 + hints.len() * 50;
-    let mut out = String::with_capacity(capacity);
+    let mut out = String::with_capacity(12 + hints.len() * 50);
+    append_hints(&mut out, hints);
+    out
+}
+
+/// Append a `help[N]:` block to an existing string in-place, without
+/// allocating an intermediate buffer.
+///
+/// No-op when `hints` is empty.
+pub fn append_hints(out: &mut String, hints: &[Hint]) {
+    if hints.is_empty() {
+        return;
+    }
     out.push_str("help[");
     out.push_str(&hints.len().to_string());
     out.push_str("]:\n");
@@ -47,17 +58,6 @@ pub fn render_hints(hints: &[Hint]) -> String {
         out.push_str(hint.as_str());
         out.push('\n');
     }
-    out
-}
-
-/// Append a `help[N]:` block to an existing string in-place.
-///
-/// No-op when `hints` is empty.
-pub fn append_hints(out: &mut String, hints: &[Hint]) {
-    if hints.is_empty() {
-        return;
-    }
-    out.push_str(&render_hints(hints));
 }
 
 #[cfg(test)]

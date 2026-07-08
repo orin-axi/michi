@@ -39,7 +39,7 @@ default  = []
 
 # Async execution layer: PipelineExecutor, Step, CheckpointStore, OutputSink,
 # CircuitBreaker, with_resilience(). Adds: tokio, tokio-util, async-trait, uuid.
-# Note: thiserror and serde are regular (non-optional) deps used by all features.
+# Note: thiserror is a regular (non-optional) dep used by all features.
 pipeline = [
     "dep:tokio",
     "dep:tokio-util",
@@ -58,13 +58,14 @@ cache = ["dep:moka", "dep:sha2", "pipeline"]
 
 # CLI surface adapter: CliSink (indicatif spinners), DiskCheckpointStore,
 # TtyDisambiguator, install_ctrl_c_handler.
-# Adds: indicatif, inquire, crossterm, ctrlc, atty.
+# Adds: indicatif, inquire, crossterm, ctrlc.
+# TTY detection uses std::io::IsTerminal (stable since Rust 1.70, well below
+# our MSRV) instead of the `atty` crate, which carries RUSTSEC-2021-0145.
 cli = [
     "dep:indicatif",
     "dep:inquire",
     "dep:crossterm",
     "dep:ctrlc",
-    "dep:atty",
     "pipeline",
 ]
 

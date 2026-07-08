@@ -32,6 +32,11 @@ void describe('renderToon', () => {
     })
     assert.ok(out.includes('x,'))
   })
+
+  void it('throws a catchable JS error instead of hanging on an oversized rows array', () => {
+    const rows = Array.from({ length: 100_001 }, () => [{ type: 'null' }])
+    assert.throws(() => renderToon({ typeName: 'item', fields: ['a'], rows, hints: [] }), /rows length/)
+  })
 })
 
 void describe('emptyState', () => {

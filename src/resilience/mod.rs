@@ -38,25 +38,30 @@ impl Default for RetryConfig {
 
 /// Compute the delay before the next retry attempt.
 ///
-/// Uses exponential back-off: `base_delay * 2^attempt`, capped at
-/// `max_delay`, with optional jitter derived from `jitter_seed` (a value in
-/// `[0.0, 1.0]` supplied by the caller — use a PRNG, not `rand` inside michi).
+/// Uses exponential back-off: `base_delay * 2^attempt`, with optional jitter
+/// derived from `jitter_seed` (a value in `[0.0, 1.0]` supplied by the caller
+/// — use a PRNG, not `rand` inside michi) added to the pre-cap delay. The
+/// jittered total is then capped at `max_delay`, so the returned delay never
+/// exceeds `max_delay` regardless of `jitter_factor`.
 ///
 /// Returns `None` when `attempt >= config.max_retries`.
 #[must_use]
-// Casts are safe: delays are capped at max_delay (≤ 30 s by default, well within u64 ms range).
-// jitter_seed is documented as [0.0, 1.0], so the f64 product is non-negative and bounded.
+// f64 arithmetic is used only to scale the jitter factor; jitter_seed and
+// jitter_factor are documented as [0.0, 1.0], so the product is non-negative
+// and the truncating cast back to u64 cannot lose sign or go negative.
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
 pub fn next_retry_delay(config: &RetryConfig, attempt: u32, jitter_seed: f64) -> Option<Duration> {
     if attempt >= config.max_retries {
         return None;
     }
     let exp = 2u64.saturating_pow(attempt);
-    let base_ms = config.base_delay.as_millis() as u64;
+    let base_ms = u64::try_from(config.base_delay.as_millis()).unwrap_or(u64::MAX);
+    let max_ms = u64::try_from(config.max_delay.as_millis()).unwrap_or(u64::MAX);
     let raw_ms = base_ms.saturating_mul(exp);
-    let capped_ms = raw_ms.min(config.max_delay.as_millis() as u64);
-    let jitter_ms = (capped_ms as f64 * config.jitter_factor * jitter_seed) as u64;
-    Some(Duration::from_millis(capped_ms + jitter_ms))
+    let jitter_ms = (raw_ms as f64 * config.jitter_factor * jitter_seed) as u64;
+    let jittered_ms = raw_ms.saturating_add(jitter_ms);
+    let capped_ms = jittered_ms.min(max_ms);
+    Some(Duration::from_millis(capped_ms))
 }
 
 /// Parse the value of an HTTP `Retry-After` header as a delay in seconds.
@@ -151,5 +156,28 @@ mod tests {
         let no_jitter = next_retry_delay(&RetryConfig { jitter_factor: 0.0, ..config.clone() }, 0, 0.0).unwrap();
         let with_jitter = next_retry_delay(&config, 0, 1.0).unwrap();
         assert!(with_jitter > no_jitter, "jitter seed 1.0 should produce longer delay");
+    }
+
+    #[test]
+    fn jitter_never_exceeds_max_delay_when_base_already_capped() {
+        let config = RetryConfig {
+            base_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(5),
+            jitter_factor: 1.0,
+            max_retries: 10,
+        };
+        // attempt 5 -> raw exponential delay is 32s, already well past the 5s cap.
+        let delay = next_retry_delay(&config, 5, 1.0).unwrap();
+        assert!(delay <= config.max_delay, "delay {delay:?} exceeded max_delay {:?}", config.max_delay);
+    }
+
+    #[test]
+    fn extreme_duration_saturates_instead_of_wrapping() {
+        // ~584 million years in seconds; as_millis() overflows u64, so a bare
+        // `as u64` cast would silently wrap. This must saturate instead.
+        let huge = Duration::from_secs(18_446_744_073_709_552);
+        let config = RetryConfig { base_delay: huge, max_delay: huge, jitter_factor: 0.0, max_retries: 10 };
+        let delay = next_retry_delay(&config, 0, 0.0).unwrap();
+        assert!(delay.as_millis() > 1_000_000_000_000, "delay {delay:?} wrapped to a tiny value");
     }
 }
