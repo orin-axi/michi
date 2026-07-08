@@ -18,6 +18,16 @@ impl IdempotencyKey {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Construct a key from an operation name and raw input bytes, hashed
+    /// with FNV-1a for a stable, deterministic, low-collision key. Not
+    /// cryptographic — idempotency keys need stability, not security. For
+    /// maps/structs, serialize with sorted keys first (e.g. `BTreeMap`, not
+    /// `HashMap`) so the same logical input always hashes the same way.
+    #[must_use]
+    pub fn from_hash(operation: &str, data: &[u8]) -> Self {
+        Self(format!("{operation}:{:016x}", fnv1a_64(data)))
+    }
 }
 
 impl From<String> for IdempotencyKey {
@@ -83,6 +93,20 @@ impl PartialSuccess {
     }
 }
 
+/// FNV-1a 64-bit hash. Fixed, versionless algorithm — unlike
+/// `std::collections::hash_map::DefaultHasher`, whose algorithm Rust
+/// explicitly does not guarantee stays the same across compiler versions.
+fn fnv1a_64(data: &[u8]) -> u64 {
+    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = OFFSET_BASIS;
+    for &byte in data {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +133,35 @@ mod tests {
     fn idempotency_key_from_string() {
         let k: IdempotencyKey = String::from("k").into();
         assert_eq!(k.as_str(), "k");
+    }
+
+    #[test]
+    fn from_hash_is_deterministic() {
+        let a = IdempotencyKey::from_hash("create_item", b"same input");
+        let b = IdempotencyKey::from_hash("create_item", b"same input");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn from_hash_differs_by_operation() {
+        let a = IdempotencyKey::from_hash("create_item", b"x");
+        let b = IdempotencyKey::from_hash("delete_item", b"x");
+        assert_ne!(a, b, "same data, different operation, must produce different keys");
+    }
+
+    #[test]
+    fn from_hash_differs_by_data() {
+        let a = IdempotencyKey::from_hash("create_item", b"x");
+        let b = IdempotencyKey::from_hash("create_item", b"y");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn from_hash_produces_stable_known_value() {
+        // Locks the exact FNV-1a output for a fixed input, so a future accidental
+        // algorithm change is caught by a failing test, not silent key drift.
+        let key = IdempotencyKey::from_hash("op", b"data");
+        assert_eq!(key.as_str(), "op:855b556730a34a05");
     }
 
     #[test]
