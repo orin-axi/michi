@@ -64,7 +64,7 @@ pub(crate) fn render(
     fields: &[String],
     rows: &[Vec<Value>],
     total_count: Option<usize>,
-    hints: &[String],
+    hints: &[crate::hints::Hint],
     max_cell_len: usize,
 ) -> String {
     let row_count = rows.len();
@@ -141,7 +141,7 @@ pub(crate) fn render(
         out.push_str("]:\n");
         for hint in hints {
             out.push_str("  ");
-            out.push_str(hint);
+            out.push_str(hint.as_str());
             out.push('\n');
         }
     }

@@ -21,7 +21,7 @@ pub struct ToonOptions {
     /// as `totalCount: N` when `Some`.
     pub total_count: Option<usize>,
     /// Agent-facing usage hints. Emitted as `help[N]:` block when non-empty.
-    pub hints: Vec<String>,
+    pub hints: Vec<crate::hints::Hint>,
     /// Max `Value::Str` cell length in Unicode scalar values before inline
     /// truncation via [`crate::truncate::truncate_inline`]. Non-string cells
     /// are never truncated.

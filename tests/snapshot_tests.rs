@@ -16,8 +16,8 @@ fn snapshot_toon_basic_list() {
         ],
         total_count: Some(47),
         hints: vec![
-            "Call get_issue with number=<number> for full detail".into(),
-            "Call list_issues with state=open to filter".into(),
+            Hint::new("Call get_issue with number=<number> for full detail"),
+            Hint::new("Call list_issues with state=open to filter"),
         ],
         ..Default::default()
     };

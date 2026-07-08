@@ -1,4 +1,5 @@
 use divan::Bencher;
+use michi::hints::Hint;
 use michi::toon::{render_toon, ToonOptions, Value};
 
 fn main() {
@@ -15,7 +16,7 @@ fn make_opts(n: usize) -> ToonOptions {
             })
             .collect(),
         total_count: Some(1000),
-        hints: vec!["Call get_issue with number=<number>".into()],
+        hints: vec![Hint::new("Call get_issue with number=<number>")],
         ..Default::default()
     }
 }

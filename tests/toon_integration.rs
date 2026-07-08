@@ -1,3 +1,4 @@
+use michi::hints::Hint;
 use michi::toon::{render_toon, ToonOptions, Value};
 
 #[test]
@@ -10,7 +11,7 @@ fn renders_basic_list() {
             vec![Value::Int(43), Value::Str("Add dark mode".into()), Value::Str("open".into())],
         ],
         total_count: Some(47),
-        hints: vec!["Call get_issue with number=<number> for full detail".into()],
+        hints: vec![Hint::new("Call get_issue with number=<number> for full detail")],
         max_cell_len: 200,
     };
     let out = render_toon(&opts);
@@ -27,7 +28,7 @@ fn renders_empty_state() {
         fields: vec![],
         rows: vec![],
         total_count: Some(0),
-        hints: vec!["Try list_issues with a broader filter".into()],
+        hints: vec![Hint::new("Try list_issues with a broader filter")],
         max_cell_len: 200,
     };
     let out = render_toon(&opts);
@@ -97,7 +98,7 @@ fn multiple_hints_render_correctly() {
         fields: vec!["id".into()],
         rows: vec![],
         total_count: Some(0),
-        hints: vec!["hint one".into(), "hint two".into()],
+        hints: vec![Hint::new("hint one"), Hint::new("hint two")],
         max_cell_len: 200,
     };
     let out = render_toon(&opts);
@@ -194,4 +195,18 @@ fn short_cell_value_is_not_truncated() {
     let out = render_toon(&opts);
     assert!(out.contains("short"));
     assert!(!out.contains("chars truncated"));
+}
+
+#[test]
+fn hints_field_accepts_hint_type() {
+    let opts = ToonOptions {
+        type_name: "issue".to_string(),
+        fields: vec![],
+        rows: vec![],
+        total_count: None,
+        hints: vec![Hint::new("do this")],
+        max_cell_len: 200,
+    };
+    let out = render_toon(&opts);
+    assert!(out.contains("help[1]:\n  do this\n"));
 }
