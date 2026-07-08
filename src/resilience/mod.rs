@@ -76,10 +76,16 @@ pub fn parse_retry_after(header_value: &str) -> Option<Duration> {
 
 /// Return `true` if the HTTP status code is conventionally retryable.
 ///
-/// Retryable status codes: 429 (rate limit), 500, 502, 503, 504.
+/// Retryable status codes: 429 (rate limit), 502, 503, 504 (gateway/upstream
+/// unavailability). HTTP 500 is deliberately excluded — it signals a
+/// server-side bug, and retrying an unchanged request reproduces the same
+/// bug; retrying a write that returned 500 can also duplicate side effects if
+/// the server processed the request before erroring. Callers that know a
+/// specific API uses 500 for genuinely transient conditions can add it to
+/// their own retry predicate independently of this function.
 #[must_use]
 pub fn is_retryable_status(status: u16) -> bool {
-    matches!(status, 429 | 500 | 502 | 503 | 504)
+    matches!(status, 429 | 502 | 503 | 504)
 }
 
 #[cfg(test)]
@@ -143,6 +149,14 @@ mod tests {
         assert!(!is_retryable_status(201));
         assert!(!is_retryable_status(301));
         assert!(!is_retryable_status(401));
+    }
+
+    #[test]
+    fn http_500_is_not_retryable() {
+        assert!(
+            !is_retryable_status(500),
+            "500 is a server bug — retrying reproduces it and risks duplicate side effects on writes"
+        );
     }
 
     #[test]
