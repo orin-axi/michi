@@ -91,7 +91,7 @@ pub mod toon;
 pub mod truncate;
 
 // Re-export the most common types at the crate root for convenience.
-pub use error::{Error, ErrorClass, Sensitive};
+pub use error::{DomainError, Error, ErrorClass, ErrorCode, Sensitive};
 pub use hints::{append_hints, render_hints, Hint};
 pub use response::{AgentResponse, OutputFormat};
 pub use toon::{render_toon, ToonOptions, Value};

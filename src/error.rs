@@ -1,5 +1,7 @@
-#[cfg(feature = "pipeline")]
 use std::time::Duration;
+
+use crate::hints::Hint;
+use crate::recovery::RecoveryHint;
 
 /// Classification of a `michi::Error` for routing and display decisions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +33,147 @@ impl<T> std::fmt::Display for Sensitive<T> {
     }
 }
 
+/// The specific kind of domain error, independent of the pipeline-execution
+/// error variants. Each code has a default retryability and renders in
+/// snake_case via [`ErrorCode::label`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCode {
+    /// Bad parameters. Non-retryable — the agent must change something first.
+    InvalidInput,
+    /// Resource absent. Non-retryable.
+    NotFound,
+    /// Auth failure. Non-retryable.
+    Unauthorized,
+    /// Permission denied. Non-retryable.
+    Forbidden,
+    /// Resource state mismatch. Non-retryable.
+    Conflict,
+    /// Rate limited (HTTP 429). Retryable — check `retry_after`.
+    RateLimited,
+    /// Service unavailable (HTTP 503). Retryable.
+    Unavailable,
+    /// Request timed out. Retryable.
+    Timeout,
+    /// Downstream/external failure. Retryable.
+    ExternalFailure,
+}
+
+impl ErrorCode {
+    /// The snake_case label used in rendered output.
+    #[must_use]
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::InvalidInput => "invalid_input",
+            Self::NotFound => "not_found",
+            Self::Unauthorized => "unauthorized",
+            Self::Forbidden => "forbidden",
+            Self::Conflict => "conflict",
+            Self::RateLimited => "rate_limited",
+            Self::Unavailable => "unavailable",
+            Self::Timeout => "timeout",
+            Self::ExternalFailure => "external_failure",
+        }
+    }
+
+    /// Whether this code is conventionally retryable, absent an explicit
+    /// override via [`DomainError::retryable`].
+    #[must_use]
+    pub fn is_retryable_by_default(&self) -> bool {
+        matches!(self, Self::RateLimited | Self::Unavailable | Self::Timeout | Self::ExternalFailure)
+    }
+}
+
+/// A domain-level error: a classified code, message, and everything needed
+/// to render an agent-actionable response — hints, an optional structured
+/// recovery hint, and retry metadata. The HTTP-status-to-`ErrorCode` mapping
+/// is deliberately not provided here — callers interpret their own failures
+/// into an `ErrorCode`, keeping this module free of HTTP knowledge.
+#[derive(Debug, Clone)]
+pub struct DomainError {
+    /// The error classification.
+    pub code: ErrorCode,
+    /// Human-readable message.
+    pub message: String,
+    /// Contextual hints, rendered as a trailing `help[N]:` block.
+    pub hints: Vec<Hint>,
+    /// Optional structured recovery hint.
+    pub recovery: Option<RecoveryHint>,
+    /// Whether this error is safe to retry. Defaults to `code.is_retryable_by_default()`.
+    pub retryable: bool,
+    /// Parsed `Retry-After` delay, if known.
+    pub retry_after: Option<Duration>,
+}
+
+impl DomainError {
+    /// Create a domain error. `retryable` defaults from `code`.
+    pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            retryable: code.is_retryable_by_default(),
+            code,
+            message: message.into(),
+            hints: Vec::new(),
+            recovery: None,
+            retry_after: None,
+        }
+    }
+
+    /// Append a contextual hint.
+    #[must_use]
+    pub fn hint(mut self, hint: impl Into<String>) -> Self {
+        self.hints.push(Hint::new(hint));
+        self
+    }
+
+    /// Attach a structured recovery hint.
+    #[must_use]
+    pub fn recovery(mut self, r: RecoveryHint) -> Self {
+        self.recovery = Some(r);
+        self
+    }
+
+    /// Override the default retryability for this specific error instance.
+    #[must_use]
+    pub fn retryable(mut self, retryable: bool) -> Self {
+        self.retryable = retryable;
+        self
+    }
+
+    /// Attach a `Retry-After` delay.
+    #[must_use]
+    pub fn retry_after(mut self, d: Duration) -> Self {
+        self.retry_after = Some(d);
+        self
+    }
+
+    /// The process exit code to use when this error is fatal. Always `1`.
+    #[must_use]
+    pub fn exit_code(&self) -> i32 {
+        1
+    }
+
+    /// Render to an agent-readable KV block with exit code and hints.
+    ///
+    /// Format:
+    /// ```text
+    /// error: not_found
+    /// message: Issue #9999 does not exist in this repository
+    /// exit_code: 1
+    /// help[1]:
+    ///   Call list_issues to see available numbers
+    /// ```
+    #[must_use]
+    pub fn render(&self) -> String {
+        let mut out = String::with_capacity(64 + self.message.len() + self.hints.len() * 50);
+        out.push_str("error: ");
+        out.push_str(self.code.label());
+        out.push_str("\nmessage: ");
+        out.push_str(&self.message);
+        out.push_str("\nexit_code: 1\n");
+        crate::hints::append_hints(&mut out, &self.hints);
+        out
+    }
+}
+
 /// The unified error type for the michi crate.
 ///
 /// Carries both agent-renderable information (via [`Error::render`]) and
@@ -48,6 +191,10 @@ pub enum Error {
     /// A required resource was not found.
     #[error("Not found: {0}")]
     NotFound(String),
+
+    /// A classified domain error with hints, recovery, and retry metadata.
+    #[error("{}: {}", .0.code.label(), .0.message)]
+    Domain(DomainError),
 
     // ── Execution errors (pipeline feature — Plan 2) ───────────────────────
     /// An HTTP request returned a non-success status code.
@@ -142,7 +289,10 @@ impl Error {
     /// [`Error::exit_code`].
     #[must_use]
     pub fn render(&self) -> String {
-        format!("error: {self}")
+        match self {
+            Self::Domain(d) => d.render(),
+            other => format!("error: {other}"),
+        }
     }
 
     /// The process exit code to use when this error is fatal.
@@ -156,6 +306,8 @@ impl Error {
     pub fn class(&self) -> ErrorClass {
         match self {
             Self::InvalidInput(_) | Self::NotFound(_) => ErrorClass::User,
+            Self::Domain(d) if d.retryable => ErrorClass::Transient,
+            Self::Domain(_) => ErrorClass::User,
             #[cfg(feature = "pipeline")]
             Self::Http { retryable: true, .. } | Self::Timeout { .. } | Self::Cancelled => ErrorClass::Transient,
             #[cfg(feature = "pipeline")]
@@ -242,5 +394,78 @@ mod tests {
         let e = Error::StepFailed { id: "validate".into(), source: Box::new(Error::InvalidInput("bad field".into())) };
         assert_eq!(e.class(), ErrorClass::User);
         assert!(!e.is_retryable());
+    }
+
+    #[test]
+    fn error_code_labels_are_snake_case() {
+        assert_eq!(ErrorCode::InvalidInput.label(), "invalid_input");
+        assert_eq!(ErrorCode::NotFound.label(), "not_found");
+        assert_eq!(ErrorCode::Unauthorized.label(), "unauthorized");
+        assert_eq!(ErrorCode::Forbidden.label(), "forbidden");
+        assert_eq!(ErrorCode::Conflict.label(), "conflict");
+        assert_eq!(ErrorCode::RateLimited.label(), "rate_limited");
+        assert_eq!(ErrorCode::Unavailable.label(), "unavailable");
+        assert_eq!(ErrorCode::Timeout.label(), "timeout");
+        assert_eq!(ErrorCode::ExternalFailure.label(), "external_failure");
+    }
+
+    #[test]
+    fn non_retryable_codes() {
+        for code in [
+            ErrorCode::InvalidInput,
+            ErrorCode::NotFound,
+            ErrorCode::Unauthorized,
+            ErrorCode::Forbidden,
+            ErrorCode::Conflict,
+        ] {
+            assert!(!code.is_retryable_by_default(), "{code:?} should not be retryable by default");
+        }
+    }
+
+    #[test]
+    fn retryable_codes() {
+        for code in [ErrorCode::RateLimited, ErrorCode::Unavailable, ErrorCode::Timeout, ErrorCode::ExternalFailure] {
+            assert!(code.is_retryable_by_default(), "{code:?} should be retryable by default");
+        }
+    }
+
+    #[test]
+    fn domain_error_renders_kv_block_with_hints() {
+        let e = DomainError::new(ErrorCode::NotFound, "Issue #9999 does not exist in this repository")
+            .hint("Call list_issues to see available numbers");
+        let out = e.render();
+        assert_eq!(
+            out,
+            "error: not_found\nmessage: Issue #9999 does not exist in this repository\nexit_code: 1\nhelp[1]:\n  Call list_issues to see available numbers\n"
+        );
+    }
+
+    #[test]
+    fn domain_error_exit_code_is_always_one() {
+        let e = DomainError::new(ErrorCode::RateLimited, "slow down");
+        assert_eq!(e.exit_code(), 1);
+    }
+
+    #[test]
+    fn domain_error_retryable_defaults_from_code_but_is_overridable() {
+        let default_retryable = DomainError::new(ErrorCode::RateLimited, "x");
+        assert!(default_retryable.retryable);
+        let overridden = DomainError::new(ErrorCode::NotFound, "x").retryable(true);
+        assert!(overridden.retryable, "explicit .retryable() call overrides the code's default");
+    }
+
+    #[test]
+    fn domain_error_carries_recovery() {
+        let e = DomainError::new(ErrorCode::Conflict, "already exists").recovery(RecoveryHint::new("get_issue"));
+        assert_eq!(e.recovery.as_ref().unwrap().tool, "get_issue");
+    }
+
+    #[test]
+    fn error_domain_variant_wraps_domain_error() {
+        let e = Error::Domain(DomainError::new(ErrorCode::NotFound, "gone"));
+        assert_eq!(e.class(), ErrorClass::User);
+        assert!(!e.is_retryable());
+        assert_eq!(e.exit_code(), 1);
+        assert!(e.render().starts_with("error: not_found\n"));
     }
 }
