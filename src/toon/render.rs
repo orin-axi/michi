@@ -104,8 +104,15 @@ pub(crate) fn render(
             }
             match val {
                 Value::Str(s) => {
-                    let truncated = crate::truncate::truncate_inline(s, max_cell_len, "full=true");
-                    out.push_str(&escape_value(&truncated));
+                    // Byte length is always >= char count, so this check never
+                    // false-negatives; it lets the common (short, untruncated)
+                    // cell skip truncate_inline's allocation entirely.
+                    if s.len() <= max_cell_len {
+                        out.push_str(&escape_value(s));
+                    } else {
+                        let truncated = crate::truncate::truncate_inline(s, max_cell_len, "full=true");
+                        out.push_str(&escape_value(&truncated));
+                    }
                 }
                 Value::Int(n) => {
                     let _ = write!(out, "{n}");
