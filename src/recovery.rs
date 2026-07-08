@@ -37,13 +37,13 @@ impl RecoveryHint {
 }
 
 /// Render a single [`KvValue`] as plain text (no key, no trailing newline).
-pub(crate) fn kv_value_str(v: &KvValue) -> String {
+pub(crate) fn kv_value_str(v: &KvValue) -> std::borrow::Cow<'_, str> {
     match v {
-        KvValue::Str(s) => s.clone(),
-        KvValue::Int(n) => n.to_string(),
-        KvValue::Float(f) => f.to_string(),
-        KvValue::Bool(b) => (if *b { "true" } else { "false" }).to_string(),
-        KvValue::Null => String::new(),
+        KvValue::Str(s) => std::borrow::Cow::Borrowed(s.as_str()),
+        KvValue::Int(n) => std::borrow::Cow::Owned(n.to_string()),
+        KvValue::Float(f) => std::borrow::Cow::Owned(f.to_string()),
+        KvValue::Bool(b) => std::borrow::Cow::Borrowed(if *b { "true" } else { "false" }),
+        KvValue::Null => std::borrow::Cow::Borrowed(""),
     }
 }
 
@@ -105,7 +105,6 @@ pub fn append_recovery(out: &mut String, hints: &[RecoveryHint]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kv::KvValue;
 
     #[test]
     fn hint_with_params_renders_suggested_params() {
@@ -130,6 +129,15 @@ mod tests {
         let out = render_recovery(&hints);
         assert!(out.contains("retry_call"));
         assert!(out.contains("rate limit hit"));
+    }
+
+    #[test]
+    fn hint_with_params_and_reason_renders_both_in_order() {
+        let hints = [RecoveryHint::new("assign_user")
+            .param("user", KvValue::Str("alice".to_string()))
+            .reason("user 'ghost' not found")];
+        let out = render_recovery(&hints);
+        assert_eq!(out, "recovery[1]:\n  assign_user: suggestedParams: { user: alice } — user 'ghost' not found\n");
     }
 
     #[test]
