@@ -120,12 +120,19 @@ Any TypeScript MCP server
 
 ## Cargo.toml
 
+> Deviations from earlier drafts of this section are tracked in
+> `docs/superpowers/plans/2026-07-08-spec-parity.md`'s Design Decisions table.
+> This section shows the actual, shipped Plan 1 (pure-primitives) surface —
+> the workspace `Cargo.toml` also carries a `pipeline`/`fuzzy`/`cache`/`cli`/
+> `mcp`/`full` feature set for the execution layer (Plan 2), which is out of
+> scope for this spec.
+
 ```toml
 [package]
 name = "michi"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.93"
+rust-version = "1.96"
 description = "AXI response primitives for agent-ergonomic tools"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/orin-axi/michi"
@@ -138,27 +145,21 @@ napi    = ["dep:napi", "dep:napi-derive"]
 cli     = []  # reserved: terminal-width-aware rendering, colour support
 
 [dependencies]
-serde      = { version = "1", features = ["derive"] }
-serde_json = "1"
 thiserror  = "2"
 
 [dependencies.napi]
-version  = "2"
-features = ["napi4"]
+version  = "3"
+features = ["napi6"]
 optional = true
 
 [dependencies.napi-derive]
-version  = "2"
-optional = true
-
-[build-dependencies.napi-build]
-version  = "1"
+version  = "3"
 optional = true
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-proptest  = "1"
-insta     = { version = "1", features = ["yaml"] }
+divan    = "0.1"
+proptest = "1"
+insta    = { version = "1", features = ["yaml"] }
 
 [[bench]]
 name    = "toon_render"
@@ -169,9 +170,21 @@ name    = "kv_render"
 harness = false
 ```
 
-The `napi = { features = ["napi4"] }` selection is deliberate — `napi4` is the
-lowest Node-API level that exposes `ThreadsafeFunction` and the async machinery
-napi-rs needs. See the NAPI section for the full rationale.
+`serde`/`serde_json` are deliberately absent — an earlier draft listed them as
+unconditional dependencies, which an adversarial review found unused outside
+NAPI-boundary conversions and removed, restoring the "zero deps by default"
+guarantee this crate promises. `kv::KvValue` (typed scalar enum) fills the
+same role `serde_json::Value` would have, at zero dependency cost. Benchmarks
+use `divan`, not `criterion`, per this crate's own non-negotiables.
+
+`napi-build` is not a dependency of *this* crate's `Cargo.toml` — the actual
+napi-rs build step lives in `packages/michi-node/Cargo.toml`
+(`[build-dependencies] napi-build = "2"`), since that's the cdylib crate napi
+build tooling actually compiles.
+
+The `napi = { features = ["napi6"] }` selection is deliberate — see the NAPI
+section for the full rationale (napi-rs v3 removed the Docker cross-compile
+requirement v2 had, so this crate moved off `napi4`/v2 as soon as v3 shipped).
 
 ---
 
@@ -192,7 +205,7 @@ michi/
     hints.rs                    # Hint, render_hints(), append_hints()
     truncate.rs                 # Truncated, truncate(), truncate_inline()
     empty.rs                    # empty_state(), empty_state_with_hints()
-    error.rs                    # AxiError, ErrorCode
+    error.rs                    # Error, ErrorCode, DomainError
     idempotency.rs              # IdempotencyKey, already_done(), PartialSuccess
     resilience.rs               # RetryConfig, parse_retry_after(), next_retry_delay()
     status.rs                   # StatusItem, StatusResponse, Health
@@ -217,7 +230,7 @@ packages/michi-node/            # NAPI wrapper (npm: michi)
   src/
     lib.rs                      # #[napi] exports wrapping crate functions
   __test__/
-    index.test.mjs              # Jest NAPI integration tests
+    index.test.mjs              # node:test NAPI integration tests
 ```
 
 ---
@@ -333,17 +346,31 @@ pub mod truncate;
 
 // Top-level re-exports for the common path
 pub use empty::empty_state;
-pub use error::{AxiError, ErrorCode};
-pub use hints::Hint;
-pub use idempotency::{already_done, FailedOp, PartialSuccess};
+pub use error::{DomainError, Error, ErrorClass, ErrorCode, Sensitive};
+pub use hints::{append_hints, render_hints, Hint};
+pub use idempotency::{already_done, render_already_done, AlreadyDone, FailedOp, IdempotencyKey, PartialSuccess};
 pub use kv::render_kv;
 pub use recovery::RecoveryHint;
-pub use resilience::{parse_retry_after, next_retry_delay, RetryConfig};
+pub use resilience::{next_retry_delay, parse_retry_after, RetryConfig};
 pub use response::{AgentResponse, OutputFormat};
 pub use status::StatusResponse;
-pub use toon::render_toon;
-pub use truncate::{truncate, truncate_inline};
+pub use toon::{render_toon, ToonOptions, Value};
+pub use truncate::{truncate, truncate_inline, Truncated};
 ```
+
+`error::AxiError` in an earlier draft is `error::{DomainError, Error, ...}`
+today — see the `error` section for the rename/split rationale. The
+re-export list also grew several items an earlier draft didn't list at all
+(`append_hints`/`render_hints`, `render_already_done`/`AlreadyDone`/
+`IdempotencyKey`, `ToonOptions`/`Value`, `Truncated`) as those types and
+functions were built out; none of these are behavioral deviations, just an
+incomplete original list.
+
+The actual crate additionally has `pipeline`, `sink`, `telemetry`, and (behind
+the `napi` feature) `napi` modules, plus a `pipeline`/`fuzzy`/`cache`/`cli`/
+`mcp`/`full` feature set — the execution layer referenced in `CLAUDE.md`'s
+module guide as "Plan 2." That surface is out of scope for this spec, which
+documents only the pure-primitives (Plan 1) API above.
 
 ---
 
@@ -361,35 +388,47 @@ the supplement for the exact heuristic). This is the hot path — no intermediat
 allocations. The `escape.rs` submodule handles comma/quote escaping inline
 without heap allocation for the common case (no special characters).
 
+An earlier draft of this section split `render_toon()`'s arguments across
+five positional parameters plus a `ToonOptions` bag holding only
+`max_cell_len`/`total_count`. The shipped signature instead folds every
+input — including `type_name`/`fields`/`rows`/`hints` — into `ToonOptions`
+itself, taken by reference:
+
 ```rust
 pub struct ToonOptions {
-    /// Max cell value length before inline truncation.
-    /// Appends "(N chars truncated — use full=true)" when exceeded.
-    /// Default: 200
-    pub max_cell_len: usize,
+    /// Snake_case type name, e.g. "issue", "component".
+    pub type_name: String,
+    /// Ordered field names for the header.
+    pub fields: Vec<String>,
+    /// Rows, each a Vec of values parallel to `fields`.
+    pub rows: Vec<Vec<Value>>,
     /// Total items available. May exceed rows rendered.
     /// Emitted as "totalCount: N" line when Some. This is the canonical
     /// AXI P4 (pre-computed aggregate) — it tells the agent how many items
     /// exist without forcing a follow-up call.
-    pub total_count: Option<u64>,
+    pub total_count: Option<usize>,
+    /// Agent-facing usage hints. Emitted as `help[N]:` block when non-empty.
+    pub hints: Vec<Hint>,
+    /// Max cell value length before inline truncation.
+    /// Appends "(N chars truncated — use full=true)" when exceeded.
+    /// Default: 200
+    pub max_cell_len: usize,
 }
 
-impl Default for ToonOptions { ... }
+impl Default for ToonOptions { ... } // max_cell_len: 200
 
-/// Render items as TOON.
+/// Render a TOON document to a string.
 ///
-/// # Panics (debug only)
-/// Panics if any `row.len() != fields.len()`.
-/// In release builds, mismatched rows are silently skipped.
+/// # Panics
+/// In debug builds, panics if any row's length doesn't match `fields.len()`.
+/// Release builds render the mismatched row as-is — a development-time
+/// correctness signal, not an input-validation guarantee (an earlier draft
+/// said release builds "silently skip" a mismatched row; the shipped
+/// function has never indexed by field position, so there is nothing to
+/// skip — a mismatched row already renders every value it has).
 ///
-/// Returns empty-state TOON when `items` is empty.
-pub fn render_toon(
-    type_name: &str,
-    items: &[Vec<Value>],
-    fields: &[&str],
-    hints: &[Hint],
-    opts: ToonOptions,
-) -> String
+/// Returns empty-state TOON when `rows` is empty.
+pub fn render_toon(opts: &ToonOptions) -> String
 
 pub enum Value {
     Str(String),
@@ -438,7 +477,7 @@ pub enum KvValue {
 /// Appends totalCount and help[] block when provided.
 pub fn render_kv(
     items: &[KvItem],
-    total_count: Option<u64>,
+    total_count: Option<usize>,
     hints: &[Hint],
 ) -> String
 ```
@@ -549,28 +588,24 @@ Implements **AXI Principle 6 (Structured Errors and Exit Codes)**: errors are
 written to **stdout** (not stderr), carry a clean exit code (`0` success, `1`
 error), carry recovery hints, and never block on interactive prompts. Agents
 cannot answer `Are you sure? [y/n]`, may not capture stderr at all, and cannot
-reliably parse freeform error text. `AxiError` encodes the structured contract
-as a type.
+reliably parse freeform error text. `DomainError` encodes the structured
+contract as a type.
 
 The HTTP status → `ErrorCode` mapping is NOT in michi — callers produce an
 `ErrorCode` after interpreting whatever failure occurred. This keeps the
 module free of HTTP knowledge.
 
+An earlier draft of this section named this type `AxiError` and had it be
+the crate's whole error type. The actual, shipped shape splits this in two:
+`DomainError` (below) is the pure data/render type this section describes;
+`Error` is a `thiserror`-derived enum with a `Domain(DomainError)` variant
+alongside separate, always-compiled `InvalidInput(String)`/`NotFound(String)`
+variants and (behind the `pipeline` feature) execution-layer variants like
+`Http`/`Timeout`/`StepFailed` that need `#[source]`-chaining, which a single
+struct can't express. `Error::render()`/`Error::class()`/`Error::exit_code()`
+delegate to `DomainError`'s when the variant is `Domain`.
+
 ```rust
-#[derive(Debug, thiserror::Error)]
-pub struct AxiError {
-    pub code:        ErrorCode,
-    pub message:     String,
-    pub hints:       Vec<Hint>,
-    pub recovery:    Option<RecoveryHint>,
-    pub retryable:   bool,
-    pub retry_after: Option<std::time::Duration>,
-}
-
-impl std::fmt::Display for AxiError {
-    // delegates to render()
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
     // Non-retryable — agent should not retry without changing params
@@ -587,27 +622,60 @@ pub enum ErrorCode {
     ExternalFailure, // downstream error
 }
 
-impl AxiError {
+impl ErrorCode {
+    /// The snake_case label used in rendered output.
+    pub fn label(&self) -> &'static str
+    /// Whether this code is conventionally retryable, absent an explicit
+    /// override via `DomainError::retryable`.
+    pub fn is_retryable_by_default(&self) -> bool
+}
+
+/// A domain-level error: a classified code, message, and everything needed
+/// to render an agent-actionable response.
+#[derive(Debug, Clone)]
+pub struct DomainError {
+    pub code:        ErrorCode,
+    pub message:     String,
+    pub hints:       Vec<Hint>,
+    pub recovery:    Option<RecoveryHint>,
+    pub retryable:   bool,
+    pub retry_after: Option<std::time::Duration>,
+}
+
+impl DomainError {
+    /// `retryable` defaults from `code.is_retryable_by_default()`.
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self
     pub fn hint(mut self, hint: impl Into<String>) -> Self
     pub fn recovery(mut self, r: RecoveryHint) -> Self
+    /// Override the default retryability for this specific error instance.
+    pub fn retryable(mut self, retryable: bool) -> Self
     pub fn retry_after(mut self, d: std::time::Duration) -> Self
 
     /// Render to stdout-ready string with hints attached.
     pub fn render(&self) -> String
 
     /// AXI exit codes: 0 = success/already_done, 1 = all other errors.
-    /// Callers should not invent additional codes.
+    /// Callers should not invent additional codes. Always `1` today — michi
+    /// has no error path that maps to a nonzero-but-not-1 exit code.
     pub fn exit_code(&self) -> i32
+}
+
+/// The unified error type for the michi crate. Carries both agent-renderable
+/// information (`Error::render()`) and machine-readable classification
+/// (`Error::class() -> ErrorClass`). Execution-layer variants (`Http`,
+/// `Timeout`, etc.) exist only when the `pipeline` feature is enabled.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    InvalidInput(String),
+    NotFound(String),
+    Domain(DomainError),
+    // ...execution-layer variants behind `pipeline` — out of scope here.
 }
 ```
 
-The `thiserror::Error` derive plus the `Display` impl (which delegates to
-`render()`) make `AxiError` usable with `?` in ordinary Rust call sites.
-`ErrorCode` is `Copy + Eq` so callers can match and compare it freely.
-
-`ErrorCode` renders as snake_case. `render()` produces a KV-shaped block on
-stdout, e.g. for `AxiError::new(ErrorCode::NotFound, "Issue #9999 does not
+`ErrorCode` is `Copy + Eq` so callers can match and compare it freely, and
+renders as snake_case. `DomainError::render()` produces a KV-shaped block on
+stdout, e.g. for `DomainError::new(ErrorCode::NotFound, "Issue #9999 does not
 exist in this repository").hint("Call list_issues to see available numbers")`:
 
 ```
@@ -628,22 +696,52 @@ write operations must be idempotent so an agent can confidently retry a
 transient failure without duplicating records. The caller owns the persistence
 layer that tracks what has been done; michi provides the rendering contract.
 
+An earlier draft of this section modeled `already_done()` as a single
+function that both checks *and* renders. The shipped design splits these
+into two independent, unrelated-by-name functions, because michi owns no
+persistence layer and therefore cannot itself decide whether an operation
+was already done — only the caller's store can:
+
 ```rust
 /// A canonical idempotency key.
 pub struct IdempotencyKey(pub String);
 
 impl IdempotencyKey {
-    /// Construct from operation name + a stable string representation of inputs.
-    pub fn new(operation: &str, stable_input: &str) -> Self
-    /// Construct from operation name + raw bytes (SHA-256 hashed).
+    /// Construct from any string-like value. Unlike an earlier draft's
+    /// `new(operation, stable_input)`, this takes a single already-combined
+    /// key string — callers that want an operation-name-plus-input key build
+    /// it themselves (e.g. `format!("{operation}:{stable_input}")`) before
+    /// calling `new`, or use `from_hash` below.
+    pub fn new(s: impl Into<String>) -> Self
+    /// Construct from an operation name and raw input bytes, hashed with
+    /// FNV-1a (not SHA-256, per the zero-dep rationale — see
+    /// `docs/superpowers/plans/2026-07-08-spec-parity.md`'s Design Decisions
+    /// table: idempotency keys need stability and low collision, not
+    /// cryptographic security, and `sha2` is gated behind the `cache`
+    /// feature only).
     pub fn from_hash(operation: &str, data: &[u8]) -> Self
     pub fn as_str(&self) -> &str
 }
 
-/// Render an already-done response.
-/// Exits 0 — this is a successful no-op, not an error.
-/// Produces a kv block with operation status + hints.
-pub fn already_done(
+/// Result of an idempotency check.
+pub enum AlreadyDone {
+    /// The operation completed in a previous call.
+    Yes { result: String },
+    /// The operation has not been seen before — proceed with execution.
+    No,
+}
+
+/// Check whether an operation has already completed. Pass `stored` as
+/// `Some(result)` if a lookup in your own store by `IdempotencyKey` found an
+/// entry; `None` if not. A pure check — does not render anything.
+pub fn already_done(stored: Option<String>) -> AlreadyDone
+
+/// Render an already-done response for the agent. Independent of
+/// `already_done()` above — call this regardless of how you detected the
+/// no-op; that check function is one option, not a prerequisite.
+/// Exits 0 — this is a successful no-op, not an error (exit code is the
+/// caller's responsibility; this function only renders).
+pub fn render_already_done(
     operation: &str,
     summary: &str,
     hints: &[Hint],
@@ -670,9 +768,10 @@ impl PartialSuccess {
 }
 ```
 
-`already_done()` renders a KV block and exits `0` (a successful no-op, not an
-error), e.g. `already_done("create_issue", "Issue #42 already exists with
-identical fields", &[Hint::new("Call get_issue with number=42 to view it")])`:
+`render_already_done()` renders a KV block and exits `0` (a successful no-op,
+not an error), e.g. `render_already_done("create_issue", "Issue #42 already
+exists with identical fields", &[Hint::new("Call get_issue with number=42 to
+view it")])`:
 
 ```
 operation: create_issue
@@ -684,7 +783,10 @@ help[1]:
 
 `PartialSuccess::render()` is the most complex output in the crate. It leads
 with a P4 summary line, then emits one block per outcome category, then folds
-any per-op recovery hints into a trailing `help[]` block:
+any per-op recovery hints into a trailing `help[]` block (rendered via the
+same per-hint formatting `recovery::render_recovery` uses — `tool: suggestedParams:
+{ key: value, ... }` — not the `"Retry {tool} with..."` phrasing or quoted
+string values an earlier draft of this example showed):
 
 ```
 partial_success: 2 completed, 1 failed, 1 skipped
@@ -696,7 +798,7 @@ failed[1]{operation,reason}:
 skipped[1]:
   notify_team
 help[1]:
-  Retry assign_user with suggestedParams: { user: "alice" }
+  assign_user: suggestedParams: { user: alice }
 ```
 
 Empty categories are omitted (no `skipped[0]` line when nothing was skipped).
@@ -711,39 +813,46 @@ actual retry loop; michi provides the delay calculation and header parsing.
 
 ```rust
 pub struct RetryConfig {
-    pub max_attempts:   u32,
-    pub initial_delay:  std::time::Duration,
-    pub max_delay:      std::time::Duration,
-    pub backoff_factor: f64,
-    pub jitter:         bool,
+    pub max_retries:   u32,
+    pub base_delay:    std::time::Duration,
+    pub max_delay:     std::time::Duration,
+    pub jitter_factor: f64,
 }
 
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
-            max_attempts:   3,
-            initial_delay:  std::time::Duration::from_secs(1),
-            max_delay:      std::time::Duration::from_secs(30),
-            backoff_factor: 2.0,
-            jitter:         true,
+            max_retries:   3,
+            base_delay:    std::time::Duration::from_millis(500),
+            max_delay:     std::time::Duration::from_secs(30),
+            jitter_factor: 0.2,
         }
     }
 }
 
-/// Parse a Retry-After header value.
+/// Parse a Retry-After header value, relative to the current wall-clock time.
 /// Accepts integer seconds ("120") or HTTP-date ("Wed, 21 Oct 2026 07:28:00 GMT").
 /// Returns None for malformed or absent values.
-pub fn parse_retry_after(value: &str) -> Option<std::time::Duration>
+pub fn parse_retry_after(header_value: &str) -> Option<std::time::Duration>
 
-/// Compute the next retry delay.
-/// Applies exponential backoff, optional jitter, and clamps to max_delay.
-/// Respects retry_after when provided — returns the larger of backoff and header.
-/// Always returns at least initial_delay.
+/// Like `parse_retry_after`, but takes the current time explicitly instead of
+/// reading the system clock — deterministic and testable. `now` matters only
+/// for the HTTP-date form; the delay-seconds form ignores it entirely.
+pub fn parse_retry_after_at(header_value: &str, now: std::time::SystemTime) -> Option<std::time::Duration>
+
+/// Compute the delay before the next retry attempt.
+/// Applies exponential backoff (`base_delay * 2^attempt`) with jitter derived
+/// from `jitter_seed` (caller-supplied, in [0.0, 1.0] — use a PRNG, not `rand`
+/// inside michi). If `retry_after` is `Some`, the result is the larger of the
+/// computed backoff and `retry_after`; either way the result is capped at
+/// `max_delay`, so a server-supplied `Retry-After` can never force an
+/// unbounded wait. Returns `None` when `attempt >= config.max_retries`.
 pub fn next_retry_delay(
-    attempt: u32,
     config: &RetryConfig,
+    attempt: u32,
+    jitter_seed: f64,
     retry_after: Option<std::time::Duration>,
-) -> std::time::Duration
+) -> Option<std::time::Duration>
 
 /// Whether a status code is conventionally retryable.
 /// Returns true for: 429, 502, 503, 504.
@@ -751,16 +860,31 @@ pub fn next_retry_delay(
 pub fn is_retryable_status(status: u16) -> bool
 ```
 
+`RetryConfig`'s field names (`max_retries`/`base_delay`/`jitter_factor: f64`)
+and `next_retry_delay`'s signature differ from earlier drafts of this section
+— see `docs/superpowers/plans/2026-07-08-spec-parity.md`'s Design Decisions
+table. `jitter_factor: f64` is strictly more capable than a `jitter: bool`
+(supports partial jitter, not just full-jitter-or-none), and was the subject
+of an adversarially-reviewed bug fix (jitter previously could exceed
+`max_delay`); `next_retry_delay`'s 4-parameter signature (`config`, `attempt`,
+`jitter_seed`, `retry_after`) reflects that fix plus the `retry_after`
+integration below. `next_retry_delay` returns `Option` (not a bare
+`Duration`) so a caller can distinguish "one more attempt, with this delay"
+from "retries exhausted" — spec's "always returns at least initial_delay"
+framing predates that signal.
+
 Usage pattern for a caller implementing their own retry loop:
 ```rust
 let config = RetryConfig::default();
-for attempt in 0..config.max_attempts {
+for attempt in 0..config.max_retries {
     match call_api() {
         Ok(result) => return Ok(result),
         Err(e) if michi::resilience::is_retryable_status(e.status) => {
             let retry_after = e.retry_after_header
                 .and_then(|h| michi::resilience::parse_retry_after(&h));
-            let delay = michi::resilience::next_retry_delay(attempt, &config, retry_after);
+            let Some(delay) = michi::resilience::next_retry_delay(&config, attempt, jitter_seed(), retry_after) else {
+                return Err(e); // retries exhausted
+            };
             sleep(delay).await;
         }
         Err(e) => return Err(e),
@@ -834,19 +958,37 @@ dead end. `render_recovery()` formats them as a `help[]` block carrying
 ```rust
 pub struct RecoveryHint {
     pub tool:   String,
-    pub params: Vec<(String, serde_json::Value)>,
+    pub params: Vec<(String, crate::kv::KvValue)>,
     pub reason: Option<String>,
 }
 
 impl RecoveryHint {
     pub fn new(tool: impl Into<String>) -> Self
-    pub fn param(mut self, key: impl Into<String>, val: impl Into<serde_json::Value>) -> Self
+    pub fn param(mut self, key: impl Into<String>, value: KvValue) -> Self
     pub fn reason(mut self, reason: impl Into<String>) -> Self
 }
 
 /// Render recovery hints as a help[] block with suggestedParams.
 pub fn render_recovery(hints: &[RecoveryHint]) -> String
 ```
+
+`params` uses `kv::KvValue` rather than `serde_json::Value` — the same
+zero-dependency rationale as elsewhere in this spec (see the Cargo.toml
+section): `KvValue`'s `Text`/`Int`/`Float`/`Bool`/`Duration`/`Missing`
+variants carry equivalent expressiveness for recovery params without pulling
+in `serde_json`. This resolves Q5 below.
+
+Text-format rendering (`render_recovery()`, the `recovery[N]:` block) always
+stringifies every param value (`{ user: alice, seconds: 30 }` — no quotes,
+since it's plain text, not JSON). JSON-format rendering
+(`AgentResponse::render_json()`, see the `response` section) is different:
+it emits each param using its *native* JSON type — `KvValue::Int`/`Float`/
+`Bool` as unquoted JSON literals, `KvValue::Text` as a quoted JSON string,
+`KvValue::Missing` as `null` — so a downstream JSON consumer (a TypeScript/
+MCP client) receives typed values instead of every value flattened to a
+string. This was a real, adversarially-found gap in an earlier
+implementation (recovery params were stringified even in JSON output); it is
+now fixed and covered by tests in `src/response.rs` and `src/kv/mod.rs`.
 
 ---
 
@@ -866,22 +1008,27 @@ Callers use this rather than calling individual render functions directly.
 /// Use `.items()` for 5+ uniform rows. Use `.kv_items()` for single items,
 /// status data, or heterogeneous metadata.
 pub struct AgentResponse {
-    type_name:      String,
-    items:          Vec<Vec<Value>>,
-    fields:         Vec<String>,
-    single_item:    Vec<kv::KvItem>,
-    total_count:    Option<u64>,
-    hints:          Vec<Hint>,
-    recovery:       Vec<RecoveryHint>,
-    truncate_cells: usize,
+    type_name:         String,
+    items:             Vec<Vec<Value>>,
+    fields:            Vec<String>,
+    single_item:       Vec<kv::KvItem>,
+    total_count:       Option<usize>,
+    hints:             Vec<Hint>,
+    recovery:          Vec<RecoveryHint>,
+    truncate_cells_at: usize,
+    is_error:          bool,
 }
 
+/// The serialisation format for `AgentResponse::render`. Only two variants —
+/// unlike an earlier draft's three-way `Toon`/`Kv`/`Json` split, the TOON-vs-KV
+/// choice is decided by which of `.items()`/`.kv_items()` was called (see
+/// `target`, below), not by a value passed to `render()`. `OutputFormat` only
+/// selects text vs. JSON.
 pub enum OutputFormat {
-    /// TOON — token-efficient list format for audience:["assistant"]
-    Toon,
-    /// Markdown-KV — for single items and status
-    Kv,
-    /// Compact JSON — for structuredContent or client tooling
+    /// Plain-text TOON / kv format (whichever `.items()`/`.kv_items()`
+    /// populated last). Default.
+    Text,
+    /// Compact JSON object — field names match the builder setters.
     Json,
 }
 
@@ -890,7 +1037,7 @@ impl AgentResponse {
 
     // List path (→ TOON)
     pub fn items(mut self, rows: Vec<Vec<Value>>, fields: &[&str]) -> Self
-    pub fn total_count(mut self, n: u64) -> Self
+    pub fn total_count(mut self, n: usize) -> Self
 
     // Single-item path (→ KV)
     pub fn kv_items(mut self, items: Vec<kv::KvItem>) -> Self
@@ -900,26 +1047,57 @@ impl AgentResponse {
     pub fn hints(mut self, hints: Vec<Hint>) -> Self
     pub fn recovery_hint(mut self, r: RecoveryHint) -> Self
     pub fn truncate_cells_at(mut self, limit: usize) -> Self
+    /// Mark this response as an error state — reflected in `OutputFormat::Json`'s
+    /// `isError` field. Beyond spec: maps directly onto MCP's `CallToolResult.isError`.
+    pub fn as_error(mut self) -> Self
 
     pub fn render(&self, format: OutputFormat) -> String
-    pub fn render_toon(&self) -> String       // shorthand → OutputFormat::Toon
-    pub fn render_kv(&self) -> String         // shorthand → OutputFormat::Kv
-    pub fn render_json(&self) -> serde_json::Value
+    /// Reads the TOON slot (`items`/`fields`/`total_count`) unconditionally —
+    /// not a shorthand for `render(OutputFormat::Text)`, which instead follows
+    /// whichever of `.items()`/`.kv_items()` was called last. See below.
+    pub fn render_toon(&self) -> String
+    /// Reads the KV slot (`single_item`/`total_count`) unconditionally — the
+    /// KV-path counterpart of `render_toon()`.
+    pub fn render_kv(&self) -> String
     pub fn render_hints_only(&self) -> String // see supplement: three-surface seam
 }
-
-// Safety: all fields are owned, no interior mutability
-unsafe impl Send for AgentResponse {}
-unsafe impl Sync for AgentResponse {}
 ```
 
+`total_count`/`truncate_cells_at` use `usize`, not `u64` — `u64` in an
+earlier draft would have needed a lossy cast on 32-bit targets for no
+benefit; `usize` matches every other length-shaped field in the crate.
+`is_error: bool`/`.as_error()` and JSON's `isError` field are additions
+beyond this section's earlier draft: they let `AgentResponse` map directly
+onto MCP's `CallToolResult.isError` without a separate wrapper type.
+`render_json(&self) -> String` is **not** a public method on `AgentResponse`
+in Rust — JSON is reached via `render(OutputFormat::Json)`, matching the rest
+of the crate's zero-`serde_json` design (see Cargo.toml section); it is
+hand-built JSON text, not `serde_json::Value`. The NAPI wrapper (see below)
+does expose a convenience `renderJson(): string` method, since TypeScript
+callers benefit from not having to import an `OutputFormat` enum just to
+reach the JSON path.
+
 The `items` (TOON) and `single_item` (KV) slots are stored independently, so
-the two paths never conflict at the data level. Each render method reads only
-its own slot: `render_toon()` uses `items`/`fields`, `render_kv()` uses
-`single_item`. If a caller populates both and then calls `render(OutputFormat)`,
-the requested format wins and the other slot is ignored — calling both setters
-on one builder is a caller-side logic error, not a panic. See the supplement
-for the recommended discipline.
+the two paths never conflict at the data level. `render(format)` dispatches
+on `target` — whichever of `.items()`/`.kv_items()` was called *last* — for
+both `OutputFormat::Text` and `OutputFormat::Json`. The named shorthand
+methods are different and stronger: `render_toon()` reads only the
+`items`/`fields` slot and `render_kv()` reads only the `single_item` slot,
+*regardless* of which method was called last or what `target` currently is.
+Concretely: `AgentResponse::new("x").items(rows, &fields).kv_items(kv_rows).render_toon()`
+still renders the TOON list from `rows`/`fields` — it does not follow
+`target` (which is `Kv` here) the way `render(OutputFormat::Text)` would.
+Calling both `.items()` and `.kv_items()` on one builder remains a
+caller-side logic error to avoid, not a panic — but it is no longer possible
+to observe *which* setter "won" by calling the two named shorthands, since
+each is now slot-specific. See the supplement for the recommended discipline.
+
+This crate has no `unsafe impl Send`/`Sync` for `AgentResponse` (an earlier
+draft of this section showed one) — every field is an owned, non-interior-
+mutable type (`String`, `Vec`, `Option<usize>`, `bool`, ...), so `Send`/`Sync`
+already hold via Rust's automatic trait derivation. An explicit `unsafe impl`
+would be both redundant and a violation of this crate's own "no `unsafe`
+outside the napi boundary" rule.
 
 ---
 
@@ -931,24 +1109,28 @@ The npm package is a thin napi-rs wrapper around the same crate, built with the
 - Feature-gated `Cargo.toml` with the `napi` feature
 - `napi-rs` with `napi-derive` proc-macros — clean Rust in, C-ABI glue and
   TypeScript types out, generated at compile time
-- `serde_json::Value` for the dynamic FFI boundary (cell values, recovery params)
+- Typed `#[napi(object)]` structs (`JsToonValue`, `JsKvItem`, ...) for the
+  dynamic FFI boundary (cell values, recovery params), not `serde_json::Value`
+  — same zero-`serde_json` rationale as the rest of this spec
 - Platform-aware binary loading via the generated `index.js`
 - TypeScript fallback export for environments without the native binary
 - Cross-compiled via `cargo-zigbuild`:
   - `aarch64-apple-darwin` (`darwin-arm64`)
   - `x86_64-unknown-linux-musl` (`linux-x64-musl`)
 
-### Why the `napi4` feature
+### Why `napi` v3 / the `napi6` feature
 
-napi-rs gates capabilities behind Node-API version features. `napi4` is the
-lowest level that exposes `ThreadsafeFunction` and the async support napi-rs
-needs — below it you cannot use `async fn` at the boundary at all. Node.js 12
-(the first LTS with full napi4) is the floor; in practice every modern Node
-target (18+) satisfies it. michi's exports are synchronous pure functions, so
-`napi4` is comfortably sufficient and avoids pulling in niche higher-level
-features. (napi-rs v3 is also an option and removes the old Docker-image
-requirement for cross-compilation; the crate pins napi v2 today and can move to
-v3 without API changes.)
+napi-rs gates capabilities behind Node-API version features. An earlier draft
+of this crate pinned `napi` v2 with the `napi4` feature — `napi4` was, at the
+time, the lowest level exposing `ThreadsafeFunction` and the async support
+napi-rs needs, with Node.js 12 (the first LTS with full napi4) as the floor.
+The crate has since moved to `napi` v3 with the `napi6` feature — napi-rs v3
+removes the old Docker-image requirement for cross-compilation, which was the
+actual reason for the move (see `docs/superpowers/specs/2026-07-03-michi-design.md`
+§7/Q4). michi's exports remain synchronous pure functions either way, so the
+async machinery gated behind either feature level is not itself something
+michi exercises — the choice is about the build tooling, not a capability
+michi needs.
 
 ### The builder boundary problem and its solution
 
@@ -984,22 +1166,24 @@ impl JsAgentResponse {
     }
 
     /// `&mut self` setter: take the consuming builder out of the Option,
-    /// apply the consuming method, put the result back.
-    #[napi]
+    /// apply the consuming method, put the result back. Returns `()`, not
+    /// `Self` — see below for why chaining was not carried through to the
+    /// shipped NAPI surface.
+    #[napi(catch_unwind)]
     pub fn items(
         &mut self,
-        rows: Vec<Vec<serde_json::Value>>,
+        rows: Vec<Vec<JsToonValue>>, // typed cell value, not serde_json::Value — zero-dep boundary
         fields: Vec<String>,
     ) -> napi::Result<()> {
         let b = self.inner.take()
             .ok_or_else(|| napi::Error::from_reason("response already rendered"))?;
         let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
-        let converted = convert_rows(rows)?;            // serde_json::Value → michi::Value
+        let converted = convert_rows(rows);              // JsToonValue → michi::toon::Value
         self.inner = Some(b.items(converted, &field_refs));
         Ok(())
     }
 
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn render_toon(&self) -> napi::Result<String> {
         self.inner.as_ref()
             .ok_or_else(|| napi::Error::from_reason("response already consumed"))
@@ -1009,12 +1193,42 @@ impl JsAgentResponse {
 ```
 
 The `Option` acts as a nullable ownership slot: `take()` moves the value out and
-leaves `None`, the consuming method runs, and the result is reassigned. The
-TypeScript surface presents these as chainable `this`-returning setters; the
-wrapper realizes the chaining by mutating in place and returning the same
-receiver object. (Note: async `&mut self` is unsound in napi-rs — it cannot
-enforce exclusivity across the event loop — and would require an `unsafe`
-marker. michi's setters are all synchronous, so this does not arise.)
+leaves `None`, the consuming method runs, and the result is reassigned.
+
+An earlier draft of this section said the TypeScript surface presents these
+as chainable `this`-returning setters. That was the plan, but it is not what
+shipped, and deliberately so: every setter on the actual `JsAgentResponse`
+returns `napi::Result<()>` (void on success), not `this`. Making a setter
+return `this` across the napi boundary would mean returning a JS-visible
+reference to the *same* wrapped object from a `&mut self` method — napi-rs's
+`#[napi]` class methods don't hand back the receiver this way, so doing it
+properly would require a more invasive change to the `Option`+`take()`
+pattern above (e.g. holding a JS-side handle back to `self` and threading it
+through every mutator's return value) for a purely cosmetic JS ergonomics
+win. Given the pattern above already works correctly and is fully tested,
+this was judged not worth the added complexity. Concretely, this means
+TypeScript callers use sequential statements, not method chaining:
+
+```typescript
+const r = new AgentResponse("issues");
+r.items(rows, ["number", "title"]);   // returns undefined, not r
+r.hint("Try a broader filter");       // ditto
+const out = r.renderToon();
+```
+
+not:
+
+```typescript
+// This does NOT work — items()/hint() return undefined, not `this`.
+const out = new AgentResponse("issues")
+  .items(rows, ["number", "title"])
+  .hint("Try a broader filter")
+  .renderToon();
+```
+
+(Note: async `&mut self` is unsound in napi-rs — it cannot enforce
+exclusivity across the event loop — and would require an `unsafe` marker.
+michi's setters are all synchronous, so this does not arise.)
 
 ### Error handling at the boundary
 
@@ -1030,12 +1244,14 @@ Any `#[napi]` function returning `napi::Result<T>` throws a JS `Error` on
 
 ### Numeric boundary gotcha
 
-`total_count` is `u64` in Rust, but JavaScript numbers are 64-bit floats with a
-max safe integer of 2^53. The wrapper accepts `total_count` as a JS `number`
-(`i64`/`number` mapping) rather than exposing raw `u64`; counts beyond 2^53 are
-not a realistic concern for agent list responses, and staying on `number` keeps
-the TypeScript ergonomic. Use explicit `BigInt` only if a consumer genuinely
-needs counts above the safe-integer ceiling.
+`total_count` is `usize` in Rust (not `u64` — see the `response` section), and
+the NAPI boundary narrows further to a plain `i32` (`JsToonOptions.total_count`,
+`JsAgentResponse::total_count`), clamped non-negative (`n.max(0) as usize`) on
+the way in. JavaScript numbers are 64-bit floats with a max safe integer of
+2^53, so `i32` is comfortably within the safe range without needing the
+`i64`-as-`number` mapping or `BigInt` an earlier draft of this section
+anticipated; counts beyond `i32::MAX` are not a realistic concern for agent
+list responses.
 
 ### Platform binary loading (`index.js`)
 
@@ -1103,26 +1319,42 @@ when a Windows consumer appears.
 
 ### TypeScript types (`index.d.ts`)
 
+An earlier draft of this section sketched an ergonomic TS-first surface
+(`CellValue = string | number | boolean | null`, `TruncateResult`,
+`RecoveryHintParam.value: unknown`, `this`-returning `AgentResponse`
+methods). The shipped surface is more literal about napi-rs's constraints —
+discriminated cell values instead of a union, no structured recovery params
+over the boundary, `undefined`-returning setters (see "Chainable setters,"
+above) — traded for a smaller, more predictable NAPI implementation surface.
+This is what `@napi-rs/cli` actually generates today:
+
 ```typescript
-export interface ToonOptions {
-  /** Max cell value length before truncation. Default: 200 */
-  truncateCellsAt?: number;
-  /** Total items available. Emitted as totalCount: N when provided. */
-  totalCount?: number;
+/** Scalar TOON/KV cell value. Discriminate via `type`. */
+export interface ToonValue {
+  type: "str" | "int" | "float" | "bool" | "null";
+  strVal?: string;
+  intVal?: number;
+  floatVal?: number;
+  boolVal?: boolean;
 }
 
-/** Scalar cell value. Objects and arrays must be flattened before rendering. */
-export type CellValue = string | number | boolean | null;
-
-export interface RenderToonOptions extends ToonOptions {
+export interface RenderToonOptions {
   typeName: string;
   fields: string[];
-  items: CellValue[][];
+  /** Rows, each an array of values parallel to `fields`. */
+  rows: ToonValue[][];
+  totalCount?: number;
   hints?: string[];
 }
 
-/** Render a list of items as TOON. */
+/** Render a list of items as TOON. Throws if rows/fields/hints, or any row,
+ * exceed this module's per-call size limits (protects Node's single-threaded
+ * event loop from unbounded synchronous allocation on a crafted call). */
 export declare function renderToon(opts: RenderToonOptions): string;
+
+/** Render a definitive empty-state TOON response: `typeName[0]{}:\ntotalCount: 0\n`.
+ * No `hints` parameter over this boundary — use `appendHints()` to add one. */
+export declare function emptyState(typeName: string): string;
 
 /** Build a standalone help[] block. Returns empty string when hints is empty. */
 export declare function renderHints(hints: string[]): string;
@@ -1130,47 +1362,42 @@ export declare function renderHints(hints: string[]): string;
 /** Append a help[] block to an existing body string. */
 export declare function appendHints(body: string, hints: string[]): string;
 
-export interface TruncateResult {
-  content: string;
-  truncated: boolean;
-  originalLen: number;
-  /** "(N chars truncated — use full=true)" — undefined when not truncated */
-  signal?: string;
-}
-
-/** Truncate content to at most limit chars. */
-export declare function truncate(content: string, limit: number): TruncateResult;
-
-/** Truncate and append the signal inline. Returns original string when it fits. */
-export declare function truncateInline(content: string, limit: number): string;
-
-/** Render a definitive empty-state TOON response. */
-export declare function emptyState(typeName: string, hints?: string[]): string;
-
-export interface RecoveryHintParam {
-  key: string;
-  value: unknown;
-}
+/** Truncate content to at most maxChars Unicode scalar values, with `hint`'s
+ * truncation signal appended inline. Returns the final string directly —
+ * unlike the Rust `truncate()`, which returns a richer `Truncated` struct,
+ * only the inline form crosses the NAPI boundary. */
+export declare function truncate(content: string, maxChars: number, hint: string): string;
 
 export interface RecoveryHintInput {
   tool: string;
-  params?: RecoveryHintParam[];
+  /** No structured params over this boundary — use `AgentResponse.recoveryHint()`
+   * for the common "what to call next" case, or the Rust API directly (which
+   * accepts typed `KvValue` params) for anything richer. */
   reason?: string;
 }
 
-/** Render recovery hints as a help[] block with suggestedParams. */
+/** Render recovery hints as a recovery[N]: block. */
 export declare function renderRecovery(hints: RecoveryHintInput[]): string;
 
-/** High-level builder — mirrors AgentResponse Rust API. */
+/** High-level builder — mirrors the Rust `AgentResponse` API. Every mutator
+ * returns `undefined`, not `this` — see "Chainable setters," above; callers
+ * use sequential statements, not method chaining. */
 export declare class AgentResponse {
   constructor(typeName: string);
-  items(rows: CellValue[][], fields: string[]): this;
-  totalCount(n: number): this;
-  hint(hint: string): this;
-  hints(hints: string[]): this;
-  truncateCellsAt(limit: number): this;
+  items(rows: ToonValue[][], fields: string[]): void;
+  totalCount(n: number): void;
+  kvItems(items: { key: string; value: ToonValue }[]): void;
+  hint(hint: string): void;
+  recoveryHint(tool: string, reason?: string): void;
+  /** Marks this response as an error state, reflected in `renderJson()`'s `isError` field. */
+  asError(): void;
+  /** Reads the TOON slot unconditionally — see the `response` section. */
   renderToon(): string;
-  renderJson(): unknown;
+  /** Reads the KV slot unconditionally — see the `response` section. */
+  renderKv(): string;
+  /** Returns a JSON *string* — `{"body":...,"hints":[...],"recovery":[...],"isError":bool}`
+   * — not a parsed value, matching the Rust side's zero-`serde_json` design. */
+  renderJson(): string;
   renderHintsOnly(): string;
 }
 ```
@@ -1189,7 +1416,7 @@ export declare class AgentResponse {
 | Retry delay calculation | Inside caller's retry loop | `resilience::next_retry_delay()` |
 | Retry-After header parsing | Ad-hoc string parsing | `resilience::parse_retry_after()` |
 | Retryable status classification | Hardcoded booleans per caller | `resilience::is_retryable_status()` |
-| Error classification shape | Ad-hoc per tool | `error::AxiError`, `error::ErrorCode` |
+| Error classification shape | Ad-hoc per tool | `error::Error`, `error::DomainError`, `error::ErrorCode` |
 | Empty state handling | Ad-hoc per tool (often silent) | `empty::empty_state()` |
 | Truncation | Ad-hoc per tool, no standard signal | `truncate::truncate()`, `truncate_inline()` |
 
@@ -1302,7 +1529,8 @@ common case (no special chars in a cell).
 `AgentResponse` is `Send + Sync` (all fields are owned, no interior
 mutability). The NAPI wrapper uses napi-rs's safe threading model.
 
-Benchmarks via `criterion`. Run in CI on PRs touching `src/`.
+Benchmarks via `divan` (not `criterion` — see the Cargo.toml section). Run in
+CI on PRs touching `src/`.
 
 ---
 
@@ -1337,7 +1565,11 @@ Benchmarks via `criterion`. Run in CI on PRs touching `src/`.
 - Status response with mixed health signals
 - Format stability — prevents accidental format drift across versions
 
-### NAPI integration tests (Jest, `packages/michi-node/__test__/`)
+### NAPI integration tests (Node's built-in `node:test`, `packages/michi-node/__test__/`)
+
+An earlier draft named Jest here; the shipped test runner is Node's built-in
+`node:test` (`pnpm test` → `node --test`), already wired into CI — switching
+test runners now would be unrelated churn for no behavioral benefit.
 - Each NAPI export with representative inputs
 - Error cases: mismatched row lengths, oversized inputs, null values
 - `AgentResponse` builder via NAPI, all paths (including the `Option`/`take`
@@ -1380,21 +1612,40 @@ variant that consults terminal width (via `crossterm`) and applies ANSI colour
 to health signals and the type header. Out of scope for v1 — michi v1 targets
 agent consumers only, not human-readable terminal output.
 
-**Q4 — `AgentResponse` builder vs standalone functions**
-The spec proposes both: low-level functions (`render_toon()`, `render_hints()`)
-and a high-level builder (`AgentResponse`). If the builder is the only
-thing NAPI-exported, the low-level functions are Rust-only. If both are
-exported, the NAPI surface grows. Recommend: export the builder and
-`renderHints()`/`appendHints()` only — low-level functions are implementation
-details available to Rust consumers.
+**Q4 — `AgentResponse` builder vs standalone functions (resolved)**
+Implemented per this question's own recommendation, plus one addition:
+`AgentResponse`/`JsAgentResponse` is exported, along with
+`renderHints()`/`appendHints()`/`renderRecovery()`/`renderToon()`/
+`emptyState()`/`truncate()` — the low-level functions are exported
+*additively*, not instead of the builder, since removing an already-shipped
+export is a breaking change with no upside. Rust-only consumers can still
+reach every primitive directly; TypeScript consumers get both the builder and
+the standalone functions.
 
-**Q5 — Recovery hint format**
-The current spec uses `serde_json::Value` for param values — type information
-is lost at the boundary. This is acceptable for display (agents read the
-rendered string) but may not be acceptable if `structuredContent` in an
-MCP context needs to carry typed recovery hints for client programmatic use.
-If so, `RecoveryHint` needs a more precise type model. Confirm scope before
-implementing.
+This resolution also settled the "chainable builder" question the original
+spec draft assumed an answer to: `JsAgentResponse`'s setters return
+`undefined`, not `this` (see the NAPI section's "Chainable setters" note).
+Making them `this`-returning across the napi boundary was judged real,
+risky rework for a cosmetic JS ergonomics win, with the JS test suite already
+proving sequential-statement usage works fine, including mutating after a
+render call.
+
+**Q5 — Recovery hint format (resolved)**
+Resolved by using `kv::KvValue` (an existing, already-tested internal enum)
+instead of `serde_json::Value` for `RecoveryHint.params` — see the `recovery`
+section. This fixes the *Rust-side* type-loss concern Q5 raised without
+adding a dependency `serde_json::Value` would have required.
+
+A second, related concern surfaced during this reconciliation and is now
+also resolved: independent of which Rust-side type `params` uses,
+`AgentResponse::render_json()`'s JSON *output* was, for a time, stringifying
+every param value regardless of its `KvValue` variant (`{"seconds":"30"}`
+instead of `{"seconds":30}`), which would have defeated the point of using a
+typed enum in the first place. `render_json()` now serializes `KvValue::Int`/
+`Float`/`Bool` as native JSON literals, `Text` as a JSON string, and
+`Missing` as `null` — so both the Rust-side representation and the
+JSON-output representation carry real type information, not just the
+former.
 
 ---
 
@@ -1446,6 +1697,14 @@ must be produced deterministically:
   varies by architecture. Round to a fixed decimal or convert to integers.
 - **Timestamps:** exclude request-time fields (created_at, request_id) unless
   the intent is a per-request key rather than a per-operation key.
+
+`from_hash` takes raw `&[u8]` — michi has no opinion on how you produce those
+bytes, and (per the Cargo.toml section) does not itself depend on
+`serde_json`. The example below uses it only because it is a common choice
+for callers already producing JSON elsewhere; any deterministic
+serialization (a hand-rolled sorted-field formatter, `bincode`, etc.) works
+equally well, as long as it is sorted-key-deterministic per the bullets
+above.
 
 ```rust
 // Correct: BTreeMap serialises with sorted keys
