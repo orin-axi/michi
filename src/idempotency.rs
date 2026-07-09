@@ -93,6 +93,29 @@ impl PartialSuccess {
     }
 }
 
+/// Render an already-done response: a successful no-op, not an error (exit
+/// code 0 is the caller's responsibility — this function only renders).
+///
+/// Format:
+/// ```text
+/// operation: create_issue
+/// status:    already_done
+/// summary:   Issue #42 already exists with identical fields
+/// help[1]:
+///   Call get_issue with number=42 to view it
+/// ```
+#[must_use]
+pub fn render_already_done(operation: &str, summary: &str, hints: &[crate::hints::Hint]) -> String {
+    let mut out = String::with_capacity(64 + operation.len() + summary.len() + hints.len() * 50);
+    out.push_str("operation: ");
+    out.push_str(operation);
+    out.push_str("\nstatus:    already_done\nsummary:   ");
+    out.push_str(summary);
+    out.push('\n');
+    crate::hints::append_hints(&mut out, hints);
+    out
+}
+
 /// FNV-1a 64-bit hash. Fixed, versionless algorithm — unlike
 /// `std::collections::hash_map::DefaultHasher`, whose algorithm Rust
 /// explicitly does not guarantee stays the same across compiler versions.
@@ -185,5 +208,24 @@ mod tests {
         assert!(out.contains("2 completed"));
         assert!(out.contains("1 remaining"));
         assert!(out.contains("rate limit hit"));
+    }
+
+    #[test]
+    fn render_already_done_matches_spec_format() {
+        let out = render_already_done(
+            "create_issue",
+            "Issue #42 already exists with identical fields",
+            &[crate::hints::Hint::new("Call get_issue with number=42 to view it")],
+        );
+        assert_eq!(
+            out,
+            "operation: create_issue\nstatus:    already_done\nsummary:   Issue #42 already exists with identical fields\nhelp[1]:\n  Call get_issue with number=42 to view it\n"
+        );
+    }
+
+    #[test]
+    fn render_already_done_no_hints_omits_help_block() {
+        let out = render_already_done("noop", "nothing changed", &[]);
+        assert!(!out.contains("help["));
     }
 }
