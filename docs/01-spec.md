@@ -311,9 +311,12 @@ help[1]:
 
 **Single recovery hint (no list):**
 ```
-help[1]:
-  Retry create_item with suggestedParams: { project: "PROJ", type: "Task" }
+recovery[1]:
+  create_item: suggestedParams: { project: PROJ, type: Task }
 ```
+(A dedicated `recovery[N]:` block, not folded into `help[]` — see the
+`recovery` section for why. Param values render unquoted in this plain-text
+form; `type` here is `KvValue::Text("Task")`, not a JSON string literal.)
 
 ### Escaping rules
 
@@ -514,18 +517,30 @@ to guess subcommands or issue a separate `--help` call.
 pub struct Hint(pub String);
 
 impl Hint {
-    pub fn new(text: impl Into<String>) -> Self
+    pub fn new(s: impl Into<String>) -> Self
+    pub fn as_str(&self) -> &str
 }
+
+impl From<&str>   for Hint { ... }
+impl From<String> for Hint { ... }
 
 /// Render a standalone help[] block.
 /// Returns empty string when hints is empty — callers can
 /// safely append the result without a guard.
 pub fn render_hints(hints: &[Hint]) -> String
 
-/// Append a help[] block to an existing body string.
-/// Returns body unchanged when hints is empty.
-pub fn append_hints(body: &str, hints: &[Hint]) -> String
+/// Append a help[] block to an existing string in-place, without allocating
+/// an intermediate buffer. No-op when `hints` is empty.
+pub fn append_hints(out: &mut String, hints: &[Hint])
 ```
+
+`append_hints` takes `out: &mut String` and mutates in place rather than
+taking `body: &str` and returning a new `String`, as an earlier draft of
+this section showed — this avoids an allocation+copy this crate deliberately
+removed elsewhere too (`recovery::append_recovery` follows the identical
+in-place pattern). The observable content of the appended block is identical
+to what the earlier draft's signature would have produced; this is a
+signature-style difference only.
 
 ---
 
@@ -541,21 +556,33 @@ subsequent turns.
 
 ```rust
 pub struct Truncated {
-    pub content:      String,
-    pub truncated:    bool,
-    pub original_len: usize,
-    /// "(N chars truncated — use full=true)" — None when not truncated
-    pub signal:       Option<String>,
+    pub content:       String,
+    pub original_len:  usize,
+    pub was_truncated: bool,
+    /// "(N chars truncated — use {hint})" — None when not truncated
+    pub signal:        Option<String>,
 }
 
-/// Truncate content to at most `limit` chars, respecting char boundaries.
-/// Never splits a multi-byte UTF-8 sequence.
-pub fn truncate(content: &str, limit: usize) -> Truncated
+/// Truncate content to at most `max_chars` Unicode scalar values, appending
+/// an agent-readable suffix (using `hint` as the escape-hatch flag name) when
+/// truncation occurs. Respects char boundaries — never splits a Unicode
+/// scalar. Returns the original string unchanged when it already fits.
+pub fn truncate(content: &str, max_chars: usize, hint: &str) -> Truncated
 
-/// Truncate and append the signal inline.
-/// Returns original string when it fits within limit.
-pub fn truncate_inline(content: &str, limit: usize) -> String
+/// Truncate content for inline use (e.g. inside a TOON field).
+/// Returns the final string directly.
+pub fn truncate_inline(content: &str, max_chars: usize, hint: &str) -> String
 ```
+
+Two differences from an earlier draft of this section: the `was_truncated`
+field (an earlier draft named it `truncated`) and the `hint: &str` parameter
+on both functions. `hint` names the escape-hatch flag embedded in the
+truncation suffix — an earlier draft hardcoded `"full=true"` for every call
+site, but every one of this spec's own examples happening to use that exact
+string doesn't mean every caller's actual flag is named that; taking it as a
+parameter is more flexible at zero cost, since the crate itself has no
+opinion on what a caller names its own "give me the untruncated version"
+flag.
 
 ---
 
@@ -923,16 +950,28 @@ pub enum Health {
 }
 
 pub struct StatusResponse {
-    pub tool_name:   &'static str,
-    pub description: &'static str,
+    pub tool_name:   String,
+    pub description: String,
     pub items:       Vec<StatusItem>,
     pub hints:       Vec<Hint>,
 }
 
 impl StatusResponse {
+    pub fn new(tool_name: impl Into<String>, description: impl Into<String>, items: Vec<StatusItem>) -> Self
+    /// Attach contextual hints.
+    pub fn with_hints(mut self, hints: Vec<Hint>) -> Self
     pub fn render(&self) -> String
 }
 ```
+
+`tool_name`/`description` are `String`, not `&'static str` as an earlier
+draft had them — a tool's name and description are runtime-computed values
+(often built from config or a manifest) at every call site this crate has
+been used from so far, and `&'static str` would force every caller to either
+hardcode them as literals or leak an allocation to satisfy the lifetime. The
+`new`/`with_hints` constructor and builder method are additions beyond that
+earlier draft, matching the construction style used by `AgentResponse` and
+`RecoveryHint` elsewhere in this spec.
 
 Example output:
 ```
@@ -952,8 +991,16 @@ help[1]:
 
 Recovery hints are the failure-path arm of **AXI P9**: when an operation fails,
 emit a concrete, parameterized "here is how to recover" template rather than a
-dead end. `render_recovery()` formats them as a `help[]` block carrying
-`suggestedParams`.
+dead end. `render_recovery()` formats them as a dedicated `recovery[N]:`
+block carrying `suggestedParams` — **not** folded into the generic `help[]`
+block an earlier draft of this section described. `AgentResponse.recovery:
+Vec<RecoveryHint>` (see the `response` section) can carry multiple structured
+recovery hints per response; cramming several of those into the same
+generic `help[]` block a plain next-step hint also uses would lose a
+downstream parser's ability to distinguish "next-step suggestion" from
+"how to recover from this specific failure." The dedicated block wrapper
+keeps that distinction; only `RecoveryHint`'s own field shape changed to
+match this section's `tool`/`params`/`reason` design.
 
 ```rust
 pub struct RecoveryHint {
@@ -968,7 +1015,11 @@ impl RecoveryHint {
     pub fn reason(mut self, reason: impl Into<String>) -> Self
 }
 
-/// Render recovery hints as a help[] block with suggestedParams.
+/// Render recovery hints as a recovery[N]: block with suggestedParams.
+///
+/// recovery[2]:
+///   assign_user: suggestedParams: { user: alice } — user 'ghost' not found
+///   list_issues
 pub fn render_recovery(hints: &[RecoveryHint]) -> String
 ```
 
