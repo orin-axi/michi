@@ -251,9 +251,16 @@ impl JsAgentResponse {
     ///
     /// # Errors
     ///
-    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    /// Returns an error if `items` exceeds [`MAX_FIELDS`] entries, or if an
+    /// internal invariant is violated (should not happen in normal use).
     #[napi(catch_unwind)]
     pub fn kv_items(&mut self, items: Vec<JsKvItem>) -> napi::Result<()> {
+        if items.len() > MAX_FIELDS {
+            return Err(napi::Error::from_reason(format!(
+                "items length {} exceeds maximum of {MAX_FIELDS}",
+                items.len()
+            )));
+        }
         let b = self.take()?;
         let converted =
             items.into_iter().map(|i| crate::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value) }).collect();
@@ -473,6 +480,20 @@ mod tests {
         // The rejected call must not have consumed the builder via `take()`:
         // a subsequent valid call should still succeed.
         r.items(vec![vec![value("null")]], vec!["a".to_string()]).expect("builder still usable after rejection");
+    }
+
+    #[test]
+    fn js_agent_response_kv_items_rejects_oversized_input() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        let oversized: Vec<JsKvItem> =
+            (0..=MAX_FIELDS).map(|i| JsKvItem { key: format!("k{i}"), value: value("null") }).collect();
+        let err = r.kv_items(oversized).expect_err("oversized items must be rejected before consuming the builder");
+        assert!(err.reason.contains("items length"), "got: {}", err.reason);
+
+        // The rejected call must not have consumed the builder via `take()`:
+        // a subsequent valid call should still succeed.
+        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("null") }])
+            .expect("builder still usable after rejection");
     }
 
     #[test]
