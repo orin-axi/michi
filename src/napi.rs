@@ -30,7 +30,10 @@ const MAX_ROWS: usize = 100_000;
 /// [`JsAgentResponse::items`]'s `fields` and each row's value count, and
 /// [`JsAgentResponse::kv_items`]'s `items` (one KV entry is one field).
 const MAX_FIELDS: usize = 1_000;
-/// Maximum hint count accepted per [`render_hints`] call.
+/// Maximum hint count accepted per call: [`render_hints`]'s `hints`,
+/// [`append_hints`]'s `hints`, [`render_recovery`]'s `hints`, and the
+/// cumulative count enforced across calls by [`JsAgentResponse::hint`] and
+/// [`JsAgentResponse::recovery_hint`].
 const MAX_HINTS: usize = 10_000;
 
 /// Value type for a TOON row cell (JavaScript-friendly).
