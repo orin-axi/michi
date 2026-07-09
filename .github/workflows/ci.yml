@@ -121,6 +121,9 @@ jobs:
             runner: macos-latest
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+            cross: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -137,8 +140,11 @@ jobs:
           cache-dependency-path: packages/michi-node/pnpm-lock.yaml
       - run: pnpm install
         working-directory: packages/michi-node
-      - run: pnpm build --target ${{ matrix.target }}
+      - name: Install cargo-zigbuild (cross-compile targets only)
+        if: matrix.cross
+        run: pip install ziglang && cargo install cargo-zigbuild --locked
+      - run: pnpm build --target ${{ matrix.target }} ${{ matrix.cross && '--cross-compile' || '' }}
         working-directory: packages/michi-node
       - run: node --test __test__/index.test.mjs
         working-directory: packages/michi-node
-        if: matrix.target != 'aarch64-apple-darwin'
+        if: matrix.target != 'aarch64-apple-darwin' && matrix.target != 'x86_64-unknown-linux-musl'
