@@ -388,7 +388,9 @@ impl JsAgentResponse {
         Ok(())
     }
 
-    /// Render via the TOON or KV path (whichever was populated).
+    /// Render via the TOON path (`items`/`fields`/`totalCount`), reading only
+    /// that slot regardless of which of `.items()`/`.kvItems()` was called
+    /// last — see [`crate::response::AgentResponse::render_toon`].
     ///
     /// # Errors
     ///
@@ -401,7 +403,9 @@ impl JsAgentResponse {
             .map(crate::response::AgentResponse::render_toon)
     }
 
-    /// Render via the KV path.
+    /// Render via the KV path (`kvItems`/`totalCount`), reading only that
+    /// slot regardless of which of `.items()`/`.kvItems()` was called last —
+    /// see [`crate::response::AgentResponse::render_kv`].
     ///
     /// # Errors
     ///
@@ -580,6 +584,30 @@ mod tests {
         r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("null") }]).unwrap();
         let out = r.render_kv().unwrap();
         assert!(out.contains("id:"), "got: {out}");
+    }
+
+    #[test]
+    fn js_agent_response_render_toon_is_slot_specific_even_after_kv_items_called_last() {
+        let mut r = JsAgentResponse::new("issues".to_string());
+        r.items(vec![vec![JsToonValue { int_val: Some(1), ..value("int") }]], vec!["id".to_string()]).unwrap();
+        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: JsToonValue { int_val: Some(99), ..value("int") } }])
+            .unwrap();
+        let toon = r.render_toon().unwrap();
+        let kv = r.render_kv().unwrap();
+        assert!(toon.starts_with("issues[1]{id}:\n  1\n"), "got: {toon}");
+        assert_ne!(toon, kv, "render_toon() must not follow the last-called .kvItems()");
+    }
+
+    #[test]
+    fn js_agent_response_render_kv_is_slot_specific_even_after_items_called_last() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: JsToonValue { int_val: Some(1), ..value("int") } }])
+            .unwrap();
+        r.items(vec![vec![JsToonValue { int_val: Some(99), ..value("int") }]], vec!["id".to_string()]).unwrap();
+        let kv = r.render_kv().unwrap();
+        let toon = r.render_toon().unwrap();
+        assert!(kv.contains("id: 1"), "got: {kv}");
+        assert_ne!(kv, toon, "render_kv() must not follow the last-called .items()");
     }
 
     #[test]

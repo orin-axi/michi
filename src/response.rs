@@ -34,8 +34,12 @@ enum RenderTarget {
 ///
 /// Use `.items()` for 5+ uniform rows. Use `.kv_items()` for single items,
 /// status data, or heterogeneous metadata. Calling both on one builder is a
-/// caller-side logic error — whichever was called *last* wins at render time;
-/// treat one `AgentResponse` as one output shape.
+/// caller-side logic error; treat one `AgentResponse` as one output shape.
+/// `render(format)` dispatches on whichever of `.items()`/`.kv_items()` was
+/// called *last*. The [`Self::render_toon`]/[`Self::render_kv`] shorthands are
+/// slot-specific instead: each always reads its own named slot
+/// (`items`/`fields` or `single_item`), independent of which method was
+/// called last.
 ///
 /// # Examples
 ///
@@ -145,21 +149,43 @@ impl AgentResponse {
         self
     }
 
+    /// Render the TOON slot (`items`/`fields`/`total_count`) regardless of
+    /// `target`. Backs both the `target`-based `body()` dispatch and the
+    /// slot-specific [`Self::render_toon`] shorthand.
+    fn toon_body(&self) -> String {
+        let opts = crate::toon::ToonOptions {
+            type_name: self.type_name.clone(),
+            fields: self.fields.clone(),
+            rows: self.items.clone(),
+            total_count: self.total_count,
+            hints: Vec::new(), // hints are appended once, below, not duplicated into the TOON body
+            max_cell_len: self.truncate_cells_at,
+        };
+        crate::toon::render_toon(&opts)
+    }
+
+    /// Render the KV slot (`single_item`/`total_count`) regardless of
+    /// `target`. Backs both the `target`-based `body()` dispatch and the
+    /// slot-specific [`Self::render_kv`] shorthand.
+    fn kv_body(&self) -> String {
+        crate::kv::render_kv(&self.single_item, self.total_count, &[])
+    }
+
     fn body(&self) -> String {
         match self.target {
-            RenderTarget::Toon | RenderTarget::Unset => {
-                let opts = crate::toon::ToonOptions {
-                    type_name: self.type_name.clone(),
-                    fields: self.fields.clone(),
-                    rows: self.items.clone(),
-                    total_count: self.total_count,
-                    hints: Vec::new(), // hints are appended once, below, not duplicated into the TOON body
-                    max_cell_len: self.truncate_cells_at,
-                };
-                crate::toon::render_toon(&opts)
-            }
-            RenderTarget::Kv => crate::kv::render_kv(&self.single_item, self.total_count, &[]),
+            RenderTarget::Toon | RenderTarget::Unset => self.toon_body(),
+            RenderTarget::Kv => self.kv_body(),
         }
+    }
+
+    /// Append `hints`/`recovery` after an already-rendered body — shared tail
+    /// for `render_text()` and the slot-specific `render_toon()`/`render_kv()`.
+    fn finish_text(&self, body: &str) -> String {
+        let mut out = String::with_capacity(body.len() + self.hints.len() * 60 + self.recovery.len() * 80);
+        out.push_str(body);
+        crate::hints::append_hints(&mut out, &self.hints);
+        crate::recovery::append_recovery(&mut out, &self.recovery);
+        out
     }
 
     /// Render the response in the requested format.
@@ -171,25 +197,26 @@ impl AgentResponse {
         }
     }
 
-    /// Shorthand for `render(OutputFormat::Text)` when the TOON path was used.
+    /// Render via the TOON path (`items`/`fields`/`total_count`), reading
+    /// only that slot regardless of `target` — i.e. regardless of whether
+    /// `.items()` or `.kv_items()` was called last. Unlike `render(format)`,
+    /// which dispatches on `target`, this method's output never changes based
+    /// on `.kv_items()` having been called.
     #[must_use]
     pub fn render_toon(&self) -> String {
-        self.render_text()
+        self.finish_text(&self.toon_body())
     }
 
-    /// Shorthand for `render(OutputFormat::Text)` when the KV path was used.
+    /// Render via the KV path (`single_item`/`total_count`), reading only
+    /// that slot regardless of `target` — the KV-path counterpart of
+    /// [`Self::render_toon`].
     #[must_use]
     pub fn render_kv(&self) -> String {
-        self.render_text()
+        self.finish_text(&self.kv_body())
     }
 
     fn render_text(&self) -> String {
-        let body = self.body();
-        let mut out = String::with_capacity(body.len() + self.hints.len() * 60 + self.recovery.len() * 80);
-        out.push_str(&body);
-        crate::hints::append_hints(&mut out, &self.hints);
-        crate::recovery::append_recovery(&mut out, &self.recovery);
-        out
+        self.finish_text(&self.body())
     }
 
     /// Render just the `help[N]:` block for `self.hints` — the three-surface
@@ -232,7 +259,7 @@ impl AgentResponse {
                 }
                 json_string(&mut out, k);
                 out.push(':');
-                json_string(&mut out, &crate::recovery::kv_value_str(v));
+                crate::kv::kv_value_to_json(&mut out, v);
             }
             out.push('}');
             if let Some(reason) = &r.reason {
@@ -249,32 +276,11 @@ impl AgentResponse {
 }
 
 /// Append a JSON-encoded string (with surrounding quotes and escape sequences)
-/// to `out`. Escapes `"`, `\`, `\n`, `\r`, `\t`, and all other control characters
-/// (U+0000–U+001F) as `\u00XX` per RFC 8259.
+/// to `out`. Delegates to [`crate::kv::json_escape_str`], which also backs
+/// [`crate::kv::kv_value_to_json`] — one escaper, not two copies of the same
+/// RFC 8259 control-character handling.
 fn json_string(out: &mut String, s: &str) {
-    out.push('"');
-    for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            other if u32::from(other) < 0x20 => {
-                let code = u32::from(other);
-                out.push_str("\\u00");
-                out.push(hex_digit(code >> 4));
-                out.push(hex_digit(code & 0xf));
-            }
-            other => out.push(other),
-        }
-    }
-    out.push('"');
-}
-
-/// Render a nibble (0–15) as a lowercase hex digit.
-fn hex_digit(nibble: u32) -> char {
-    char::from_digit(nibble, 16).unwrap_or('0')
+    crate::kv::json_escape_str(out, s);
 }
 
 #[cfg(test)]
@@ -375,8 +381,78 @@ mod tests {
     }
 
     #[test]
+    fn render_toon_reads_toon_slot_even_when_kv_items_called_last() {
+        // `.kv_items()` is called last, so `target` (and thus `render(format)`)
+        // would follow the KV path — but `render_toon()` must still read the
+        // `items`/`fields` slot regardless.
+        let r = AgentResponse::new("issues")
+            .items(vec![vec![Value::Int(1)]], &["id"])
+            .kv_items(vec![KvItem { key: "id".into(), value: KvValue::Int(99) }]);
+        let toon = r.render_toon();
+        assert!(toon.starts_with("issues[1]{id}:\n  1\n"), "got: {toon}");
+        assert_ne!(toon, r.render_kv(), "render_toon() must not equal render_kv()'s output");
+        assert_eq!(
+            r.render_kv(),
+            r.render(OutputFormat::Text),
+            "target is Kv, so render(format) follows render_kv() here, not render_toon()"
+        );
+    }
+
+    #[test]
+    fn render_kv_reads_kv_slot_even_when_items_called_last() {
+        // `.items()` is called last, so `target` (and thus `render(format)`)
+        // would follow the TOON path — but `render_kv()` must still read the
+        // `single_item` slot regardless.
+        let r = AgentResponse::new("issue")
+            .kv_items(vec![KvItem { key: "id".into(), value: KvValue::Int(1) }])
+            .items(vec![vec![Value::Int(99)]], &["id"]);
+        let kv = r.render_kv();
+        assert_eq!(kv, "id: 1\n");
+        assert_ne!(kv, r.render_toon(), "render_kv() must not equal render_toon()'s output");
+        assert_eq!(
+            r.render_toon(),
+            r.render(OutputFormat::Text),
+            "target is Toon, so render(format) follows render_toon() here, not render_kv()"
+        );
+    }
+
+    #[test]
     fn multiple_hint_calls_accumulate() {
         let r = AgentResponse::new("t").kv_items(vec![]).hint("a").hint("b");
         assert!(r.render_hints_only().contains("help[2]:"));
+    }
+
+    #[test]
+    fn render_json_recovery_params_use_native_json_types_not_strings() {
+        let r = AgentResponse::new("t").kv_items(vec![]).recovery_hint(
+            RecoveryHint::new("retry_after")
+                .param("seconds", KvValue::Int(30))
+                .param("force", KvValue::Bool(true))
+                .param("ratio", KvValue::Float(0.5, 2)),
+        );
+        let json = r.render(OutputFormat::Json);
+        assert!(json.contains("\"seconds\":30"), "got: {json}");
+        assert!(json.contains("\"force\":true"), "got: {json}");
+        assert!(json.contains("\"ratio\":0.50"), "got: {json}");
+        assert!(!json.contains("\"seconds\":\"30\""), "int must not be JSON-stringified, got: {json}");
+        assert!(!json.contains("\"force\":\"true\""), "bool must not be JSON-stringified, got: {json}");
+    }
+
+    #[test]
+    fn render_json_recovery_text_param_is_a_quoted_json_string() {
+        let r = AgentResponse::new("t")
+            .kv_items(vec![])
+            .recovery_hint(RecoveryHint::new("assign_user").param("user", KvValue::Text("alice".into())));
+        let json = r.render(OutputFormat::Json);
+        assert!(json.contains("\"user\":\"alice\""), "got: {json}");
+    }
+
+    #[test]
+    fn render_json_recovery_missing_param_is_json_null() {
+        let r = AgentResponse::new("t")
+            .kv_items(vec![])
+            .recovery_hint(RecoveryHint::new("t").param("value", KvValue::Missing));
+        let json = r.render(OutputFormat::Json);
+        assert!(json.contains("\"value\":null"), "got: {json}");
     }
 }

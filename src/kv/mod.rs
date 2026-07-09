@@ -49,6 +49,62 @@ pub(crate) fn push_kv_value(out: &mut String, value: &KvValue) {
     }
 }
 
+/// Append a JSON-encoded string (with surrounding quotes and escape sequences)
+/// to `out`. Escapes `"`, `\`, `\n`, `\r`, `\t`, and all other control
+/// characters (U+0000–U+001F) as `\u00XX` per RFC 8259. Lives here (rather
+/// than in `response.rs`, its only other caller) because [`kv_value_to_json`]
+/// needs it and `kv` sits below `response` in the module dependency order.
+pub(crate) fn json_escape_str(out: &mut String, s: &str) {
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other if u32::from(other) < 0x20 => {
+                let code = u32::from(other);
+                out.push_str("\\u00");
+                out.push(char::from_digit(code >> 4, 16).unwrap_or('0'));
+                out.push(char::from_digit(code & 0xf, 16).unwrap_or('0'));
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+}
+
+/// Append a single [`KvValue`]'s JSON representation to `out`, using native
+/// JSON types — `Int`/`Float`/`Bool` render as unquoted JSON literals and
+/// `Missing` renders as `null` — rather than the stringified form
+/// [`push_kv_value`] produces for plain-text output. `Duration` has no native
+/// JSON scalar, so it renders as a JSON string using the same `"4.2s"`
+/// formatting as the plain-text path.
+///
+/// Used by JSON-rendering call sites (e.g.
+/// [`crate::response::AgentResponse::render_json`]'s recovery params) so a
+/// downstream JSON consumer (a TypeScript/MCP client, say) sees typed values
+/// instead of every value flattened to a string.
+pub(crate) fn kv_value_to_json(out: &mut String, value: &KvValue) {
+    match value {
+        KvValue::Text(s) => json_escape_str(out, s),
+        KvValue::Int(n) => {
+            let _ = write!(out, "{n}");
+        }
+        KvValue::Float(f, decimals) => {
+            let _ = write!(out, "{f:.*}", *decimals as usize);
+        }
+        KvValue::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        KvValue::Duration(d) => {
+            let mut secs = String::new();
+            let _ = write!(secs, "{:.1}s", d.as_secs_f64());
+            json_escape_str(out, &secs);
+        }
+        KvValue::Missing => out.push_str("null"),
+    }
+}
+
 /// Render a list of key-value pairs as a column-aligned multi-line block.
 ///
 /// Keys are left-padded with spaces so every `:` lines up on the longest key.
@@ -156,5 +212,41 @@ mod tests {
     fn single_key_needs_no_padding() {
         let items = vec![KvItem { key: "id".into(), value: KvValue::Int(1) }];
         assert_eq!(render_kv(&items, None, &[]), "id: 1\n");
+    }
+
+    #[test]
+    fn kv_value_to_json_renders_int_float_bool_as_native_literals() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Int(30));
+        assert_eq!(out, "30");
+
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Float(1.0 / 3.0, 2));
+        assert_eq!(out, "0.33");
+
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Bool(true));
+        assert_eq!(out, "true");
+    }
+
+    #[test]
+    fn kv_value_to_json_renders_text_as_quoted_string() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Text("alice".into()));
+        assert_eq!(out, "\"alice\"");
+    }
+
+    #[test]
+    fn kv_value_to_json_renders_missing_as_null() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Missing);
+        assert_eq!(out, "null");
+    }
+
+    #[test]
+    fn kv_value_to_json_escapes_text_control_characters() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Text("line1\nline2\t\"quoted\"".into()));
+        assert_eq!(out, "\"line1\\nline2\\t\\\"quoted\\\"\"");
     }
 }
