@@ -113,4 +113,17 @@ void describe('AgentResponse', () => {
     r.hint('still works')
     assert.ok(r.renderHintsOnly().includes('still works'))
   })
+
+  void it('renderToon/renderKv are slot-specific, not last-call-wins', () => {
+    const r = new AgentResponse('issues')
+    r.items([[{ type: 'int', intVal: 1 }]], ['id'])
+    // kvItems() is called last, but renderToon() must still read the
+    // items/fields slot, not follow the last-populated slot.
+    r.kvItems([{ key: 'id', value: { type: 'int', intVal: 99 } }])
+    const toon = r.renderToon()
+    const kv = r.renderKv()
+    assert.ok(toon.startsWith('issues[1]{id}:'), `got: ${toon}`)
+    assert.ok(kv.includes('id: 99'), `got: ${kv}`)
+    assert.notStrictEqual(toon, kv)
+  })
 })
