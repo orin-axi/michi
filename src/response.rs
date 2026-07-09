@@ -92,7 +92,8 @@ impl AgentResponse {
         self
     }
 
-    /// Set the total available count, emitted as `totalCount: N` (TOON path only).
+    /// Set the total available count, emitted as `totalCount: N` on either
+    /// render path — the TOON header line and the KV block both honour it.
     #[must_use]
     pub fn total_count(mut self, n: usize) -> Self {
         self.total_count = Some(n);
@@ -301,6 +302,20 @@ mod tests {
     fn total_count_appears_in_toon_output() {
         let r = AgentResponse::new("issues").items(vec![], &["id"]).total_count(99);
         assert!(r.render(OutputFormat::Text).contains("totalCount: 99"));
+    }
+
+    #[test]
+    fn total_count_appears_in_kv_output_too() {
+        let r = AgentResponse::new("issue")
+            .kv_items(vec![KvItem { key: "id".into(), value: KvValue::Int(1) }])
+            .total_count(5);
+        assert_eq!(r.render(OutputFormat::Text), "id: 1\ntotalCount: 5\n");
+    }
+
+    #[test]
+    fn unset_target_renders_as_empty_toon_header_for_type_name() {
+        let r = AgentResponse::new("issue");
+        assert_eq!(r.render(OutputFormat::Text), "issue[0]{}:\n");
     }
 
     #[test]
