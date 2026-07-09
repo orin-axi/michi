@@ -80,6 +80,15 @@ pub fn append_recovery(out: &mut String, hints: &[RecoveryHint]) {
     out.push_str("recovery[");
     out.push_str(&hints.len().to_string());
     out.push_str("]:\n");
+    append_recovery_lines(out, hints);
+}
+
+/// Append the per-hint lines only (no `recovery[N]:` header).
+///
+/// Shared by [`append_recovery`] and other blocks that fold recovery hints
+/// under a different header — e.g. `idempotency::PartialSuccess::render`,
+/// which folds them into a trailing `help[N]:` block.
+pub(crate) fn append_recovery_lines(out: &mut String, hints: &[RecoveryHint]) {
     for hint in hints {
         out.push_str("  ");
         out.push_str(&hint.tool);

@@ -1,7 +1,7 @@
 mod escape;
 pub(crate) mod render;
 
-pub(crate) use escape::escape_value;
+pub(crate) use escape::{escape_value, escape_value_quoted};
 pub use render::Value;
 
 /// Options for rendering a TOON document.

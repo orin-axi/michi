@@ -50,6 +50,29 @@ pub(crate) fn escape_value(v: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(out)
 }
 
+/// Escape a value for TOON row output and unconditionally wrap it in quotes.
+///
+/// Unlike [`escape_value`], which only quotes when the value contains a
+/// delimiter, this always quotes — for free-text fields (e.g. a
+/// human-readable failure reason) where the row shape should stay
+/// predictable regardless of incidental comma/quote content.
+pub(crate) fn escape_value_quoted(v: &str) -> String {
+    let mut out = String::with_capacity(v.len() + 2);
+    out.push('"');
+    for ch in v.chars() {
+        match ch {
+            '\n' | '\r' => {}
+            '"' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +110,20 @@ mod tests {
     #[test]
     fn value_with_newline_and_comma_is_stripped_and_quoted() {
         assert_eq!(escape_value("a,b\nc"), r#""a,bc""#);
+    }
+
+    #[test]
+    fn quoted_wraps_plain_value_that_needs_no_escaping() {
+        assert_eq!(escape_value_quoted("User 'ghost' not found"), r#""User 'ghost' not found""#);
+    }
+
+    #[test]
+    fn quoted_escapes_internal_double_quotes() {
+        assert_eq!(escape_value_quoted(r#"say "hi""#), r#""say \"hi\"""#);
+    }
+
+    #[test]
+    fn quoted_strips_embedded_newlines() {
+        assert_eq!(escape_value_quoted("line\nbreak"), r#""linebreak""#);
     }
 }
