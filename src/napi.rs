@@ -189,7 +189,7 @@ pub struct JsAgentResponse {
 #[napi]
 impl JsAgentResponse {
     /// Create a new response builder for the given type name.
-    #[napi(constructor)]
+    #[napi(constructor, catch_unwind)]
     #[must_use]
     pub fn new(type_name: String) -> Self {
         Self { inner: Some(crate::response::AgentResponse::new(type_name)) }
@@ -204,9 +204,9 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not
-    /// happen in normal use), or if `rows`/`fields` exceed this crate's
-    /// NAPI-boundary size limits.
-    #[napi]
+    /// happen in normal use), or if `rows`/`fields`/any row's value count
+    /// exceed this crate's NAPI-boundary size limits.
+    #[napi(catch_unwind)]
     #[allow(clippy::needless_pass_by_value)] // napi-derive requires owned Vec<String> for JS array params
     pub fn items(&mut self, rows: Vec<Vec<JsToonValue>>, fields: Vec<String>) -> napi::Result<()> {
         if rows.len() > MAX_ROWS {
@@ -217,6 +217,14 @@ impl JsAgentResponse {
                 "fields length {} exceeds maximum of {MAX_FIELDS}",
                 fields.len()
             )));
+        }
+        for row in &rows {
+            if row.len() > MAX_FIELDS {
+                return Err(napi::Error::from_reason(format!(
+                    "row length {} exceeds maximum of {MAX_FIELDS}",
+                    row.len()
+                )));
+            }
         }
         let b = self.take()?;
         let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
@@ -231,7 +239,7 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not happen in normal use).
-    #[napi]
+    #[napi(catch_unwind)]
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // n clamped non-negative first
     pub fn total_count(&mut self, n: i32) -> napi::Result<()> {
         let b = self.take()?;
@@ -244,7 +252,7 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not happen in normal use).
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn kv_items(&mut self, items: Vec<JsKvItem>) -> napi::Result<()> {
         let b = self.take()?;
         let converted =
@@ -258,7 +266,7 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not happen in normal use).
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn hint(&mut self, hint: String) -> napi::Result<()> {
         let b = self.take()?;
         self.inner = Some(b.hint(hint));
@@ -272,7 +280,7 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not happen in normal use).
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn recovery_hint(&mut self, tool: String, reason: Option<String>) -> napi::Result<()> {
         let b = self.take()?;
         let mut hint = crate::recovery::RecoveryHint::new(tool);
@@ -288,7 +296,7 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not happen in normal use).
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn as_error(&mut self) -> napi::Result<()> {
         let b = self.take()?;
         self.inner = Some(b.as_error());
@@ -300,7 +308,7 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not happen in normal use).
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn render_toon(&self) -> napi::Result<String> {
         self.inner
             .as_ref()
@@ -313,7 +321,7 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not happen in normal use).
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn render_kv(&self) -> napi::Result<String> {
         self.inner
             .as_ref()
@@ -326,7 +334,7 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not happen in normal use).
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn render_json(&self) -> napi::Result<String> {
         self.inner
             .as_ref()
@@ -340,7 +348,7 @@ impl JsAgentResponse {
     /// # Errors
     ///
     /// Returns an error only if an internal invariant is violated (should not happen in normal use).
-    #[napi]
+    #[napi(catch_unwind)]
     pub fn render_hints_only(&self) -> napi::Result<String> {
         self.inner
             .as_ref()
@@ -452,6 +460,19 @@ mod tests {
         r.items(vec![vec![JsToonValue { int_val: Some(1), ..value("int") }]], vec!["id".to_string()]).unwrap();
         let out = r.render_toon().unwrap();
         assert!(out.starts_with("issues[1]{id}:"), "got: {out}");
+    }
+
+    #[test]
+    fn js_agent_response_items_rejects_oversized_row() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        let err = r
+            .items(vec![(0..=MAX_FIELDS).map(|_| value("null")).collect()], vec!["a".to_string()])
+            .expect_err("oversized row must be rejected before consuming the builder");
+        assert!(err.reason.contains("row length"), "got: {}", err.reason);
+
+        // The rejected call must not have consumed the builder via `take()`:
+        // a subsequent valid call should still succeed.
+        r.items(vec![vec![value("null")]], vec!["a".to_string()]).expect("builder still usable after rejection");
     }
 
     #[test]
