@@ -122,7 +122,10 @@ impl PartialSuccess {
     pub fn render(&self) -> String {
         let mut out = String::with_capacity(
             64 + self.completed.iter().map(String::len).sum::<usize>()
-                + self.failed.iter().map(|f| f.operation.len() + f.reason.len()).sum::<usize>()
+                // +60 per failed op budgets for quoting overhead and an optional
+                // trailing help[] line (tool + suggestedParams), mirroring the
+                // per-hint constant in recovery::render_recovery.
+                + self.failed.iter().map(|f| f.operation.len() + f.reason.len() + 60).sum::<usize>()
                 + self.skipped.iter().map(String::len).sum::<usize>(),
         );
         out.push_str("partial_success: ");
