@@ -49,6 +49,10 @@ proptest! {
         // the per-position comparison below.
         let rows: Vec<Vec<Value>> =
             cells.iter().map(|row| row.iter().map(|c| Value::Str(c.clone())).collect()).collect();
+        // `hints` isn't fuzzed here: append_hints (src/hints.rs) writes hint
+        // strings verbatim with no TOON-grammar escaping, so varying their
+        // content wouldn't exercise the row/field escaping grammar this test
+        // targets — hints.rs's own unit tests already cover hint rendering.
         let opts = ToonOptions { type_name: type_name.clone(), fields: fields.clone(), rows: rows.clone(), total_count, hints: vec![], max_cell_len: 200 };
         let rendered = render_toon(&opts);
 
