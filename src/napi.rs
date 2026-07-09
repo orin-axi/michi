@@ -22,11 +22,15 @@
 
 use napi_derive::napi;
 
-/// Maximum row count accepted per [`render_toon`] call.
+/// Maximum row count accepted for a single call's `rows`: [`render_toon`]'s
+/// `opts.rows` and [`JsAgentResponse::items`]'s `rows`.
 const MAX_ROWS: usize = 100_000;
-/// Maximum field/column count accepted per header or row.
+/// Maximum count accepted per call for anything shaped like "one entry per
+/// field": [`render_toon`]'s `opts.fields` and each row's value count,
+/// [`JsAgentResponse::items`]'s `fields` and each row's value count, and
+/// [`JsAgentResponse::kv_items`]'s `items` (one KV entry is one field).
 const MAX_FIELDS: usize = 1_000;
-/// Maximum hint count accepted per call.
+/// Maximum hint count accepted per [`render_hints`] call.
 const MAX_HINTS: usize = 10_000;
 
 /// Value type for a TOON row cell (JavaScript-friendly).
