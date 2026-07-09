@@ -210,3 +210,22 @@ fn hints_field_accepts_hint_type() {
     let out = render_toon(&opts);
     assert!(out.contains("help[1]:\n  do this\n"));
 }
+
+#[test]
+fn crate_root_reexports_are_reachable() {
+    // Compiles iff every one of these paths resolves at the crate root, per
+    // docs/01-spec.md's lib.rs sketch. Not exhaustive of every type in the
+    // crate — just the ones spec explicitly lists as top-level re-exports.
+    let _: fn(&[michi::kv::KvItem], Option<usize>, &[michi::Hint]) -> String = michi::render_kv;
+    let _ = michi::empty_state("t");
+    let _: fn(Option<String>) -> michi::AlreadyDone = michi::already_done;
+    let _: fn(&str, &str, &[michi::Hint]) -> String = michi::render_already_done;
+    let _ = michi::RetryConfig::default();
+    let _: fn(&str) -> Option<std::time::Duration> = michi::parse_retry_after;
+    let _: fn(&michi::resilience::RetryConfig, u32, f64, Option<std::time::Duration>) -> Option<std::time::Duration> =
+        michi::next_retry_delay;
+    let _: fn(&str, usize, &str) -> michi::Truncated = michi::truncate;
+    let _: fn(&str, usize, &str) -> String = michi::truncate_inline;
+    let _ = michi::RecoveryHint::new("t");
+    let _ = michi::StatusResponse::new("t", "d", vec![]);
+}

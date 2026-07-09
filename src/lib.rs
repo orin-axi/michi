@@ -91,10 +91,17 @@ pub mod toon;
 pub mod truncate;
 
 // Re-export the most common types at the crate root for convenience.
+pub use empty::empty_state;
 pub use error::{DomainError, Error, ErrorClass, ErrorCode, Sensitive};
 pub use hints::{append_hints, render_hints, Hint};
+pub use idempotency::{already_done, render_already_done, AlreadyDone, FailedOp, IdempotencyKey, PartialSuccess};
+pub use kv::render_kv;
+pub use recovery::RecoveryHint;
+pub use resilience::{next_retry_delay, parse_retry_after, RetryConfig};
 pub use response::{AgentResponse, OutputFormat};
+pub use status::StatusResponse;
 pub use toon::{render_toon, ToonOptions, Value};
+pub use truncate::{truncate, truncate_inline, Truncated};
 
 /// Crate-level `Result` alias.
 pub type Result<T> = std::result::Result<T, Error>;
