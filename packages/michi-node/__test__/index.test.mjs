@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderToon, emptyState, renderHints, truncate } from '../index.js'
+import { renderToon, emptyState, renderHints, truncate, AgentResponse } from '../index.js'
 
 void describe('renderToon', () => {
   void it('renders a basic list', () => {
@@ -66,5 +66,37 @@ void describe('truncate', () => {
   void it('truncates long content', () => {
     const out = truncate('a'.repeat(200), 50, 'full=true')
     assert.ok(out.includes('chars truncated'))
+  })
+})
+
+void describe('AgentResponse', () => {
+  void it('builds a TOON response with hints via chained calls', () => {
+    const r = new AgentResponse('issues')
+    r.items([[{ type: 'int', intVal: 1 }]], ['id'])
+    r.hint('do this')
+    const out = r.renderToon()
+    assert.ok(out.startsWith('issues[1]{id}:'))
+    assert.ok(out.includes('help[1]:'))
+  })
+
+  void it('builds a KV response', () => {
+    const r = new AgentResponse('issue')
+    r.kvItems([{ key: 'id', value: { type: 'int', intVal: 42 } }])
+    assert.ok(r.renderKv().includes('id:'))
+  })
+
+  void it('renderJson reflects asError', () => {
+    const r = new AgentResponse('t')
+    r.kvItems([])
+    r.asError()
+    assert.ok(r.renderJson().includes('"isError":true'))
+  })
+
+  void it('mutators keep working after render calls (render takes &self, not &mut self)', () => {
+    const r = new AgentResponse('t')
+    r.kvItems([])
+    r.renderKv()
+    r.hint('still works')
+    assert.ok(r.renderHintsOnly().includes('still works'))
   })
 })

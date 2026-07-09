@@ -33,6 +33,7 @@ const MAX_HINTS: usize = 10_000;
 ///
 /// Use the `type` field to discriminate: `"str"`, `"int"`, `"float"`, `"bool"`, `"null"`.
 #[napi(object)]
+#[derive(Default)]
 pub struct JsToonValue {
     /// Discriminant: `"str"`, `"int"`, `"float"`, `"bool"`, or `"null"`.
     #[napi(js_name = "type")]
@@ -154,6 +155,200 @@ pub fn truncate(content: String, max_chars: i32, hint: String) -> String {
     crate::truncate::truncate_inline(&content, max_chars.max(0) as usize, &hint)
 }
 
+/// A key-value item for [`JsAgentResponse::kv_items`] (JavaScript-friendly).
+#[napi(object)]
+pub struct JsKvItem {
+    /// The field name.
+    pub key: String,
+    /// The field value.
+    pub value: JsToonValue,
+}
+
+fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
+    match v.r#type.as_str() {
+        "str" => crate::kv::KvValue::Text(v.str_val.unwrap_or_default()),
+        "int" => crate::kv::KvValue::Int(i64::from(v.int_val.unwrap_or(0))),
+        "float" => crate::kv::KvValue::Float(v.float_val.unwrap_or(0.0), 6),
+        "bool" => crate::kv::KvValue::Bool(v.bool_val.unwrap_or(false)),
+        _ => crate::kv::KvValue::Missing,
+    }
+}
+
+/// NAPI wrapper around [`crate::response::AgentResponse`].
+///
+/// `AgentResponse`'s Rust methods consume `self` and return `Self` — that
+/// idiom can't cross the NAPI boundary directly, since a `#[napi]` class
+/// instance is owned by the JS garbage collector and Rust only ever sees
+/// `&mut self`. Each mutating method here `take()`s the inner builder out of
+/// its `Option` slot, applies the consuming method, and puts the result back.
+#[napi(js_name = "AgentResponse")]
+pub struct JsAgentResponse {
+    inner: Option<crate::response::AgentResponse>,
+}
+
+#[napi]
+impl JsAgentResponse {
+    /// Create a new response builder for the given type name.
+    #[napi(constructor)]
+    #[must_use]
+    pub fn new(type_name: String) -> Self {
+        Self { inner: Some(crate::response::AgentResponse::new(type_name)) }
+    }
+
+    fn take(&mut self) -> napi::Result<crate::response::AgentResponse> {
+        self.inner.take().ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))
+    }
+
+    /// Populate the TOON list path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not
+    /// happen in normal use), or if `rows`/`fields` exceed this crate's
+    /// NAPI-boundary size limits.
+    #[napi]
+    #[allow(clippy::needless_pass_by_value)] // napi-derive requires owned Vec<String> for JS array params
+    pub fn items(&mut self, rows: Vec<Vec<JsToonValue>>, fields: Vec<String>) -> napi::Result<()> {
+        if rows.len() > MAX_ROWS {
+            return Err(napi::Error::from_reason(format!("rows length {} exceeds maximum of {MAX_ROWS}", rows.len())));
+        }
+        if fields.len() > MAX_FIELDS {
+            return Err(napi::Error::from_reason(format!(
+                "fields length {} exceeds maximum of {MAX_FIELDS}",
+                fields.len()
+            )));
+        }
+        let b = self.take()?;
+        let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
+        let converted: Vec<Vec<crate::toon::Value>> =
+            rows.into_iter().map(|row| row.into_iter().map(js_value_to_rust).collect()).collect();
+        self.inner = Some(b.items(converted, &field_refs));
+        Ok(())
+    }
+
+    /// Set the total available count (TOON path only).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // n clamped non-negative first
+    pub fn total_count(&mut self, n: i32) -> napi::Result<()> {
+        let b = self.take()?;
+        self.inner = Some(b.total_count(n.max(0) as usize));
+        Ok(())
+    }
+
+    /// Populate the KV single-item path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi]
+    pub fn kv_items(&mut self, items: Vec<JsKvItem>) -> napi::Result<()> {
+        let b = self.take()?;
+        let converted =
+            items.into_iter().map(|i| crate::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value) }).collect();
+        self.inner = Some(b.kv_items(converted));
+        Ok(())
+    }
+
+    /// Append a contextual hint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi]
+    pub fn hint(&mut self, hint: String) -> napi::Result<()> {
+        let b = self.take()?;
+        self.inner = Some(b.hint(hint));
+        Ok(())
+    }
+
+    /// Append a recovery hint naming a tool (no structured params — use
+    /// `AgentResponse` from Rust directly for typed params; the NAPI surface
+    /// keeps this to the common case of "here's what to call next").
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi]
+    pub fn recovery_hint(&mut self, tool: String, reason: Option<String>) -> napi::Result<()> {
+        let b = self.take()?;
+        let mut hint = crate::recovery::RecoveryHint::new(tool);
+        if let Some(reason) = reason {
+            hint = hint.reason(reason);
+        }
+        self.inner = Some(b.recovery_hint(hint));
+        Ok(())
+    }
+
+    /// Mark this response as an error state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi]
+    pub fn as_error(&mut self) -> napi::Result<()> {
+        let b = self.take()?;
+        self.inner = Some(b.as_error());
+        Ok(())
+    }
+
+    /// Render via the TOON or KV path (whichever was populated).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi]
+    pub fn render_toon(&self) -> napi::Result<String> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))
+            .map(crate::response::AgentResponse::render_toon)
+    }
+
+    /// Render via the KV path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi]
+    pub fn render_kv(&self) -> napi::Result<String> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))
+            .map(crate::response::AgentResponse::render_kv)
+    }
+
+    /// Render as a compact JSON string (`{"body":...,"hints":[...],"recovery":[...],"isError":bool}`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi]
+    pub fn render_json(&self) -> napi::Result<String> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))
+            .map(|b| b.render(crate::response::OutputFormat::Json))
+    }
+
+    /// Render just the `help[N]:` block — the three-surface seam for MCP
+    /// frameworks assembling their own display body separately.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi]
+    pub fn render_hints_only(&self) -> napi::Result<String> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))
+            .map(crate::response::AgentResponse::render_hints_only)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +444,37 @@ mod tests {
         // max_chars.max(0) clamps to 0 rather than wrapping/panicking on a negative input.
         let out = truncate("hello".to_string(), -5, "full=true".to_string());
         assert!(out.chars().count() <= 1 || out.contains("chars truncated"));
+    }
+
+    #[test]
+    fn js_agent_response_items_then_render_toon() {
+        let mut r = JsAgentResponse::new("issues".to_string());
+        r.items(vec![vec![JsToonValue { int_val: Some(1), ..value("int") }]], vec!["id".to_string()]).unwrap();
+        let out = r.render_toon().unwrap();
+        assert!(out.starts_with("issues[1]{id}:"), "got: {out}");
+    }
+
+    #[test]
+    fn js_agent_response_kv_items_then_render_kv() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("null") }]).unwrap();
+        let out = r.render_kv().unwrap();
+        assert!(out.contains("id:"), "got: {out}");
+    }
+
+    #[test]
+    fn js_agent_response_hint_and_render_hints_only() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        r.hint("do this".to_string()).unwrap();
+        assert_eq!(r.render_hints_only().unwrap(), "help[1]:\n  do this\n");
+    }
+
+    #[test]
+    fn js_agent_response_render_json_reflects_is_error() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        r.as_error().unwrap();
+        assert!(r.render_json().unwrap().contains("\"isError\":true"));
     }
 }
