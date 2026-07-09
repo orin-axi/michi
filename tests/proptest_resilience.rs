@@ -9,7 +9,7 @@ proptest! {
     }
 
     #[test]
-    fn next_retry_delay_within_max_delay_bound(
+    fn next_retry_delay_within_bounds(
         attempt in 0u32..5,
         jitter_seed in 0.0f64..1.0,
         base_secs in 1u64..10,
@@ -24,6 +24,25 @@ proptest! {
         };
         if let Some(delay) = next_retry_delay(&config, attempt, jitter_seed, None) {
             prop_assert!(delay <= config.max_delay, "delay {delay:?} exceeded max_delay {:?}", config.max_delay);
+
+            // Lower bound per docs/01-spec.md: delay is always within
+            // [initial_delay, max_delay]. Jitter is additive-only (never
+            // negative — jitter_factor and jitter_seed are both in [0.0, 1.0]
+            // in `next_retry_delay`, so it only ever raises the delay above
+            // the raw exponential backoff), and `retry_after` is None here, so
+            // the true floor is the raw backoff (base_delay * 2^attempt)
+            // *unless* max_delay caps it first — e.g. at higher attempts the
+            // raw backoff can already exceed max_delay before jitter is even
+            // applied, in which case the delay can legitimately equal
+            // max_delay exactly rather than the uncapped raw backoff.
+            let exp = 2u32.saturating_pow(attempt);
+            let raw_backoff = config.base_delay.saturating_mul(exp);
+            let expected_min = raw_backoff.min(config.max_delay);
+            prop_assert!(
+                delay >= expected_min,
+                "delay {delay:?} below expected minimum {expected_min:?} (raw backoff {raw_backoff:?}, max_delay {:?})",
+                config.max_delay
+            );
         }
     }
 }
