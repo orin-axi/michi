@@ -62,7 +62,9 @@ pub enum AlreadyDone {
 /// in their own store, and passes only the lookup outcome here.
 ///
 /// Returns [`AlreadyDone::Yes`] when `stored` is `Some`, [`AlreadyDone::No`]
-/// otherwise.
+/// otherwise. To render an already-done result for the agent, see
+/// [`render_already_done`] — a separate, unrelated-by-name rendering
+/// function, not a formatter for this function's output.
 #[must_use]
 pub fn already_done(stored: Option<String>) -> AlreadyDone {
     match stored {
@@ -95,6 +97,9 @@ impl PartialSuccess {
 
 /// Render an already-done response: a successful no-op, not an error (exit
 /// code 0 is the caller's responsibility — this function only renders).
+/// Independent of [`already_done`]: call this regardless of how you
+/// detected the no-op (that check function is one option, not a
+/// prerequisite).
 ///
 /// Format:
 /// ```text
