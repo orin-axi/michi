@@ -207,7 +207,9 @@ michi/
     empty.rs                    # empty_state(), empty_state_with_hints()
     error.rs                    # Error, ErrorCode, DomainError
     idempotency.rs              # IdempotencyKey, already_done(), PartialSuccess
-    resilience.rs               # RetryConfig, parse_retry_after(), next_retry_delay()
+    resilience/
+      mod.rs                     # RetryConfig, parse_retry_after(), next_retry_delay()
+      circuit.rs, policy.rs      # pipeline-feature-gated (Plan 2) — out of scope here
     status.rs                   # StatusItem, StatusResponse, Health
     recovery.rs                 # RecoveryHint, render_recovery()
     response.rs                 # AgentResponse builder, OutputFormat

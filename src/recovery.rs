@@ -36,23 +36,6 @@ impl RecoveryHint {
     }
 }
 
-/// Render a single [`KvValue`] as plain text (no key, no trailing newline).
-///
-/// Mirrors [`crate::kv::push_kv_value`]'s formatting exactly (same precision
-/// handling for `Float`, same `Duration`/`Missing` text) so the same
-/// `KvValue` renders identically whether it flows through a `recovery[N]:`
-/// block or a `kv`/`status` block.
-pub(crate) fn kv_value_str(v: &KvValue) -> std::borrow::Cow<'_, str> {
-    match v {
-        KvValue::Text(s) => std::borrow::Cow::Borrowed(s.as_str()),
-        KvValue::Int(n) => std::borrow::Cow::Owned(n.to_string()),
-        KvValue::Float(f, decimals) => std::borrow::Cow::Owned(format!("{f:.*}", *decimals as usize)),
-        KvValue::Bool(b) => std::borrow::Cow::Borrowed(if *b { "true" } else { "false" }),
-        KvValue::Duration(d) => std::borrow::Cow::Owned(format!("{:.1}s", d.as_secs_f64())),
-        KvValue::Missing => std::borrow::Cow::Borrowed("—"),
-    }
-}
-
 /// Render a list of recovery hints as an agent-readable block.
 ///
 /// Format:
@@ -105,7 +88,7 @@ pub(crate) fn append_recovery_lines(out: &mut String, hints: &[RecoveryHint]) {
                 }
                 out.push_str(k);
                 out.push_str(": ");
-                out.push_str(&kv_value_str(v));
+                crate::kv::push_kv_value(out, v);
             }
             out.push_str(" }");
         }
@@ -207,9 +190,13 @@ mod tests {
 
     #[test]
     fn float_param_precision_matches_kv_render_kv_for_same_value() {
-        let recovery_out = kv_value_str(&KvValue::Float(1.0 / 3.0, 2));
+        let hints = [RecoveryHint::new("t").param("ratio", KvValue::Float(1.0 / 3.0, 2))];
+        let recovery_out = render_recovery(&hints);
         let mut kv_out = String::new();
         crate::kv::push_kv_value(&mut kv_out, &KvValue::Float(1.0 / 3.0, 2));
-        assert_eq!(recovery_out.as_ref(), kv_out, "same KvValue must render identically via both paths");
+        assert!(
+            recovery_out.contains(&format!("ratio: {kv_out}")),
+            "same KvValue must render identically via both paths, got: {recovery_out}"
+        );
     }
 }
