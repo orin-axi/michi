@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderToon, emptyState, renderHints, truncate, AgentResponse } from '../index.js'
+import { renderToon, emptyState, renderHints, appendHints, renderRecovery, truncate, AgentResponse } from '../index.js'
 
 void describe('renderToon', () => {
   void it('renders a basic list', () => {
@@ -55,6 +55,20 @@ void describe('renderHints', () => {
 
   void it('returns empty for no hints', () => {
     assert.strictEqual(renderHints([]), '')
+  })
+})
+
+void describe('appendHints', () => {
+  void it('appends a help block to an existing body', () => {
+    assert.strictEqual(appendHints('body\n', ['do this']), 'body\nhelp[1]:\n  do this\n')
+  })
+})
+
+void describe('renderRecovery', () => {
+  void it('renders a recovery block', () => {
+    const out = renderRecovery([{ tool: 'retry', reason: 'rate limited' }])
+    assert.ok(out.startsWith('recovery[1]:\n  retry'))
+    assert.ok(out.includes('rate limited'))
   })
 })
 

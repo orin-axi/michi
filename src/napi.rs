@@ -151,6 +151,57 @@ pub fn render_hints(hints: Vec<String>) -> napi::Result<String> {
     Ok(crate::hints::render_hints(&h))
 }
 
+/// Append a `help[N]:` block to an existing body string.
+///
+/// # Errors
+///
+/// Returns an error if `hints` exceeds [`MAX_HINTS`] entries.
+#[napi(catch_unwind)]
+#[allow(clippy::needless_pass_by_value)] // napi-derive requires owned String for JS string params
+pub fn append_hints(body: String, hints: Vec<String>) -> napi::Result<String> {
+    if hints.len() > MAX_HINTS {
+        return Err(napi::Error::from_reason(format!("hints length {} exceeds maximum of {MAX_HINTS}", hints.len())));
+    }
+    let h: Vec<crate::hints::Hint> = hints.into_iter().map(Into::into).collect();
+    let mut out = body;
+    crate::hints::append_hints(&mut out, &h);
+    Ok(out)
+}
+
+/// A recovery hint for [`render_recovery`] (JavaScript-friendly — no
+/// structured params over this boundary; use `AgentResponse.recoveryHint`
+/// for the common case, or the Rust API directly for typed params).
+#[napi(object)]
+pub struct JsRecoveryHint {
+    /// The tool/operation name the agent should call to recover.
+    pub tool: String,
+    /// Optional human-readable reason.
+    pub reason: Option<String>,
+}
+
+/// Render recovery hints as a `recovery[N]:` block.
+///
+/// # Errors
+///
+/// Returns an error if `hints` exceeds [`MAX_HINTS`] entries.
+#[napi(catch_unwind)]
+pub fn render_recovery(hints: Vec<JsRecoveryHint>) -> napi::Result<String> {
+    if hints.len() > MAX_HINTS {
+        return Err(napi::Error::from_reason(format!("hints length {} exceeds maximum of {MAX_HINTS}", hints.len())));
+    }
+    let converted: Vec<crate::recovery::RecoveryHint> = hints
+        .into_iter()
+        .map(|h| {
+            let mut hint = crate::recovery::RecoveryHint::new(h.tool);
+            if let Some(reason) = h.reason {
+                hint = hint.reason(reason);
+            }
+            hint
+        })
+        .collect();
+    Ok(crate::recovery::render_recovery(&converted))
+}
+
 /// Truncate content to `max_chars` Unicode scalar values with an agent-readable suffix.
 #[napi(catch_unwind)]
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // max_chars clamped non-negative first
@@ -188,6 +239,12 @@ fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
 #[napi(js_name = "AgentResponse")]
 pub struct JsAgentResponse {
     inner: Option<crate::response::AgentResponse>,
+    /// Cumulative count of [`Self::hint`] calls, capped at [`MAX_HINTS`]. A
+    /// single call always appends just one hint, so a per-call bounds check
+    /// alone cannot stop unbounded growth across many calls.
+    hint_count: usize,
+    /// Cumulative count of [`Self::recovery_hint`] calls, capped at [`MAX_HINTS`].
+    recovery_count: usize,
 }
 
 #[napi]
@@ -196,7 +253,7 @@ impl JsAgentResponse {
     #[napi(constructor, catch_unwind)]
     #[must_use]
     pub fn new(type_name: String) -> Self {
-        Self { inner: Some(crate::response::AgentResponse::new(type_name)) }
+        Self { inner: Some(crate::response::AgentResponse::new(type_name)), hint_count: 0, recovery_count: 0 }
     }
 
     fn take(&mut self) -> napi::Result<crate::response::AgentResponse> {
@@ -276,11 +333,17 @@ impl JsAgentResponse {
     ///
     /// # Errors
     ///
-    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    /// Returns an error if this builder has already accumulated [`MAX_HINTS`]
+    /// hints across all calls, or if an internal invariant is violated
+    /// (should not happen in normal use).
     #[napi(catch_unwind)]
     pub fn hint(&mut self, hint: String) -> napi::Result<()> {
+        if self.hint_count >= MAX_HINTS {
+            return Err(napi::Error::from_reason(format!("cumulative hint count exceeds maximum of {MAX_HINTS}")));
+        }
         let b = self.take()?;
         self.inner = Some(b.hint(hint));
+        self.hint_count += 1;
         Ok(())
     }
 
@@ -290,15 +353,23 @@ impl JsAgentResponse {
     ///
     /// # Errors
     ///
-    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    /// Returns an error if this builder has already accumulated [`MAX_HINTS`]
+    /// recovery hints across all calls, or if an internal invariant is
+    /// violated (should not happen in normal use).
     #[napi(catch_unwind)]
     pub fn recovery_hint(&mut self, tool: String, reason: Option<String>) -> napi::Result<()> {
+        if self.recovery_count >= MAX_HINTS {
+            return Err(napi::Error::from_reason(format!(
+                "cumulative recovery hint count exceeds maximum of {MAX_HINTS}"
+            )));
+        }
         let b = self.take()?;
         let mut hint = crate::recovery::RecoveryHint::new(tool);
         if let Some(reason) = reason {
             hint = hint.reason(reason);
         }
         self.inner = Some(b.recovery_hint(hint));
+        self.recovery_count += 1;
         Ok(())
     }
 
@@ -522,5 +593,59 @@ mod tests {
         r.kv_items(vec![]).unwrap();
         r.as_error().unwrap();
         assert!(r.render_json().unwrap().contains("\"isError\":true"));
+    }
+
+    #[test]
+    fn append_hints_appends_to_existing_body() {
+        let out = append_hints("body\n".to_string(), vec!["do this".to_string()]).expect("valid input");
+        assert_eq!(out, "body\nhelp[1]:\n  do this\n");
+    }
+
+    #[test]
+    fn append_hints_rejects_too_many() {
+        assert!(append_hints("body\n".to_string(), vec!["h".to_string(); MAX_HINTS + 1]).is_err());
+    }
+
+    #[test]
+    fn render_recovery_basic() {
+        let hints = vec![JsRecoveryHint { tool: "retry".to_string(), reason: None }];
+        let out = render_recovery(hints).expect("valid input");
+        assert!(out.starts_with("recovery[1]:\n  retry"), "got: {out}");
+    }
+
+    #[test]
+    fn render_recovery_includes_reason() {
+        let hints = vec![JsRecoveryHint { tool: "retry".to_string(), reason: Some("rate limited".to_string()) }];
+        let out = render_recovery(hints).expect("valid input");
+        assert!(out.contains("rate limited"), "got: {out}");
+    }
+
+    #[test]
+    fn render_recovery_rejects_too_many() {
+        let hints: Vec<JsRecoveryHint> =
+            (0..=MAX_HINTS).map(|_| JsRecoveryHint { tool: "retry".to_string(), reason: None }).collect();
+        assert!(render_recovery(hints).is_err());
+    }
+
+    #[test]
+    fn js_agent_response_hint_rejects_after_cumulative_limit_exceeded() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        for i in 0..MAX_HINTS {
+            r.hint(format!("hint {i}")).expect("under limit should succeed");
+        }
+        let result = r.hint("one too many".to_string());
+        assert!(result.is_err(), "expected error after exceeding MAX_HINTS cumulative hints");
+    }
+
+    #[test]
+    fn js_agent_response_recovery_hint_rejects_after_cumulative_limit_exceeded() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        for _ in 0..MAX_HINTS {
+            r.recovery_hint("retry".to_string(), None).expect("under limit should succeed");
+        }
+        let result = r.recovery_hint("retry".to_string(), None);
+        assert!(result.is_err(), "expected error after exceeding MAX_HINTS cumulative recovery hints");
     }
 }
