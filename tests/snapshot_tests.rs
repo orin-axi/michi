@@ -2,6 +2,7 @@ use michi::empty::empty_state_with_hints;
 use michi::hints::Hint;
 use michi::kv::{render_kv, KvItem, KvValue};
 use michi::response::{AgentResponse, OutputFormat};
+use michi::status::{Health, StatusItem, StatusResponse};
 use michi::toon::{render_toon, ToonOptions, Value};
 
 #[test]
@@ -39,6 +40,38 @@ fn snapshot_kv_single_item() {
         KvItem { key: "count".into(), value: KvValue::Int(3) },
     ];
     insta::assert_snapshot!(render_kv(&items, None, &[]));
+}
+
+#[test]
+fn snapshot_kv_column_alignment() {
+    let items = vec![
+        KvItem { key: "id".into(), value: KvValue::Int(1) },
+        KvItem { key: "description".into(), value: KvValue::Text("A longer field value".into()) },
+        KvItem { key: "x".into(), value: KvValue::Bool(true) },
+    ];
+    insta::assert_snapshot!(render_kv(&items, None, &[]));
+}
+
+#[test]
+fn snapshot_status_mixed_health() {
+    let resp = StatusResponse::new(
+        "my-tool",
+        "does things",
+        vec![
+            StatusItem { key: "index".into(), value: KvValue::Text("ready".into()), health: Some(Health::Ok) },
+            StatusItem {
+                key: "cache".into(),
+                value: KvValue::Text("warm".into()),
+                health: Some(Health::Degraded("near limit".into())),
+            },
+            StatusItem {
+                key: "queue".into(),
+                value: KvValue::Text("down".into()),
+                health: Some(Health::Error("disconnected".into())),
+            },
+        ],
+    );
+    insta::assert_snapshot!(resp.render());
 }
 
 #[test]
