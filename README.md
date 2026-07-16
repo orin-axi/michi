@@ -83,7 +83,9 @@ help[1]:
 
 The Rust struct-literal shape is deliberately explicit rather than a fluent builder —
 `ToonOptions` is one struct, easy to construct from whatever data you already have. A
-higher-level `toon::list(...)` convenience API may land later; this is what's there today.
+higher-level `toon::list(type_name, items)` convenience API is also available (behind the
+`serde` feature) for building `ToonOptions` directly from a slice of `Serialize`-able
+structs, inferring `fields` and `rows` from the serialized shape.
 
 ## Install
 

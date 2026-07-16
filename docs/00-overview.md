@@ -30,6 +30,7 @@ The same primitives, from either language. (Illustrative — see `docs/01-spec.m
 API.)
 
 ```rust
+use michi::hints::Hint;
 use michi::toon;
 
 #[derive(serde::Serialize)]
@@ -44,11 +45,14 @@ let issues = vec![
     Issue { number: 51812, title: "dark mode request".into(), state: "open".into() },
 ];
 
-// TOON list, an inline total count, and a next-step hint.
-let response = toon::list("issues", &issues)
-    .total(8771)
-    .hint("gh-axi issue view <number>", "view an issue")
-    .render();
+// toon::list (behind the `serde` feature) infers fields/rows from the
+// Serialize-able slice; total count and hints are set on the returned
+// ToonOptions before rendering.
+let mut opts = toon::list("issues", &issues);
+opts.total_count = Some(8771);
+opts.hints = vec![Hint::new("Run `gh-axi issue view <number>` to view an issue")];
+
+let response = toon::render_toon(&opts);
 
 print!("{response}");
 ```
@@ -74,10 +78,10 @@ process.stdout.write(response);
 Both produce the same token-efficient output:
 
 ```text
-count: 2 of 8771 total
 issues[2]{number,title,state}:
-  51815,"[Bug]: Telegram plugin",open
+  51815,[Bug]: Telegram plugin,open
   51812,dark mode request,open
+totalCount: 8771
 help[1]:
   Run `gh-axi issue view <number>` to view an issue
 ```

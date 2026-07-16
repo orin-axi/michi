@@ -229,3 +229,47 @@ fn crate_root_reexports_are_reachable() {
     let _ = michi::RecoveryHint::new("t");
     let _ = michi::StatusResponse::new("t", "d", vec![]);
 }
+
+#[test]
+#[cfg(feature = "serde")]
+fn list_builds_toon_options_from_serializable_struct_slice() {
+    #[derive(serde::Serialize)]
+    struct Issue {
+        number: u64,
+        title: String,
+        state: String,
+    }
+
+    let issues = vec![Issue { number: 51815, title: "[Bug]: Telegram plugin".to_string(), state: "open".to_string() }];
+    let opts = michi::toon::list("issues", &issues);
+    let out = michi::toon::render_toon(&opts);
+    assert!(out.starts_with("issues[1]{number,title,state}:\n"), "got: {out}");
+    assert!(out.contains("51815,[Bug]: Telegram plugin,open"), "got: {out}");
+}
+
+#[test]
+#[cfg(feature = "serde")]
+fn list_handles_empty_slice() {
+    #[derive(serde::Serialize)]
+    struct Empty {
+        x: i32,
+    }
+    let items: Vec<Empty> = vec![];
+    let opts = michi::toon::list("nothing", &items);
+    assert_eq!(opts.fields.len(), 0);
+    assert_eq!(opts.rows.len(), 0);
+}
+
+#[test]
+#[cfg(feature = "serde")]
+fn list_stringifies_nested_values_losslessly() {
+    #[derive(serde::Serialize)]
+    struct WithNested {
+        id: u64,
+        tags: Vec<String>,
+    }
+    let items = vec![WithNested { id: 1, tags: vec!["a".to_string(), "b".to_string()] }];
+    let opts = michi::toon::list("t", &items);
+    // tags is a nested array — falls back to a compact JSON string, not an error.
+    assert_eq!(opts.rows[0][1], michi::toon::Value::Str(r#"["a","b"]"#.to_string()));
+}
