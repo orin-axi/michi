@@ -203,7 +203,7 @@ optionality.
 | ------------------------- | ----------------------------------------------------- |
 | `docs/00-overview.md`     | This file — project identity, naming, suite context   |
 | `docs/01-spec.md`         | Full technical specification — modules, API, grammar  |
-| `docs/projects/01-mvp.md` | MVP implementation plan — agent sessions, constraints |
+| `docs/projects/01-mvp.md` | Superseded early MVP draft — see `michi-core.md` instead   |
 
 ---
 

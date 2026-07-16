@@ -4,12 +4,19 @@
 
 ---
 
+> **Superseded.** This is an earlier, session-parallelized draft of the same v0.1.0 goal.
+> `docs/superpowers/plans/2026-07-03-michi-core.md` is the plan that was actually executed —
+> it has an explicit, correct scope note carving Plan 2 (pipeline execution, `fuzzy`,
+> `cache`, `cli`, `mcp` adapters) out from the start. This document's "no features are
+> deferred" claim below is **incorrect** and kept only for historical reference; see
+> `michi-core.md`'s own "Not in this plan (Plan 2)" list for the accurate scope.
+
 ## Overview
 
-The MVP delivers the complete `michi` crate as specified in `docs/01-spec.md`:
-all 11 modules, the `AgentResponse` builder, the NAPI npm wrapper, a full test
-suite, and benchmarks. No features are deferred — v0.1.0 ships the complete
-public API.
+The MVP delivers the pure-primitives `michi` crate as specified in `docs/01-spec.md`:
+all 11 default-feature modules, the `AgentResponse` builder, the NAPI npm wrapper, a full
+test suite, and benchmarks. Plan 2 (pipeline execution, `fuzzy`, `cache`, `cli`, `mcp`
+adapters) is explicitly deferred — see the superseded notice above.
 
 Implementation is split into 7 agent sessions across 5 phases. Sessions within
 the same phase may run in parallel; the dependency graph enforces the ordering
