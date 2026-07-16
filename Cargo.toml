@@ -38,7 +38,7 @@ pipeline = ["dep:tokio", "dep:tokio-util", "dep:async-trait", "dep:uuid"]
 fuzzy    = ["dep:nucleo-matcher", "pipeline"]
 cache    = ["dep:moka", "dep:sha2", "pipeline"]
 cli      = ["dep:indicatif", "dep:inquire", "dep:crossterm", "dep:ctrlc", "pipeline"]
-napi     = ["dep:napi", "dep:napi-derive"]
+napi     = ["dep:napi", "dep:napi-derive", "dep:serde_json"]
 full     = ["pipeline", "fuzzy", "cache", "cli"]
 
 [dependencies]
@@ -64,8 +64,9 @@ crossterm = { version = "0.27", optional = true }
 ctrlc     = { version = "3", optional = true }
 
 # napi feature
-napi        = { version = "3", features = ["napi6"], optional = true }
+napi        = { version = "3", features = ["napi6", "serde-json"], optional = true }
 napi-derive = { version = "3", optional = true }
+serde_json  = { version = "1", optional = true }
 
 [dev-dependencies]
 divan    = "0.1"
