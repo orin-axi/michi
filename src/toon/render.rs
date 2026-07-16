@@ -4,6 +4,7 @@ use super::escape::escape_value;
 
 /// A single cell value in a TOON row.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Value {
     /// UTF-8 string. Escaped if it contains commas, quotes, carriage returns, or newlines.
     Str(String),
@@ -193,6 +194,15 @@ mod value_conversion_tests {
     fn from_option_string_none() {
         let v: Value = None::<String>.into();
         assert_eq!(v, Value::Null);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn value_serializes_and_deserializes() {
+        let v = Value::Int(42);
+        let json = serde_json::to_string(&v).expect("serializes");
+        let back: Value = serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(v, back);
     }
 }
 

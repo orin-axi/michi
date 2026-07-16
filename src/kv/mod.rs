@@ -13,6 +13,7 @@ pub struct KvItem {
 
 /// A value in a key-value item.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum KvValue {
     /// UTF-8 text value.
     Text(String),
@@ -248,5 +249,14 @@ mod tests {
         let mut out = String::new();
         kv_value_to_json(&mut out, &KvValue::Text("line1\nline2\t\"quoted\"".into()));
         assert_eq!(out, "\"line1\\nline2\\t\\\"quoted\\\"\"");
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn kv_value_serializes_and_deserializes() {
+        let v = KvValue::Text("hello".to_string());
+        let json = serde_json::to_string(&v).expect("serializes");
+        let back: KvValue = serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(v, back);
     }
 }

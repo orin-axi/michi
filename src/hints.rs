@@ -3,6 +3,7 @@
 /// Hints are surfaced in `help[N]:` blocks at the end of TOON or kv responses.
 /// They teach the agent what to call next.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Hint(pub String);
 
 impl Hint {
@@ -105,5 +106,14 @@ mod tests {
     fn hint_from_string() {
         let h: Hint = String::from("test").into();
         assert_eq!(h.as_str(), "test");
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn hint_serializes_and_deserializes() {
+        let h = Hint::new("call list_issues next");
+        let json = serde_json::to_string(&h).expect("serializes");
+        let back: Hint = serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(h, back);
     }
 }

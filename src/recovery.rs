@@ -6,6 +6,7 @@ use crate::kv::KvValue;
 /// machine-actionable, not just descriptive text. Rendered as part of a
 /// `recovery[N]:` block (see [`render_recovery`]).
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RecoveryHint {
     /// The tool/operation name the agent should call to recover.
     pub tool: String,
@@ -169,6 +170,17 @@ mod tests {
         let mut s = "base".to_string();
         append_recovery(&mut s, &[]);
         assert_eq!(s, "base");
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn recovery_hint_serializes_and_deserializes() {
+        let h = RecoveryHint::new("assign_user")
+            .param("user", KvValue::Text("alice".to_string()))
+            .reason("user 'ghost' not found");
+        let json = serde_json::to_string(&h).expect("serializes");
+        let back: RecoveryHint = serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(h, back);
     }
 
     #[test]

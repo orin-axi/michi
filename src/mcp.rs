@@ -11,6 +11,7 @@
 /// Which surface a [`ContentBlock`] is meant for. Mirrors MCP's
 /// `annotations.audience`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Audience {
     /// The compact, token-efficient surface — what michi renders today.
     Assistant,
@@ -23,6 +24,7 @@ pub enum Audience {
 
 /// One text content block, tagged with its intended audience.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContentBlock {
     /// The block's text content.
     pub text: String,
@@ -34,6 +36,7 @@ pub struct ContentBlock {
 /// Built via [`crate::response::AgentResponse::to_call_tool_result`], never
 /// hand-constructed by a caller.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CallToolResult {
     /// Text content blocks — the primary `assistant`-audience block first,
     /// then an optional `user`-audience block if the caller supplied one.
@@ -71,5 +74,27 @@ mod tests {
         assert_eq!(r.content.len(), 1);
         assert!(!r.is_error);
         assert_eq!(r.structured_content, "{}");
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn audience_serializes_and_deserializes() {
+        let a = Audience::Assistant;
+        let json = serde_json::to_string(&a).expect("serializes");
+        let back: Audience = serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(a, back);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn call_tool_result_serializes_and_deserializes() {
+        let r = CallToolResult {
+            content: vec![ContentBlock { text: "body".to_string(), audience: Audience::Assistant }],
+            is_error: false,
+            structured_content: "{}".to_string(),
+        };
+        let json = serde_json::to_string(&r).expect("serializes");
+        let back: CallToolResult = serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(r, back);
     }
 }

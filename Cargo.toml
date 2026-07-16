@@ -39,7 +39,8 @@ fuzzy    = ["dep:nucleo-matcher", "pipeline"]
 cache    = ["dep:moka", "dep:sha2", "pipeline"]
 cli      = ["dep:indicatif", "dep:inquire", "dep:crossterm", "dep:ctrlc", "pipeline"]
 napi     = ["dep:napi", "dep:napi-derive", "dep:serde_json"]
-full     = ["pipeline", "fuzzy", "cache", "cli"]
+serde    = ["dep:serde", "dep:serde_json"]
+full     = ["pipeline", "fuzzy", "cache", "cli", "serde"]
 
 [dependencies]
 thiserror.workspace = true
@@ -66,7 +67,10 @@ ctrlc     = { version = "3", optional = true }
 # napi feature
 napi        = { version = "3", features = ["napi6", "serde-json"], optional = true }
 napi-derive = { version = "3", optional = true }
-serde_json  = { version = "1", optional = true }
+serde_json  = { version = "1", optional = true, features = ["preserve_order"] }
+
+# serde feature
+serde      = { version = "1", features = ["derive"], optional = true }
 
 [dev-dependencies]
 divan    = "0.1"
