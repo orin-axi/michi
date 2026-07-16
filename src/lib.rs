@@ -68,6 +68,9 @@ pub mod hints;
 pub mod idempotency;
 /// Key-value single-item rendering (`key: value\n` blocks).
 pub mod kv;
+/// MCP `CallToolResult` mapping — turns an `AgentResponse` into the shape a
+/// tool call returns to an MCP client.
+pub mod mcp;
 /// NAPI export surface for the `michi` npm package (used by `packages/michi-node`).
 #[cfg(feature = "napi")]
 pub mod napi;
@@ -96,6 +99,7 @@ pub use error::{DomainError, Error, ErrorClass, ErrorCode, Sensitive};
 pub use hints::{append_hints, render_hints, Hint};
 pub use idempotency::{already_done, render_already_done, AlreadyDone, FailedOp, IdempotencyKey, PartialSuccess};
 pub use kv::render_kv;
+pub use mcp::{Audience, CallToolResult, ContentBlock};
 pub use recovery::RecoveryHint;
 pub use resilience::{next_retry_delay, parse_retry_after, RetryConfig};
 pub use response::{AgentResponse, OutputFormat};
