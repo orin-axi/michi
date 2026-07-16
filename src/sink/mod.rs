@@ -1,2 +1,4 @@
 // Plan 2: OutputSink, AgentEvent, NoopSink — requires `pipeline` feature.
-// See docs/superpowers/plans/2026-07-03-michi-pipeline.md
+// Not yet started. See docs/superpowers/specs/2026-07-03-michi-design.md for
+// the architectural notes that exist today; a dedicated Plan 2 implementation
+// plan has not been written yet.
