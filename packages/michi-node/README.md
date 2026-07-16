@@ -40,12 +40,37 @@ help[1]:
 
 ## API
 
+### Free functions
+
 | Function | Signature |
 |---|---|
 | `renderToon` | `(opts: JsToonOptions) => string` — TOON list rendering |
 | `emptyState` | `(typeName: string) => string` — definitive empty-state block |
 | `renderHints` | `(hints: string[]) => string` — `help[N]:` block |
+| `appendHints` | `(body: string, hints: string[]) => string` — append `help[N]:` to an existing body |
+| `renderRecovery` | `(hints: JsRecoveryHint[]) => string` — `recovery[N]:` block |
 | `truncate` | `(content: string, maxChars: number, hint: string) => string` |
+
+### `AgentResponse` class
+
+The primary integration point — a builder that composes TOON/KV rendering, hints, and
+recovery into one response. Setters return `void`, not `this` (see the main repo's
+`docs/01-spec.md` for why chaining isn't supported across the NAPI boundary) — call methods
+as sequential statements, not a chain:
+
+| Method | Signature |
+|---|---|
+| `constructor` | `(typeName: string)` |
+| `.items` | `(rows: JsToonValue[][], fields: string[]) => void` |
+| `.totalCount` | `(n: number) => void` |
+| `.kvItems` | `(items: JsKvItem[]) => void` |
+| `.hint` | `(hint: string) => void` |
+| `.recoveryHint` | `(tool: string, reason?: string) => void` |
+| `.asError` | `() => void` |
+| `.renderToon` | `() => string` — slot-specific, reads only `items`/`fields` |
+| `.renderKv` | `() => string` — slot-specific, reads only `kvItems` |
+| `.renderJson` | `() => string` — compact JSON: `{"body":...,"hints":[...],"recovery":[...],"isError":bool}` |
+| `.renderHintsOnly` | `() => string` — just the `help[N]:` block |
 
 Full type definitions ship in `index.d.ts`. See the
 [main repo](https://github.com/orin-axi/michi) for the complete primitive set, the TOON
