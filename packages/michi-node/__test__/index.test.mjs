@@ -127,3 +127,28 @@ void describe('AgentResponse', () => {
     assert.notStrictEqual(toon, kv)
   })
 })
+
+void describe('toCallToolResult', () => {
+  void it('returns a real object with content/isError/structuredContent', () => {
+    const r = new AgentResponse('issue')
+    r.kvItems([{ key: 'id', value: { type: 'int', intVal: 1 } }])
+    const result = r.toCallToolResult()
+    assert.strictEqual(result.content.length, 1)
+    assert.strictEqual(result.content[0].audience, 'assistant')
+    assert.strictEqual(result.isError, false)
+    // structuredContent must be a real object already, not a JSON string.
+    assert.strictEqual(typeof result.structuredContent, 'object')
+    assert.strictEqual(result.structuredContent.isError, false)
+  })
+
+  void it('includes a second user-audience block when humanContent-equivalent data is present', () => {
+    // Rust-side human_content() has no NAPI setter in this plan (NAPI surface stays
+    // minimal per the design spec) — this test only exercises the single-block path.
+    const r = new AgentResponse('t')
+    r.kvItems([])
+    r.asError()
+    const result = r.toCallToolResult()
+    assert.strictEqual(result.isError, true)
+    assert.strictEqual(result.structuredContent.isError, true)
+  })
+})

@@ -232,6 +232,29 @@ fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
     }
 }
 
+/// One MCP content block (JavaScript-friendly).
+#[napi(object)]
+pub struct JsContentBlock {
+    /// The block's text content.
+    pub text: String,
+    /// `"assistant"` or `"user"` — which surface this block is meant for.
+    pub audience: String,
+}
+
+/// The MCP `CallToolResult` shape, returned by [`JsAgentResponse::to_call_tool_result`].
+#[napi(object)]
+pub struct JsCallToolResult {
+    /// Text content blocks.
+    pub content: Vec<JsContentBlock>,
+    /// Whether this is a tool execution error.
+    #[napi(js_name = "isError")]
+    pub is_error: bool,
+    /// The same data as `content[0]`, as a real parsed JSON value — not a
+    /// string the caller has to `JSON.parse()` themselves.
+    #[napi(js_name = "structuredContent")]
+    pub structured_content: serde_json::Value,
+}
+
 /// NAPI wrapper around [`crate::response::AgentResponse`].
 ///
 /// `AgentResponse`'s Rust methods consume `self` and return `Self` — that
@@ -443,6 +466,37 @@ impl JsAgentResponse {
             .as_ref()
             .ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))
             .map(crate::response::AgentResponse::render_hints_only)
+    }
+
+    /// Build the MCP `CallToolResult` for this response. Returns a real
+    /// object, not a JSON string — `structuredContent` is a parsed
+    /// `serde_json::Value`, so TypeScript callers don't need to
+    /// `JSON.parse()` it themselves.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi(catch_unwind)]
+    pub fn to_call_tool_result(&self) -> napi::Result<JsCallToolResult> {
+        let inner = self.inner.as_ref().ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))?;
+        let result = inner.to_call_tool_result();
+        let structured_content = serde_json::from_str(&result.structured_content)
+            .map_err(|e| napi::Error::from_reason(format!("structured_content was not valid JSON: {e}")))?;
+        Ok(JsCallToolResult {
+            content: result
+                .content
+                .into_iter()
+                .map(|c| JsContentBlock {
+                    text: c.text,
+                    audience: match c.audience {
+                        crate::mcp::Audience::Assistant => "assistant".to_string(),
+                        crate::mcp::Audience::User => "user".to_string(),
+                    },
+                })
+                .collect(),
+            is_error: result.is_error,
+            structured_content,
+        })
     }
 }
 
@@ -678,5 +732,34 @@ mod tests {
         }
         let result = r.recovery_hint("retry".to_string(), None);
         assert!(result.is_err(), "expected error after exceeding MAX_HINTS cumulative recovery hints");
+    }
+
+    #[test]
+    fn js_agent_response_to_call_tool_result_basic() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("int") }]).unwrap();
+        let result = r.to_call_tool_result().unwrap();
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.content[0].audience, "assistant");
+        assert!(!result.is_error);
+    }
+
+    #[test]
+    fn js_agent_response_to_call_tool_result_reflects_is_error() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        r.as_error().unwrap();
+        let result = r.to_call_tool_result().unwrap();
+        assert!(result.is_error);
+    }
+
+    #[test]
+    fn js_agent_response_to_call_tool_result_structured_content_is_parsed_json() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        let result = r.to_call_tool_result().unwrap();
+        // structured_content is a real serde_json::Value, not a string — confirm it's
+        // an object with the expected top-level key, not a re-stringified blob.
+        assert!(result.structured_content.get("isError").is_some(), "got: {:?}", result.structured_content);
     }
 }
