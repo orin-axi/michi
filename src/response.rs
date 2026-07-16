@@ -64,6 +64,7 @@ pub struct AgentResponse {
     recovery: Vec<RecoveryHint>,
     truncate_cells_at: usize,
     is_error: bool,
+    human_content: Option<String>,
 }
 
 impl AgentResponse {
@@ -84,6 +85,7 @@ impl AgentResponse {
             recovery: Vec::new(),
             truncate_cells_at: 200,
             is_error: false,
+            human_content: None,
         }
     }
 
@@ -146,6 +148,15 @@ impl AgentResponse {
     #[must_use]
     pub fn as_error(mut self) -> Self {
         self.is_error = true;
+        self
+    }
+
+    /// Attach a human-facing companion block (`audience: user`) for MCP
+    /// callers. Optional — most callers won't set this. michi does not
+    /// generate this text itself; the caller supplies it.
+    #[must_use]
+    pub fn human_content(mut self, text: impl Into<String>) -> Self {
+        self.human_content = Some(text.into());
         self
     }
 
@@ -227,6 +238,24 @@ impl AgentResponse {
     #[must_use]
     pub fn render_hints_only(&self) -> String {
         crate::hints::render_hints(&self.hints)
+    }
+
+    /// Build the MCP `CallToolResult` for this response: the rendered body
+    /// as the primary `assistant`-audience content block, `human_content`
+    /// (if set) as a second `user`-audience block, `is_error`, and
+    /// `structured_content` as the JSON-rendered form of the same data.
+    #[must_use]
+    pub fn to_call_tool_result(&self) -> crate::mcp::CallToolResult {
+        let mut content =
+            vec![crate::mcp::ContentBlock { text: self.render_text(), audience: crate::mcp::Audience::Assistant }];
+        if let Some(human) = &self.human_content {
+            content.push(crate::mcp::ContentBlock { text: human.clone(), audience: crate::mcp::Audience::User });
+        }
+        crate::mcp::CallToolResult {
+            content,
+            is_error: self.is_error,
+            structured_content: self.render(OutputFormat::Json),
+        }
     }
 
     fn render_json(&self) -> String {
@@ -454,5 +483,46 @@ mod tests {
             .recovery_hint(RecoveryHint::new("t").param("value", KvValue::Missing));
         let json = r.render(OutputFormat::Json);
         assert!(json.contains("\"value\":null"), "got: {json}");
+    }
+
+    #[test]
+    fn to_call_tool_result_uses_render_text_as_assistant_block() {
+        let r = AgentResponse::new("issue").kv_items(vec![KvItem { key: "id".into(), value: KvValue::Int(1) }]);
+        let result = r.to_call_tool_result();
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.content[0].text, r.render_kv());
+        assert_eq!(result.content[0].audience, crate::mcp::Audience::Assistant);
+        assert!(!result.is_error);
+    }
+
+    #[test]
+    fn to_call_tool_result_reflects_is_error() {
+        let r = AgentResponse::new("t").kv_items(vec![]).as_error();
+        let result = r.to_call_tool_result();
+        assert!(result.is_error);
+    }
+
+    #[test]
+    fn to_call_tool_result_includes_human_content_block_when_set() {
+        let r = AgentResponse::new("t").kv_items(vec![]).human_content("Here's a friendly summary.");
+        let result = r.to_call_tool_result();
+        assert_eq!(result.content.len(), 2);
+        assert_eq!(result.content[1].text, "Here's a friendly summary.");
+        assert_eq!(result.content[1].audience, crate::mcp::Audience::User);
+    }
+
+    #[test]
+    fn to_call_tool_result_omits_human_block_when_not_set() {
+        let r = AgentResponse::new("t").kv_items(vec![]);
+        let result = r.to_call_tool_result();
+        assert_eq!(result.content.len(), 1);
+    }
+
+    #[test]
+    fn to_call_tool_result_structured_content_is_valid_json_matching_render_json_body() {
+        let r = AgentResponse::new("issue").kv_items(vec![KvItem { key: "id".into(), value: KvValue::Int(1) }]);
+        let result = r.to_call_tool_result();
+        // structured_content is the same JSON render() produces for OutputFormat::Json.
+        assert_eq!(result.structured_content, r.render(OutputFormat::Json));
     }
 }
