@@ -226,7 +226,7 @@ michi/
 
 packages/michi-node/            # NAPI wrapper (npm: michi)
   Cargo.toml                    # napi feature, napi-rs build
-  package.json                  # name: "michi"
+  package.json                  # name: "michin"
   index.js                      # platform binary loader + TS fallback
   index.d.ts                    # TypeScript types (auto-generated)
   src/
