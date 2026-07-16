@@ -86,7 +86,7 @@ Typical consumer configs:
 |---|---|
 | Pure rendering (Rust CLI, no pipeline) | `michi` (defaults) |
 | Rust CLI that runs pipelines | `michi = { features = ["cli"] }` |
-| TypeScript MCP server via npm | `michi` npm package (default) |
+| TypeScript MCP server via npm | `michin` npm package (default) |
 | MCP server that runs pipelines | `michi = { features = ["mcp"] }` |
 | Test/bench harness | `michi = { features = ["full"] }` |
 | `packages/michi-node` Cargo.toml | `michi = { features = ["napi"] }` |

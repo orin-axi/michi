@@ -9,7 +9,7 @@ protocol, your CLI framework, or your async runtime — it takes structured data
 returns token-efficient, agent-readable strings out. Four tools in the suite (Monokl,
 Firkin, Lumen, Pulse) build on it instead of re-implementing this formatting themselves.
 
-Available from Rust directly, or from TypeScript via the `michi` npm package.
+Available from Rust directly, or from TypeScript via the `michin` npm package.
 
 ## Why
 
