@@ -38,9 +38,8 @@ pipeline = ["dep:tokio", "dep:tokio-util", "dep:async-trait", "dep:uuid"]
 fuzzy    = ["dep:nucleo-matcher", "pipeline"]
 cache    = ["dep:moka", "dep:sha2", "pipeline"]
 cli      = ["dep:indicatif", "dep:inquire", "dep:crossterm", "dep:ctrlc", "pipeline"]
-mcp      = ["pipeline"]
 napi     = ["dep:napi", "dep:napi-derive"]
-full     = ["pipeline", "fuzzy", "cache", "cli", "mcp"]
+full     = ["pipeline", "fuzzy", "cache", "cli"]
 
 [dependencies]
 thiserror.workspace = true

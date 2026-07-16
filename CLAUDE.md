@@ -23,7 +23,7 @@
 ## Architecture
 - `src/` — pure sync rendering library (default features: zero runtime deps)
 - `packages/michi-node/` — thin NAPI cdylib shim, published as npm `michi`
-- Feature flags: `pipeline` (tokio), `fuzzy`, `cache`, `cli`, `mcp`, `napi`
+- Feature flags: `pipeline` (tokio), `fuzzy`, `cache`, `cli`, `napi`, `serde` (opt-in Serialize/Deserialize + `toon::list()`)
 - See `docs/superpowers/specs/2026-07-03-michi-design.md` for decisions
 - See `docs/01-spec.md` for full module API reference
 

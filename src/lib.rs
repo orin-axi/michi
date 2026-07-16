@@ -47,13 +47,15 @@
 //!
 //! | Feature | Adds |
 //! |---|---|
-//! | `pipeline` | `PipelineExecutor`, `CheckpointStore`, `OutputSink`, `CircuitBreaker` |
-//! | `fuzzy` | `FuzzyMatcher`, `FuzzyResolver` |
-//! | `cache` | Two-tier `Cache` (moka + disk) |
-//! | `cli` | CLI surface adapters (indicatif, inquire) |
-//! | `mcp` | MCP surface adapters |
+//! | `pipeline` | `PipelineExecutor`, `CheckpointStore`, `OutputSink`, `CircuitBreaker` (Plan 2, not yet implemented) |
+//! | `fuzzy` | `FuzzyMatcher`, `FuzzyResolver` (Plan 2, not yet implemented) |
+//! | `cache` | Two-tier `Cache` (moka + disk) (Plan 2, not yet implemented) |
+//! | `cli` | CLI surface adapters (indicatif, inquire) (Plan 2, not yet implemented) |
 //! | `napi` | NAPI exports (used by `packages/michi-node`) |
 //! | `full` | All of the above except `napi` |
+//!
+//! MCP integration (`AgentResponse::to_call_tool_result()`) is always compiled
+//! — no feature flag needed, see the `mcp` module.
 //!
 //! Default features: none. A consumer with default features pulls in zero
 //! async runtime dependencies.
