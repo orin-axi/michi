@@ -145,16 +145,12 @@ void describe('toCallToolResult', () => {
     const r = new AgentResponse('t')
     r.kvItems([])
     r.asError()
-    // TODO(Task 4): `humanContent()` is added to the NAPI surface in Task 4 of
-    // docs/superpowers/plans/2026-07-17-mcp-conformance-remediation.md. Until then,
-    // exercise only the single-block path; restore the commented lines below once
-    // `humanContent()` lands.
-    // r.humanContent('friendly summary')
+    r.humanContent('friendly summary')
     const result = r.toCallToolResult()
     assert.strictEqual(result.isError, true)
     assert.strictEqual(result.structuredContent.isError, true)
-    // assert.strictEqual(result.content.length, 2)
-    // assert.strictEqual(result.content[1].type, 'text')
-    // assert.deepStrictEqual(result.content[1].annotations.audience, ['user'])
+    assert.strictEqual(result.content.length, 2)
+    assert.strictEqual(result.content[1].type, 'text')
+    assert.deepStrictEqual(result.content[1].annotations.audience, ['user'])
   })
 })

@@ -423,6 +423,19 @@ impl JsAgentResponse {
         Ok(())
     }
 
+    /// Attach a human-facing companion block (`audience: user`) for MCP
+    /// callers. Optional — most callers won't set this.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi(catch_unwind)]
+    pub fn human_content(&mut self, text: String) -> napi::Result<()> {
+        let b = self.take()?;
+        self.inner = Some(b.human_content(text));
+        Ok(())
+    }
+
     /// Render via the TOON path (`items`/`fields`/`totalCount`), reading only
     /// that slot regardless of which of `.items()`/`.kvItems()` was called
     /// last — see [`crate::response::AgentResponse::render_toon`].
@@ -781,8 +794,25 @@ mod tests {
         assert!(result.structured_content.get("isError").is_some(), "got: {:?}", result.structured_content);
     }
 
-    // `js_agent_response_to_call_tool_result_includes_user_block_with_correct_annotations`
-    // (which exercises `r.human_content(...)`) is deferred to Task 4, which adds the
-    // `JsAgentResponse::human_content()` NAPI setter this test depends on — see this
-    // plan's Task 3 Step 1 note.
+    #[test]
+    fn js_agent_response_to_call_tool_result_includes_user_block_with_correct_annotations() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        r.human_content("friendly summary".to_string()).unwrap();
+        let result = r.to_call_tool_result().unwrap();
+        assert_eq!(result.content.len(), 2);
+        assert_eq!(result.content[1].content_type, "text");
+        assert_eq!(result.content[1].annotations.audience, vec!["user".to_string()]);
+    }
+
+    #[test]
+    fn js_agent_response_human_content_adds_user_audience_block() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        r.human_content("friendly summary".to_string()).unwrap();
+        let result = r.to_call_tool_result().unwrap();
+        assert_eq!(result.content.len(), 2);
+        assert_eq!(result.content[1].text, "friendly summary");
+        assert_eq!(result.content[1].annotations.audience, vec!["user".to_string()]);
+    }
 }

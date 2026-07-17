@@ -71,6 +71,8 @@ as sequential statements, not a chain:
 | `.renderKv` | `() => string` — slot-specific, reads only `kvItems` |
 | `.renderJson` | `() => string` — compact JSON: `{"body":...,"hints":[...],"recovery":[...],"isError":bool}` |
 | `.renderHintsOnly` | `() => string` — just the `help[N]:` block |
+| `.humanContent` | `(text: string) => void` — attach a `user`-audience companion block for `toCallToolResult()` |
+| `.toCallToolResult` | `() => CallToolResult` — the MCP `tools/call` response shape: `{content, isError, structuredContent}`, with each content block's `annotations.audience` set correctly |
 
 Full type definitions ship in `index.d.ts`. See the
 [main repo](https://github.com/orin-axi/michi) for the complete primitive set, the TOON
