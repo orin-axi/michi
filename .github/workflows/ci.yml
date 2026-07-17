@@ -23,7 +23,7 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-features -- -D warnings
       - name: typos
-        uses: crate-ci/typos@master
+        uses: crate-ci/typos@bee27e3a4fd1ea2111cf90ab89cd076c870fce14 # v1.48.0
 
   version-sync:
     name: Version sync
@@ -104,7 +104,7 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: packages/michi-node/pnpm-lock.yaml
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
 
@@ -138,7 +138,7 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: packages/michi-node/pnpm-lock.yaml
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
         working-directory: packages/michi-node
       - name: Install cargo-zigbuild (cross-compile targets only)
         if: matrix.cross

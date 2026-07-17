@@ -25,6 +25,7 @@ debug    = true
 name        = "michi"
 version     = "0.1.0"
 description = "AXI response primitives for agent-ergonomic tools"
+readme      = "README.md"
 keywords    = ["axi", "agent", "mcp", "cli", "llm"]
 categories  = ["text-processing", "encoding", "development-tools"]
 edition.workspace      = true
