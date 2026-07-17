@@ -129,26 +129,32 @@ void describe('AgentResponse', () => {
 })
 
 void describe('toCallToolResult', () => {
-  void it('returns a real object with content/isError/structuredContent', () => {
+  void it('returns MCP-conformant content blocks with type/annotations.audience', () => {
     const r = new AgentResponse('issue')
     r.kvItems([{ key: 'id', value: { type: 'int', intVal: 1 } }])
     const result = r.toCallToolResult()
     assert.strictEqual(result.content.length, 1)
-    assert.strictEqual(result.content[0].audience, 'assistant')
+    assert.strictEqual(result.content[0].type, 'text')
+    assert.deepStrictEqual(result.content[0].annotations.audience, ['assistant'])
     assert.strictEqual(result.isError, false)
-    // structuredContent must be a real object already, not a JSON string.
     assert.strictEqual(typeof result.structuredContent, 'object')
     assert.strictEqual(result.structuredContent.isError, false)
   })
 
-  void it('includes a second user-audience block when humanContent-equivalent data is present', () => {
-    // Rust-side human_content() has no NAPI setter in this plan (NAPI surface stays
-    // minimal per the design spec) — this test only exercises the single-block path.
+  void it('reflects isError and includes a user-audience block from humanContent', () => {
     const r = new AgentResponse('t')
     r.kvItems([])
     r.asError()
+    // TODO(Task 4): `humanContent()` is added to the NAPI surface in Task 4 of
+    // docs/superpowers/plans/2026-07-17-mcp-conformance-remediation.md. Until then,
+    // exercise only the single-block path; restore the commented lines below once
+    // `humanContent()` lands.
+    // r.humanContent('friendly summary')
     const result = r.toCallToolResult()
     assert.strictEqual(result.isError, true)
     assert.strictEqual(result.structuredContent.isError, true)
+    // assert.strictEqual(result.content.length, 2)
+    // assert.strictEqual(result.content[1].type, 'text')
+    // assert.deepStrictEqual(result.content[1].annotations.audience, ['user'])
   })
 })

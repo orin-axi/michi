@@ -232,13 +232,25 @@ fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
     }
 }
 
-/// One MCP content block (JavaScript-friendly).
+/// MCP content-block annotations (JavaScript-friendly). Currently carries
+/// only `audience` — michi has no concept of MCP's optional `priority`.
+#[napi(object)]
+pub struct JsAnnotations {
+    /// `["assistant"]` or `["user"]` — which surface(s) this block targets.
+    pub audience: Vec<String>,
+}
+
+/// One MCP content block (JavaScript-friendly). Wire-conformant with MCP's
+/// text content shape: `{type: "text", text, annotations: {audience: [...]}}`.
 #[napi(object)]
 pub struct JsContentBlock {
+    /// Always `"text"` — michi only ever produces text content blocks.
+    #[napi(js_name = "type")]
+    pub content_type: String,
     /// The block's text content.
     pub text: String,
-    /// `"assistant"` or `"user"` — which surface this block is meant for.
-    pub audience: String,
+    /// Which surface(s) this block is meant for.
+    pub annotations: JsAnnotations,
 }
 
 /// The MCP `CallToolResult` shape, returned by [`JsAgentResponse::to_call_tool_result`].
@@ -487,21 +499,18 @@ impl JsAgentResponse {
                 .content
                 .into_iter()
                 .map(|c| JsContentBlock {
+                    content_type: "text".to_string(),
                     text: c.text,
-                    // `ContentBlock::audience` is now `Vec<Audience>` (Task 1's
-                    // mcp.rs wire-shape fix); michi only ever constructs
-                    // single-element vecs today, so take the first entry.
-                    // The full NAPI-facing shape (`type` + `annotations.audience:
-                    // Vec<String>`) lands in Task 3 — this is a minimal compile
-                    // fix, not that redesign.
-                    audience: c
-                        .audience
-                        .first()
-                        .map_or("assistant", |a| match a {
-                            crate::mcp::Audience::Assistant => "assistant",
-                            crate::mcp::Audience::User => "user",
-                        })
-                        .to_string(),
+                    annotations: JsAnnotations {
+                        audience: c
+                            .audience
+                            .into_iter()
+                            .map(|a| match a {
+                                crate::mcp::Audience::Assistant => "assistant".to_string(),
+                                crate::mcp::Audience::User => "user".to_string(),
+                            })
+                            .collect(),
+                    },
                 })
                 .collect(),
             is_error: result.is_error,
@@ -750,7 +759,8 @@ mod tests {
         r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("int") }]).unwrap();
         let result = r.to_call_tool_result().unwrap();
         assert_eq!(result.content.len(), 1);
-        assert_eq!(result.content[0].audience, "assistant");
+        assert_eq!(result.content[0].content_type, "text");
+        assert_eq!(result.content[0].annotations.audience, vec!["assistant".to_string()]);
         assert!(!result.is_error);
     }
 
@@ -768,8 +778,11 @@ mod tests {
         let mut r = JsAgentResponse::new("t".to_string());
         r.kv_items(vec![]).unwrap();
         let result = r.to_call_tool_result().unwrap();
-        // structured_content is a real serde_json::Value, not a string — confirm it's
-        // an object with the expected top-level key, not a re-stringified blob.
         assert!(result.structured_content.get("isError").is_some(), "got: {:?}", result.structured_content);
     }
+
+    // `js_agent_response_to_call_tool_result_includes_user_block_with_correct_annotations`
+    // (which exercises `r.human_content(...)`) is deferred to Task 4, which adds the
+    // `JsAgentResponse::human_content()` NAPI setter this test depends on — see this
+    // plan's Task 3 Step 1 note.
 }
