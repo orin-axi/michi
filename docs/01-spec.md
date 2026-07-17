@@ -240,6 +240,7 @@ michi/
       mod.rs                     # RetryConfig, parse_retry_after(), next_retry_delay()
       circuit.rs, policy.rs      # pipeline-feature-gated (Plan 2) — out of scope here
     status.rs                   # StatusItem, StatusResponse, Health
+    mcp.rs                      # Audience, ContentBlock, CallToolResult — always compiled
     recovery.rs                 # RecoveryHint, render_recovery()
     response.rs                 # AgentResponse builder, OutputFormat
     napi.rs                     # #[napi] exports (napi feature only)
@@ -1132,6 +1133,9 @@ impl AgentResponse {
     /// Mark this response as an error state — reflected in `OutputFormat::Json`'s
     /// `isError` field. Beyond spec: maps directly onto MCP's `CallToolResult.isError`.
     pub fn as_error(mut self) -> Self
+    /// Attach a human-facing companion block (`audience: user`) for MCP
+    /// callers. Optional. See the `mcp` module section.
+    pub fn human_content(mut self, text: impl Into<String>) -> Self
 
     pub fn render(&self, format: OutputFormat) -> String
     /// Reads the TOON slot (`items`/`fields`/`total_count`) unconditionally —
@@ -1142,6 +1146,9 @@ impl AgentResponse {
     /// KV-path counterpart of `render_toon()`.
     pub fn render_kv(&self) -> String
     pub fn render_hints_only(&self) -> String // see supplement: three-surface seam
+    /// Builds the MCP `CallToolResult` for this response. See the `mcp`
+    /// module section for the exact shape and wire-format details.
+    pub fn to_call_tool_result(&self) -> crate::mcp::CallToolResult
 }
 ```
 
@@ -1180,6 +1187,54 @@ mutable type (`String`, `Vec`, `Option<usize>`, `bool`, ...), so `Send`/`Sync`
 already hold via Rust's automatic trait derivation. An explicit `unsafe impl`
 would be both redundant and a violation of this crate's own "no `unsafe`
 outside the napi boundary" rule.
+
+---
+
+## `mcp` module
+
+Always compiled — no feature gate, no new dependency in the default build.
+Owns exactly one thing: turning an already-built `AgentResponse` into the
+shape MCP's `tools/call` response expects.
+
+```rust
+pub enum Audience {
+    Assistant,
+    User,
+}
+
+pub struct ContentBlock {
+    pub text: String,
+    pub audience: Vec<Audience>,   // MCP's annotations.audience is an array
+}
+
+pub struct CallToolResult {
+    pub content: Vec<ContentBlock>,
+    pub is_error: bool,
+    pub structured_content: String,   // JSON text; see field doc for what's actually structured
+}
+```
+
+`audience` is a `Vec`, not a scalar, because MCP's real `annotations.audience`
+is an array (one block can target more than one audience) — michi always
+populates exactly one element per block today, but the type matches the wire
+shape so no translation is needed at the serialization boundary.
+
+Under the `serde` feature, `ContentBlock`/`CallToolResult` do **not** derive
+`Serialize`/`Deserialize` directly onto their Rust-shaped fields — a naive
+derive would emit `is_error`/`structured_content` (snake_case) and a bare
+`audience` field, neither of which is valid MCP JSON. Instead each type
+converts through a private `*Wire` struct (`serde(into = "...", from = "...")`)
+that adds the `"type": "text"` discriminator, nests `audience` under
+`annotations`, renames fields to camelCase, and — for `CallToolResult` —
+parses `structured_content` into a real embedded JSON value rather than a
+double-encoded string. `Audience` itself serializes as lowercase
+(`"assistant"`/`"user"`), matching MCP's `Role` type.
+
+`AgentResponse::to_call_tool_result()` (see the `response` module section)
+is the only intended constructor — it builds the primary `assistant`-audience
+block from whichever of `render_toon()`/`render_kv()` is active, an optional
+second `user`-audience block from `human_content()` if the caller set one,
+and `structured_content` from `render(OutputFormat::Json)`.
 
 ---
 
@@ -1467,6 +1522,25 @@ export interface RecoveryHintInput {
 /** Render recovery hints as a recovery[N]: block. */
 export declare function renderRecovery(hints: RecoveryHintInput[]): string;
 
+export interface Annotations {
+  audience: ("assistant" | "user")[];
+}
+
+export interface ContentBlock {
+  type: "text";
+  text: string;
+  annotations: Annotations;
+}
+
+/** The MCP `tools/call` response shape. `structuredContent` is a real parsed
+ * value here (unlike `renderJson()`'s string), since it crosses the NAPI
+ * boundary as a typed `#[napi(object)]` field, not hand-built JSON text. */
+export interface CallToolResult {
+  content: ContentBlock[];
+  isError: boolean;
+  structuredContent: unknown;
+}
+
 /** High-level builder — mirrors the Rust `AgentResponse` API. Every mutator
  * returns `undefined`, not `this` — see "Chainable setters," above; callers
  * use sequential statements, not method chaining. */
@@ -1479,14 +1553,20 @@ export declare class AgentResponse {
   recoveryHint(tool: string, reason?: string): void;
   /** Marks this response as an error state, reflected in `renderJson()`'s `isError` field. */
   asError(): void;
+  /** Attaches a `user`-audience companion block, included by `toCallToolResult()`. */
+  humanContent(text: string): void;
   /** Reads the TOON slot unconditionally — see the `response` section. */
   renderToon(): string;
   /** Reads the KV slot unconditionally — see the `response` section. */
   renderKv(): string;
   /** Returns a JSON *string* — `{"body":...,"hints":[...],"recovery":[...],"isError":bool}`
-   * — not a parsed value, matching the Rust side's zero-`serde_json` design. */
+   * — not a parsed value; kept as hand-built text for consistency with the Rust side's
+   * `render(OutputFormat::Json)`, which stays `serde_json`-free (see the `mcp` module
+   * section for where this crate *does* use `serde_json`, and why). */
   renderJson(): string;
   renderHintsOnly(): string;
+  /** The MCP `tools/call` response shape — see the `mcp` module section. */
+  toCallToolResult(): CallToolResult;
 }
 ```
 
@@ -1546,13 +1626,16 @@ export declare class AgentResponse {
 ```toml
 [features]
 default = []
-napi = ["dep:napi", "dep:napi-derive"]
-cli  = []  # reserved: terminal-width-aware rendering (colours, wrap)
+napi  = ["dep:napi", "dep:napi-derive", "dep:serde_json"]
+serde = ["dep:serde", "dep:serde_json"]
+cli   = []  # reserved: terminal-width-aware rendering (colours, wrap)
 ```
 
 No async runtime dependency. No tokio, no async-std. All public functions are
-sync. The `cli` feature is reserved for terminal-aware rendering (line
-wrapping, colour codes for the `[DEGRADED: ...]` health signals in
+sync. `serde` is opt-in Rust-side ergonomics (`Serialize`/`Deserialize` on the
+core value types, `toon::list()`) — see the Cargo.toml section above for the
+full rationale. The `cli` feature is reserved for terminal-aware rendering
+(line wrapping, colour codes for the `[DEGRADED: ...]` health signals in
 `status::StatusResponse`) — out of scope for v1. michi v1 targets agent
 consumers only. When the `cli` feature is fleshed out it will pull in a
 terminal crate (`crossterm` for width detection and styling, or `colored` for
@@ -1563,8 +1646,8 @@ dependency-light; see Open question Q3 for the v2 scope sketch.
 
 ## Versioning and release
 
-- Published to [crates.io](https://crates.io) as `michi`
-- npm package published to [npmjs.com](https://npmjs.com) as `michin`
+- Intended to publish to [crates.io](https://crates.io) as `michi` — not yet published
+- Intended to publish the npm package to [npmjs.com](https://npmjs.com) as `michin` — not yet published
 - NAPI binary cross-compiled via `cargo-zigbuild`:
   - `darwin-arm64` (`aarch64-apple-darwin`)
   - `linux-x64-musl` (`x86_64-unknown-linux-musl`)
