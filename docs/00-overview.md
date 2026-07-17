@@ -20,7 +20,7 @@ remaining three principles (P2, P7, P10) depend on integration that michi delibe
 
 The crate is intentionally narrow: **no protocol knowledge, no async runtime, no CLI framework**.
 Pure computation — data in, strings and types out. TypeScript consumers reach it via the NAPI npm
-wrapper `michi`; Rust consumers take a direct crates.io or git dependency.
+wrapper `michin`; Rust consumers take a direct crates.io or git dependency.
 
 ---
 
@@ -58,21 +58,28 @@ print!("{response}");
 ```
 
 ```typescript
-import { toon } from "michi";
+import { AgentResponse } from "michin";
 
 const issues = [
   { number: 51815, title: "[Bug]: Telegram plugin", state: "open" },
   { number: 51812, title: "dark mode request", state: "open" },
 ];
 
-// Identical primitives, via the NAPI wrapper.
-const response = toon
-  .list("issues", issues)
-  .total(8771)
-  .hint("gh-axi issue view <number>", "view an issue")
-  .render();
+// No toon.list() equivalent crosses the NAPI boundary — that convenience is
+// Rust/serde-feature-only. Build tagged cell values by hand and use the
+// non-chainable AgentResponse API (every mutator returns void, not `this`).
+const rows = issues.map((i) => [
+  { type: "int", intVal: i.number },
+  { type: "str", strVal: i.title },
+  { type: "str", strVal: i.state },
+]);
 
-process.stdout.write(response);
+const r = new AgentResponse("issues");
+r.items(rows, ["number", "title", "state"]);
+r.totalCount(8771);
+r.hint("Run `gh-axi issue view <number>` to view an issue");
+
+process.stdout.write(r.renderToon());
 ```
 
 Both produce the same token-efficient output:
