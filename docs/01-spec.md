@@ -75,8 +75,11 @@ separation — agentic concepts do not leak into infrastructure.
   (fields, sections, tables) are the caller's concern. michi is the
   `audience: ["assistant"]` compact surface; display rendering for the
   `audience: ["user"]` surface stays in your MCP SDK or application layer.
-- **MCP protocol knowledge** — no `content[]`, no `outputSchema`, no
-  `structuredContent`. Those are assembled by the calling MCP framework.
+- **Full MCP protocol knowledge** — no JSON-RPC, no tool registration, no
+  server bootstrapping, no `outputSchema` validation. `AgentResponse::to_call_tool_result()`
+  (and the NAPI `toCallToolResult()`) *do* assemble the `content[]`/`isError`/
+  `structuredContent` shape from an already-built response — see the `mcp`
+  module section below — but nothing beyond that single struct-assembly step.
 - **CLI framework** — no argument parsing, no stdin/stdout handling. That
   belongs to the caller's CLI framework of choice.
 - **HTTP client** — no auth handling, no request construction. michi
@@ -1487,13 +1490,14 @@ export declare class AgentResponse {
 | NAPI wrapper | Cross-language bridge — TypeScript authors never write Rust |
 | Formal TOON grammar | Canonical spec enabling interoperability and testability |
 | `render_hints_only()` | Append hints to an existing body without re-rendering |
+| `mcp::CallToolResult` + `AgentResponse::to_call_tool_result()` | Assembles a wire-conformant MCP `tools/call` response from an already-built `AgentResponse` — no prior shared primitive did this |
 
 ### Stays in your application code
 
 | What | Why |
 |---|---|
 | Display Markdown formatters | Display-surface formatting; `audience: ["user"]` |
-| MCP `content[]` assembly | Protocol knowledge |
+| Full MCP protocol (JSON-RPC, registration, bootstrapping) | Protocol knowledge beyond struct assembly |
 | `outputSchema` wiring | Tied to your schema validation library |
 | Tool annotations | MCP SDK concern |
 | MCP server bootstrapping | Protocol-specific |
