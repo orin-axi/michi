@@ -1,0 +1,36 @@
+#![cfg(feature = "serde")]
+
+use michi::mcp::{Audience, CallToolResult, ContentBlock};
+use proptest::prelude::*;
+
+fn audience_strategy() -> impl Strategy<Value = Audience> {
+    prop_oneof![Just(Audience::Assistant), Just(Audience::User)]
+}
+
+fn content_block_strategy() -> impl Strategy<Value = ContentBlock> {
+    ("[a-zA-Z0-9 ]{0,40}", proptest::collection::vec(audience_strategy(), 1..3))
+        .prop_map(|(text, audience)| ContentBlock { text, audience })
+}
+
+fn call_tool_result_strategy() -> impl Strategy<Value = CallToolResult> {
+    (proptest::collection::vec(content_block_strategy(), 1..3), any::<bool>())
+        .prop_map(|(content, is_error)| CallToolResult { content, is_error, structured_content: "{}".to_string() })
+}
+
+proptest! {
+    #[test]
+    fn call_tool_result_round_trips_through_json(r in call_tool_result_strategy()) {
+        let json = serde_json::to_string(&r).expect("serializes");
+        let back: CallToolResult = serde_json::from_str(&json).expect("deserializes");
+        prop_assert_eq!(r, back);
+    }
+
+    #[test]
+    fn call_tool_result_wire_json_is_mcp_conformant(r in call_tool_result_strategy()) {
+        let json = serde_json::to_string(&r).expect("serializes");
+        prop_assert!(json.contains(r#""type":"text""#), "missing type discriminator: {json}");
+        prop_assert!(json.contains("\"isError\""), "missing camelCase isError: {json}");
+        prop_assert!(json.contains("\"structuredContent\""), "missing camelCase structuredContent: {json}");
+        prop_assert!(!json.contains("\"is_error\""), "leaked snake_case is_error: {json}");
+    }
+}

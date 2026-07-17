@@ -84,3 +84,15 @@ fn snapshot_agent_response_full() {
         .render(OutputFormat::Text);
     insta::assert_snapshot!(out);
 }
+
+#[test]
+fn snapshot_call_tool_result_kv() {
+    let r = AgentResponse::new("issue")
+        .kv_items(vec![
+            KvItem { key: "id".into(), value: KvValue::Text("abc-123".into()) },
+            KvItem { key: "state".into(), value: KvValue::Text("open".into()) },
+        ])
+        .human_content("Issue abc-123 is currently open.");
+    let result = r.to_call_tool_result();
+    insta::assert_debug_snapshot!(result);
+}
