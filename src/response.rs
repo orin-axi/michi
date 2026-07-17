@@ -498,6 +498,16 @@ mod tests {
     }
 
     #[test]
+    fn to_call_tool_result_uses_render_text_as_assistant_block_for_toon_path() {
+        let r = AgentResponse::new("issue")
+            .items(vec![vec![Value::Int(1), Value::Str("open".to_string())]], &["id", "state"]);
+        let result = r.to_call_tool_result();
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.content[0].text, r.render_toon());
+        assert_eq!(result.content[0].audience, vec![crate::mcp::Audience::Assistant]);
+    }
+
+    #[test]
     fn to_call_tool_result_reflects_is_error() {
         let r = AgentResponse::new("t").kv_items(vec![]).as_error();
         let result = r.to_call_tool_result();
