@@ -181,7 +181,7 @@ deliberately omits:
 | Surface                | Name             |
 | ---------------------- | ---------------- |
 | Rust crate (crates.io) | `michi`          |
-| npm package            | `michi`          |
+| npm package            | `michin`         |
 | Rust module path       | `michi::`        |
 | GitHub repo            | `orin-axi/michi` |
 
@@ -201,7 +201,7 @@ optionality.
 ## Publishing targets
 
 - **crates.io** — public, `michi`
-- **npmjs.com** — public, `michi` (NAPI wrapper)
+- **npmjs.com** — public, `michin` (NAPI wrapper)
 - NAPI binaries cross-compiled via `cargo-zigbuild`:
   - `darwin-arm64`
   - `linux-x64-musl`
