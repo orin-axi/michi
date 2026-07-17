@@ -387,6 +387,18 @@ git add src/response.rs
 git commit -m "fix(response): to_call_tool_result() uses Vec<Audience>, add TOON-path coverage"
 ```
 
+> **Note on actual commit history (added post-review):** Steps 1 and 3 above (the
+> `Vec<Audience>` fix to `to_call_tool_result()`'s body and the two updated test
+> assertions) landed one commit earlier than planned, in `bb757f9` ("fix: address
+> review findings for task 1 (response.rs Vec<Audience> compile break)"), because
+> that fix was needed to unbreak Task 1's own build before Task 2 could even compile.
+> The commit carrying this task's exact planned message (`ef9127e`) contains only
+> Step 2 (the new TOON-path test — 10 insertions). The net working tree at the end
+> of both commits matches this task's spec; only the commit boundary/message
+> attribution differs from what's written above. Left as history (not rewritten) per
+> this repo's no-amend/no-force-push policy — see the task-2 review-fix commit for
+> the recorded discrepancy.
+
 ---
 
 ### Task 3: Update NAPI `JsContentBlock`/`JsCallToolResult` for the real MCP shape

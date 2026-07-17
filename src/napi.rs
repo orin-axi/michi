@@ -488,10 +488,20 @@ impl JsAgentResponse {
                 .into_iter()
                 .map(|c| JsContentBlock {
                     text: c.text,
-                    audience: match c.audience {
-                        crate::mcp::Audience::Assistant => "assistant".to_string(),
-                        crate::mcp::Audience::User => "user".to_string(),
-                    },
+                    // `ContentBlock::audience` is now `Vec<Audience>` (Task 1's
+                    // mcp.rs wire-shape fix); michi only ever constructs
+                    // single-element vecs today, so take the first entry.
+                    // The full NAPI-facing shape (`type` + `annotations.audience:
+                    // Vec<String>`) lands in Task 3 — this is a minimal compile
+                    // fix, not that redesign.
+                    audience: c
+                        .audience
+                        .first()
+                        .map_or("assistant", |a| match a {
+                            crate::mcp::Audience::Assistant => "assistant",
+                            crate::mcp::Audience::User => "user",
+                        })
+                        .to_string(),
                 })
                 .collect(),
             is_error: result.is_error,
