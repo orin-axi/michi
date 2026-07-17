@@ -127,8 +127,15 @@ Any TypeScript MCP server
 > `docs/superpowers/plans/2026-07-08-spec-parity.md`'s Design Decisions table.
 > This section shows the actual, shipped Plan 1 (pure-primitives) surface —
 > the workspace `Cargo.toml` also carries a `pipeline`/`fuzzy`/`cache`/`cli`/
-> `mcp`/`full` feature set for the execution layer (Plan 2), which is out of
-> scope for this spec.
+> `full` feature set for the execution layer (Plan 2), which is out of scope
+> for this spec. `serde` is *not* a Plan 2 feature, despite being adjacent in
+> the same `[features]` table — it gates `Serialize`/`Deserialize` on Plan 1's
+> own pure-primitive types (`Value`, `KvValue`, `Hint`, `RecoveryHint`, the
+> `mcp` module's types) plus the `toon::list()` convenience function, so it's
+> documented below alongside `napi`. The `mcp` Cargo feature that appeared in
+> an earlier draft of this workspace was retired — `mcp` is now an
+> always-compiled module (see the `mcp` module section below), not a feature
+> flag.
 
 ```toml
 [package]
@@ -144,7 +151,8 @@ categories = ["text-processing", "encoding", "development-tools"]
 
 [features]
 default = []
-napi    = ["dep:napi", "dep:napi-derive"]
+napi    = ["dep:napi", "dep:napi-derive", "dep:serde_json"]
+serde   = ["dep:serde", "dep:serde_json"]
 cli     = []  # reserved: terminal-width-aware rendering, colour support
 
 [dependencies]
@@ -152,11 +160,21 @@ thiserror  = "2"
 
 [dependencies.napi]
 version  = "3"
-features = ["napi6"]
+features = ["napi6", "serde-json"]
 optional = true
 
 [dependencies.napi-derive]
 version  = "3"
+optional = true
+
+[dependencies.serde]
+version  = "1"
+features = ["derive"]
+optional = true
+
+[dependencies.serde_json]
+version  = "1"
+features = ["preserve_order"]
 optional = true
 
 [dev-dependencies]
@@ -173,12 +191,20 @@ name    = "kv_render"
 harness = false
 ```
 
-`serde`/`serde_json` are deliberately absent — an earlier draft listed them as
-unconditional dependencies, which an adversarial review found unused outside
-NAPI-boundary conversions and removed, restoring the "zero deps by default"
-guarantee this crate promises. `kv::KvValue` (typed scalar enum) fills the
-same role `serde_json::Value` would have, at zero dependency cost. Benchmarks
-use `divan`, not `criterion`, per this crate's own non-negotiables.
+`serde`/`serde_json` are absent from the *default* build — an earlier draft
+listed them as unconditional dependencies, which an adversarial review found
+unused outside NAPI-boundary conversions and removed, restoring the "zero
+deps by default" guarantee this crate promises. `kv::KvValue` (typed scalar
+enum) fills the same role `serde_json::Value` would have for every consumer
+who doesn't opt in, at zero dependency cost. `serde_json` is pulled in by
+either the `napi` feature (typed `structuredContent`, wire-conformant
+`ContentBlock`/`CallToolResult` conversion) or the `serde` feature
+(`Serialize`/`Deserialize` on `Value`/`KvValue`/`Hint`/`RecoveryHint`/the
+`mcp` types, plus `toon::list()`) — never both unconditionally, and never in
+a build with neither feature enabled. `preserve_order` is enabled on
+`serde_json` so `toon::list()`'s field order follows each struct's declared
+field order rather than being alphabetized. Benchmarks use `divan`, not
+`criterion`, per this crate's own non-negotiables.
 
 `napi-build` is not a dependency of *this* crate's `Cargo.toml` — the actual
 napi-rs build step lives in `packages/michi-node/Cargo.toml`
@@ -1166,8 +1192,14 @@ The npm package is a thin napi-rs wrapper around the same crate, built with the
 - `napi-rs` with `napi-derive` proc-macros — clean Rust in, C-ABI glue and
   TypeScript types out, generated at compile time
 - Typed `#[napi(object)]` structs (`JsToonValue`, `JsKvItem`, ...) for the
-  dynamic FFI boundary (cell values, recovery params), not `serde_json::Value`
-  — same zero-`serde_json` rationale as the rest of this spec
+  dynamic FFI boundary (cell values, recovery params) — kept as tagged Rust
+  enums converted by hand, not `serde_json::Value`, even though the `napi`
+  feature does pull in `serde_json` (for `toCallToolResult()`'s typed
+  `structuredContent` — see the `mcp` module section). The two are
+  independent choices: `serde_json` is available once `napi` is enabled, but
+  `JsToonValue`/`JsKvItem` stay their own explicit shape because a `Value`
+  would accept malformed input silently instead of matching one of the
+  documented variants.
 - Platform-aware binary loading via the generated `index.js`
 - TypeScript fallback export for environments without the native binary
 - Cross-compiled via `cargo-zigbuild`:
