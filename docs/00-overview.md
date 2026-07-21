@@ -20,7 +20,7 @@ remaining three principles (P2, P7, P10) depend on integration that michi delibe
 
 The crate is intentionally narrow: **no protocol knowledge, no async runtime, no CLI framework**.
 Pure computation — data in, strings and types out. TypeScript consumers reach it via the NAPI npm
-wrapper `michin`; Rust consumers take a direct crates.io or git dependency.
+wrapper `@orin-axi/michi`; Rust consumers take a direct crates.io or git dependency.
 
 ---
 
@@ -58,7 +58,7 @@ print!("{response}");
 ```
 
 ```typescript
-import { AgentResponse } from "michin";
+import { AgentResponse } from "@orin-axi/michi";
 
 const issues = [
   { number: 51815, title: "[Bug]: Telegram plugin", state: "open" },
@@ -180,8 +180,8 @@ deliberately omits:
 
 | Surface                | Name             |
 | ---------------------- | ---------------- |
-| Rust crate (crates.io) | `michi`          |
-| npm package            | `michin`         |
+| Rust crate (crates.io) | `michi`               |
+| npm package            | `@orin-axi/michi`     |
 | Rust module path       | `michi::`        |
 | GitHub repo            | `orin-axi/michi` |
 
@@ -201,7 +201,7 @@ optionality.
 ## Publishing targets
 
 - **crates.io** — public, `michi`
-- **npmjs.com** — public, `michin` (NAPI wrapper)
+- **npmjs.com** — public, `@orin-axi/michi` (NAPI wrapper)
 - NAPI binaries cross-compiled via `cargo-zigbuild`:
   - `darwin-arm64`
   - `linux-x64-musl`

@@ -9,7 +9,7 @@ protocol, your CLI framework, or your async runtime — it takes structured data
 returns token-efficient, agent-readable strings out. Four tools in the suite (Monokl,
 Firkin, Lumen, Pulse) build on it instead of re-implementing this formatting themselves.
 
-Available from Rust directly, or from TypeScript via the `michin` npm package.
+Available from Rust directly, or from TypeScript via the `@orin-axi/michi` npm package.
 
 ## Why
 
@@ -54,7 +54,7 @@ print!("{}", toon::render_toon(&opts));
 ```
 
 ```typescript
-import { renderToon } from "michin";
+import { renderToon } from "@orin-axi/michi";
 
 const out = renderToon({
   typeName: "issues",
@@ -95,7 +95,7 @@ michi = "0.1"
 ```
 
 ```bash
-pnpm add michin     # or npm install / yarn add
+pnpm add @orin-axi/michi     # or npm install / yarn add
 ```
 
 Default features add zero runtime dependencies — no tokio, no async runtime, nothing

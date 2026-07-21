@@ -7,13 +7,13 @@ JS reimplementation of the rendering logic.
 ## Install
 
 ```bash
-pnpm add michin
+pnpm add @orin-axi/michi
 ```
 
 ## Quick start
 
 ```typescript
-import { renderToon } from "michin";
+import { renderToon } from "@orin-axi/michi";
 
 const out = renderToon({
   typeName: "issues",

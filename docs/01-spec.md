@@ -44,7 +44,7 @@ a pure rendering crate.
 
 The crate has no protocol knowledge (no MCP, no HTTP, no CLI framework) and
 no async runtime dependency. It is pure computation: data in, strings and types
-out. TypeScript consumers reach it via the NAPI npm wrapper `michin`. Rust
+out. TypeScript consumers reach it via the NAPI npm wrapper `@orin-axi/michi`. Rust
 consumers take a direct crates.io or git dep.
 
 ---
@@ -109,12 +109,12 @@ Any Rust CLI binary
   Full access to all modules — no NAPI overhead
 
 Any TypeScript CLI
-  npm dep on michin
+  npm dep on @orin-axi/michi
   --format toon dispatch calls into NAPI wrapper
   Same output; NAPI boundary is transparent
 
 Any TypeScript MCP server
-  npm dep on michin
+  npm dep on @orin-axi/michi
   Renders TOON for audience:["assistant"] content block
   Assembles MCP content[] from the returned string
 ```
@@ -254,9 +254,9 @@ michi/
     idempotency_integration.rs
     snapshot_tests.rs           # insta snapshots
 
-packages/michi-node/            # NAPI wrapper (npm: michin)
+packages/michi-node/            # NAPI wrapper (npm: @orin-axi/michi)
   Cargo.toml                    # napi feature, napi-rs build
-  package.json                  # name: "michin"
+  package.json                  # name: "@orin-axi/michi"
   index.js                      # platform binary loader + TS fallback
   index.d.ts                    # TypeScript types (auto-generated)
   src/
@@ -1238,7 +1238,7 @@ and `structured_content` from `render(OutputFormat::Json)`.
 
 ---
 
-## NAPI npm package — `michin`
+## NAPI npm package — `@orin-axi/michi`
 
 The npm package is a thin napi-rs wrapper around the same crate, built with the
 `napi` feature enabled. It follows the standard napi-rs dual-crate pattern:
@@ -1450,7 +1450,7 @@ strategy:
         host: macos-latest     # native build (preferred for code-signing)
 ```
 
-The publish job emits the per-platform packages and the main `michin` package
+The publish job emits the per-platform packages and the main `@orin-axi/michi` package
 together. The npm package version is asserted equal to the crate version before
 publish (see Versioning and release).
 
@@ -1647,7 +1647,7 @@ dependency-light; see Open question Q3 for the v2 scope sketch.
 ## Versioning and release
 
 - Intended to publish to [crates.io](https://crates.io) as `michi` — not yet published
-- Intended to publish the npm package to [npmjs.com](https://npmjs.com) as `michin` — not yet published
+- Intended to publish the npm package to [npmjs.com](https://npmjs.com) as `@orin-axi/michi` — not yet published
 - NAPI binary cross-compiled via `cargo-zigbuild`:
   - `darwin-arm64` (`aarch64-apple-darwin`)
   - `linux-x64-musl` (`x86_64-unknown-linux-musl`)
@@ -1670,7 +1670,7 @@ the CHANGELOG, and is treated as a **minor** version bump (never a patch).
 
 **Version sync:** the npm package version tracks the crate version exactly. CI
 asserts the two are equal before any publish, so a `michi` crate at `0.3.1` and
-the `michin` npm package at `0.3.1` always describe the same source. The publish
+the `@orin-axi/michi` npm package at `0.3.1` always describe the same source. The publish
 job builds the per-platform `.node` artifacts, runs `napi prepublish` to emit
 the platform packages as `optionalDependencies`, then publishes the main
 package; when no native binary matches a consumer's platform, the package's
