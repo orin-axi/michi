@@ -1059,7 +1059,7 @@ pub fn render_recovery(hints: &[RecoveryHint]) -> String
 zero-dependency rationale as elsewhere in this spec (see the Cargo.toml
 section): `KvValue`'s `Text`/`Int`/`Float`/`Bool`/`Duration`/`Missing`
 variants carry equivalent expressiveness for recovery params without pulling
-in `serde_json`. This resolves Q5 below.
+in `serde_json`. This resolves the "Recovery hint format" open question below.
 
 Text-format rendering (`render_recovery()`, the `recovery[N]:` block) always
 stringifies every param value (`{ user: alice, seconds: 30 }` — no quotes,
@@ -1269,8 +1269,8 @@ time, the lowest level exposing `ThreadsafeFunction` and the async support
 napi-rs needs, with Node.js 12 (the first LTS with full napi4) as the floor.
 The crate has since moved to `napi` v3 with the `napi6` feature — napi-rs v3
 removes the old Docker-image requirement for cross-compilation, which was the
-actual reason for the move (see `docs/superpowers/specs/2026-07-03-michi-design.md`
-§7/Q4). michi's exports remain synchronous pure functions either way, so the
+actual reason for the move (see `docs/superpowers/specs/2026-07-03-michi-design.md`'s
+napi-feature-level discussion). michi's exports remain synchronous pure functions either way, so the
 async machinery gated behind either feature level is not itself something
 michi exercises — the choice is about the build tooling, not a capability
 michi needs.
@@ -1640,7 +1640,7 @@ full rationale. The `cli` feature is reserved for terminal-aware rendering
 consumers only. When the `cli` feature is fleshed out it will pull in a
 terminal crate (`crossterm` for width detection and styling, or `colored` for
 the minimal case) gated entirely behind the flag so the default build stays
-dependency-light; see Open question Q3 for the v2 scope sketch.
+dependency-light; see the "`cli` feature scope" item in Open questions, below, for the v2 scope sketch.
 
 ---
 
@@ -1756,7 +1756,10 @@ test runners now would be unrelated churn for no behavioral benefit.
 
 ## Open questions
 
-**Q1 — TOON vs Markdown-KV for agent-facing list responses**
+Tracked by what they block, not by sequence number — a "Q1/Q2/Q3" numbering
+reads too easily as calendar quarters, which these are not.
+
+**Open until validated — TOON vs Markdown-KV retrieval accuracy (blocks: recommending TOON as the default for MCP consumers)**
 AXI benchmarks the efficiency gains at the CLI/MCP level, but not the
 downstream LLM retrieval accuracy of TOON vs Markdown-KV for list data.
 Before treating TOON as universally superior for the `audience: ["assistant"]`
@@ -1766,7 +1769,7 @@ on retrieval accuracy despite higher token cost, the right call for MCP
 consumers may be to use Markdown-KV even for lists. The crate ships either
 way — the question is which format callers should default to.
 
-**Q2 — External Rust consumer strategy**
+**Open until a real integration exists — crates.io publish readiness (blocks: crates.io release)**
 For external Rust binaries to depend on `michi`, options:
 (a) crates.io publish — cleanest for public consumers once API is stable
 (b) git dep with tag: `michi = { git = "https://github.com/orin-axi/michi", tag = "v0.x.y" }`
@@ -1776,7 +1779,7 @@ For external Rust binaries to depend on `michi`, options:
 Recommend (b) during development, (a) at first stable release. Gate
 crates.io publish behind at least one real consumer integration test.
 
-**Q3 — `cli` feature scope**
+**Deferred to v2 — `cli` feature scope (blocks: terminal-aware rendering)**
 Reserved for terminal-aware rendering. If `--format toon` in a human
 terminal context should wrap long rows or colourize the header, the `cli`
 feature is where that lives. The likely v2 surface is a `render_terminal()`
@@ -1784,7 +1787,7 @@ variant that consults terminal width (via `crossterm`) and applies ANSI colour
 to health signals and the type header. Out of scope for v1 — michi v1 targets
 agent consumers only, not human-readable terminal output.
 
-**Q4 — `AgentResponse` builder vs standalone functions (resolved)**
+**Resolved at v0.1 — `AgentResponse` builder vs standalone functions**
 Implemented per this question's own recommendation, plus one addition:
 `AgentResponse`/`JsAgentResponse` is exported, along with
 `renderHints()`/`appendHints()`/`renderRecovery()`/`renderToon()`/
@@ -1802,11 +1805,11 @@ risky rework for a cosmetic JS ergonomics win, with the JS test suite already
 proving sequential-statement usage works fine, including mutating after a
 render call.
 
-**Q5 — Recovery hint format (resolved)**
+**Resolved at v0.1 — Recovery hint format**
 Resolved by using `kv::KvValue` (an existing, already-tested internal enum)
 instead of `serde_json::Value` for `RecoveryHint.params` — see the `recovery`
-section. This fixes the *Rust-side* type-loss concern Q5 raised without
-adding a dependency `serde_json::Value` would have required.
+section. This fixes the *Rust-side* type-loss concern this question raised
+without adding a dependency `serde_json::Value` would have required.
 
 A second, related concern surfaced during this reconciliation and is now
 also resolved: independent of which Rust-side type `params` uses,
