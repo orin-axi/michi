@@ -1,5 +1,10 @@
 # MCP and the NAPI/npm Boundary
 
+> Targets MCP spec version **2025-11-25** (the current stable release). A release candidate for
+> **2026-07-28** exists — described by its own announcement as "the largest revision since
+> launch" — but hasn't shipped yet. Nothing in this doc should be read as covering the RC; revisit
+> this note once it's finalized.
+
 ## `mcp` module
 
 Always compiled — no feature gate, no new dependency in the default build. Owns exactly one

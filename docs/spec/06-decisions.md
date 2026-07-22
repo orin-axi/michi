@@ -128,6 +128,19 @@ floor. The move to v3/`napi6` happened because v3 dropped the old Docker-image c
 requirement — not because michi needed any new capability. Its exports are synchronous either
 way; the choice is entirely about build tooling.
 
+**`content[0]` is TOON/KV text, not a JSON mirror of `structured_content`.** The MCP spec says a
+tool returning `structuredContent` *should also* mirror that same data as serialized JSON in a
+text block, for clients that don't read `structuredContent` yet. michi doesn't do this literally —
+`content[0].text` comes from `render_toon()`/`render_kv()`, never from JSON-stringifying
+`structured_content`. Complying with the letter of that guidance would mean putting verbose JSON
+in the primary agent-facing block, which defeats the entire reason TOON exists — token efficiency
+is michi's whole premise, and JSON is never the token-cheaper option for list data (see
+[02-toon-format.md](02-toon-format.md)). The two representations already carry the same
+underlying data, both built from the same `AgentResponse` — just shaped for different audiences:
+TOON for the model to read, JSON for a client to parse programmatically. That's a deliberate
+deviation from the spec's backwards-compatibility recommendation, made with eyes open, not an
+oversight.
+
 ---
 
 ## Implementation notes
