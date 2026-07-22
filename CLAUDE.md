@@ -20,6 +20,10 @@
 - Benchmarks: divan (not criterion)
 - Tests: `cargo nextest run` (not `cargo test`)
 
+## Philosophy
+- Before adding a new primitive or judging whether work is "done," read `PRINCIPLES.md` —
+  the inclusion checklist and process conventions this project runs on.
+
 ## Architecture
 - `src/` — pure sync rendering library (default features: zero runtime deps)
 - `packages/michi-node/` — thin NAPI cdylib shim, npm package name `@orin-axi/michi` (not yet published)

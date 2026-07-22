@@ -3,6 +3,9 @@
 Thanks for taking a look. This is a small, deliberately narrow crate — most contributions
 will be a bug fix, a new primitive, or filling in a Plan 2 stub. Here's how to get moving.
 
+If you're proposing a new primitive, read [`PRINCIPLES.md`](PRINCIPLES.md) first — it's the
+checklist for what belongs in michi and why, so you're not guessing at unwritten rules.
+
 ## Setup
 
 ```bash
@@ -51,6 +54,7 @@ side of the always-compiled / feature-gated line something belongs on.
 
 | You want to... | Look at |
 |---|---|
+| Decide whether something belongs in michi at all | `PHILOSOPHY.md` — the inclusion checklist |
 | Add or change a rendering primitive | `src/<module>/` — see the module table in `README.md` |
 | Touch anything behind a feature flag | `ARCHITECTURE.md` for the feature graph first |
 | Change the NAPI/npm surface | `src/napi.rs` (the exports) + `packages/michi-node` (the cdylib shim) — not the other way around |
