@@ -493,6 +493,48 @@ impl JsAgentResponse {
             .map(crate::response::AgentResponse::render_hints_only)
     }
 
+    /// Render for the given audience — `"assistant"` or `"user"`. `"user"`
+    /// returns the `humanContent()` block if one was set, falling back to
+    /// the same agent-oriented rendering `"assistant"` would produce
+    /// otherwise — never an empty string. See [`Self::has_human_content`]
+    /// to check for the fallback case ahead of time.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `audience` is anything other than `"assistant"`
+    /// or `"user"`, or if an internal invariant is violated (should not
+    /// happen in normal use).
+    #[napi(catch_unwind)]
+    #[allow(clippy::needless_pass_by_value)] // napi-derive requires owned String for JS string params
+    pub fn render_for(&self, audience: String) -> napi::Result<String> {
+        let audience = match audience.as_str() {
+            "assistant" => crate::audience::Audience::Assistant,
+            "user" => crate::audience::Audience::User,
+            other => {
+                return Err(napi::Error::from_reason(format!(
+                    "unknown audience {other:?}: expected \"assistant\" or \"user\""
+                )))
+            }
+        };
+        self.inner
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))
+            .map(|b| b.render_for(audience))
+    }
+
+    /// Whether `.humanContent()` was set on this builder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    #[napi(catch_unwind)]
+    pub fn has_human_content(&self) -> napi::Result<bool> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))
+            .map(crate::response::AgentResponse::has_human_content)
+    }
+
     /// Build the MCP `CallToolResult` for this response. Returns a real
     /// object, not a JSON string — `structuredContent` is a parsed
     /// `serde_json::Value`, so TypeScript callers don't need to
@@ -702,6 +744,45 @@ mod tests {
         r.kv_items(vec![]).unwrap();
         r.hint("do this".to_string()).unwrap();
         assert_eq!(r.render_hints_only().unwrap(), "help[1]:\n  do this\n");
+    }
+
+    #[test]
+    fn render_for_assistant_matches_render_toon() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("int") }]).unwrap();
+        assert_eq!(r.render_for("assistant".to_string()).unwrap(), r.render_kv().unwrap());
+    }
+
+    #[test]
+    fn render_for_user_returns_human_content_when_set() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        r.human_content("hi there".to_string()).unwrap();
+        assert_eq!(r.render_for("user".to_string()).unwrap(), "hi there");
+    }
+
+    #[test]
+    fn render_for_user_falls_back_when_unset() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        assert_eq!(r.render_for("user".to_string()).unwrap(), r.render_kv().unwrap());
+    }
+
+    #[test]
+    fn render_for_rejects_unknown_audience() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        let err = r.render_for("nonsense".to_string()).expect_err("should reject");
+        assert!(err.reason.contains("nonsense"), "got: {}", err.reason);
+    }
+
+    #[test]
+    fn has_human_content_reflects_whether_it_was_set() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        assert!(!r.has_human_content().unwrap());
+        r.human_content("hi".to_string()).unwrap();
+        assert!(r.has_human_content().unwrap());
     }
 
     #[test]

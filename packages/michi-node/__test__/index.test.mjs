@@ -154,3 +154,32 @@ void describe('toCallToolResult', () => {
     assert.deepStrictEqual(result.content[1].annotations.audience, ['user'])
   })
 })
+
+void describe('renderFor / hasHumanContent', () => {
+  void it('assistant matches the agent rendering', () => {
+    const r = new AgentResponse('issue')
+    r.kvItems([{ key: 'id', value: { type: 'int', intVal: 1 } }])
+    assert.strictEqual(r.renderFor('assistant'), r.renderKv())
+  })
+
+  void it('user returns humanContent when set', () => {
+    const r = new AgentResponse('t')
+    r.kvItems([])
+    r.humanContent('hi there')
+    assert.strictEqual(r.renderFor('user'), 'hi there')
+    assert.strictEqual(r.hasHumanContent(), true)
+  })
+
+  void it('user falls back to agent rendering when humanContent was never set', () => {
+    const r = new AgentResponse('t')
+    r.kvItems([])
+    assert.strictEqual(r.hasHumanContent(), false)
+    assert.strictEqual(r.renderFor('user'), r.renderKv())
+  })
+
+  void it('rejects an unknown audience', () => {
+    const r = new AgentResponse('t')
+    r.kvItems([])
+    assert.throws(() => r.renderFor('nonsense'), /nonsense/)
+  })
+})
