@@ -12,23 +12,7 @@
 //! under the `serde` feature and the NAPI boundary, not just an internal
 //! Rust-shaped approximation of them.
 
-/// Which surface a [`ContentBlock`] is meant for. Mirrors MCP's
-/// `annotations.audience` — an array in the real protocol because one block
-/// can target more than one audience; michi always populates exactly one
-/// element per block today (see [`ContentBlock::audience`]), but the field
-/// is a `Vec` so no translation is needed at the serialization boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
-pub enum Audience {
-    /// The compact, token-efficient surface — what michi renders today.
-    Assistant,
-    /// A human-readable surface, supplied by the caller. michi does not
-    /// generate this text itself (see this crate's Non-goals: no
-    /// display-format Markdown) — it only carries it correctly through to
-    /// the protocol shape when a caller has one.
-    User,
-}
+use crate::audience::Audience;
 
 /// One text content block. Wire-conformant with MCP's text content shape —
 /// `{"type": "text", "text": "...", "annotations": {"audience": [...]}}` —
@@ -155,22 +139,6 @@ mod tests {
         assert_eq!(r.content.len(), 1);
         assert!(!r.is_error);
         assert_eq!(r.structured_content, "{}");
-    }
-
-    #[test]
-    #[cfg(feature = "serde")]
-    fn audience_serializes_and_deserializes() {
-        let a = Audience::Assistant;
-        let json = serde_json::to_string(&a).expect("serializes");
-        let back: Audience = serde_json::from_str(&json).expect("deserializes");
-        assert_eq!(a, back);
-    }
-
-    #[test]
-    #[cfg(feature = "serde")]
-    fn audience_serializes_lowercase() {
-        assert_eq!(serde_json::to_string(&Audience::Assistant).expect("serializes"), "\"assistant\"");
-        assert_eq!(serde_json::to_string(&Audience::User).expect("serializes"), "\"user\"");
     }
 
     #[test]

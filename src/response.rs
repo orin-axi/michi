@@ -248,10 +248,13 @@ impl AgentResponse {
     pub fn to_call_tool_result(&self) -> crate::mcp::CallToolResult {
         let mut content = vec![crate::mcp::ContentBlock {
             text: self.render_text(),
-            audience: vec![crate::mcp::Audience::Assistant],
+            audience: vec![crate::audience::Audience::Assistant],
         }];
         if let Some(human) = &self.human_content {
-            content.push(crate::mcp::ContentBlock { text: human.clone(), audience: vec![crate::mcp::Audience::User] });
+            content.push(crate::mcp::ContentBlock {
+                text: human.clone(),
+                audience: vec![crate::audience::Audience::User],
+            });
         }
         crate::mcp::CallToolResult {
             content,
@@ -493,7 +496,7 @@ mod tests {
         let result = r.to_call_tool_result();
         assert_eq!(result.content.len(), 1);
         assert_eq!(result.content[0].text, r.render_kv());
-        assert_eq!(result.content[0].audience, vec![crate::mcp::Audience::Assistant]);
+        assert_eq!(result.content[0].audience, vec![crate::audience::Audience::Assistant]);
         assert!(!result.is_error);
     }
 
@@ -504,7 +507,7 @@ mod tests {
         let result = r.to_call_tool_result();
         assert_eq!(result.content.len(), 1);
         assert_eq!(result.content[0].text, r.render_toon());
-        assert_eq!(result.content[0].audience, vec![crate::mcp::Audience::Assistant]);
+        assert_eq!(result.content[0].audience, vec![crate::audience::Audience::Assistant]);
     }
 
     #[test]
@@ -520,7 +523,7 @@ mod tests {
         let result = r.to_call_tool_result();
         assert_eq!(result.content.len(), 2);
         assert_eq!(result.content[1].text, "Here's a friendly summary.");
-        assert_eq!(result.content[1].audience, vec![crate::mcp::Audience::User]);
+        assert_eq!(result.content[1].audience, vec![crate::audience::Audience::User]);
     }
 
     #[test]

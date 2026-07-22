@@ -1,6 +1,7 @@
 #![cfg(feature = "serde")]
 
-use michi::mcp::{Audience, CallToolResult, ContentBlock};
+use michi::audience::Audience;
+use michi::mcp::{CallToolResult, ContentBlock};
 use proptest::prelude::*;
 
 fn audience_strategy() -> impl Strategy<Value = Audience> {

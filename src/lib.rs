@@ -60,6 +60,8 @@
 //! Default features: none. A consumer with default features pulls in zero
 //! async runtime dependencies.
 
+/// Which surface a piece of content is meant for — the model or a human.
+pub mod audience;
 /// Definitive empty-state responses: `type_name[0]{}:\ntotalCount: 0\n`.
 pub mod empty;
 /// Unified `Error` type with agent-renderable output and classification.
@@ -96,12 +98,13 @@ pub mod toon;
 pub mod truncate;
 
 // Re-export the most common types at the crate root for convenience.
+pub use audience::Audience;
 pub use empty::empty_state;
 pub use error::{DomainError, Error, ErrorClass, ErrorCode, Sensitive};
 pub use hints::{append_hints, render_hints, Hint};
 pub use idempotency::{already_done, render_already_done, AlreadyDone, FailedOp, IdempotencyKey, PartialSuccess};
 pub use kv::render_kv;
-pub use mcp::{Audience, CallToolResult, ContentBlock};
+pub use mcp::{CallToolResult, ContentBlock};
 pub use recovery::RecoveryHint;
 pub use resilience::{next_retry_delay, parse_retry_after, RetryConfig};
 pub use response::{AgentResponse, OutputFormat};

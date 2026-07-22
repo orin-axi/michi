@@ -519,8 +519,8 @@ impl JsAgentResponse {
                             .audience
                             .into_iter()
                             .map(|a| match a {
-                                crate::mcp::Audience::Assistant => "assistant".to_string(),
-                                crate::mcp::Audience::User => "user".to_string(),
+                                crate::audience::Audience::Assistant => "assistant".to_string(),
+                                crate::audience::Audience::User => "user".to_string(),
                             })
                             .collect(),
                     },
