@@ -25,6 +25,7 @@ dependencies — this whole feature adds zero Cargo.toml changes).
 - Modify: `src/lib.rs`
 - Modify: `src/response.rs` (5 call sites)
 - Modify: `src/napi.rs` (2 call sites)
+- Modify: `tests/proptest_mcp.rs` (import path only — see Step 2)
 
 Pure relocation — no behavior change, so no new test is written for this task. Verification is
 running the existing test suite and confirming every existing `Audience`-related test still
@@ -109,6 +110,12 @@ use crate::audience::Audience;
 
 The module doc comment (lines 1–13) needs no change — it never names `Audience` explicitly.
 
+This `use` is private (not `pub use`), so `crate::mcp::Audience`/`michi::mcp::Audience` stops
+being a valid path once this lands — only `crate::audience::Audience`/`michi::audience::Audience`
+(and the crate-root `michi::Audience` re-export from Step 3) resolve. `tests/proptest_mcp.rs`
+imports `Audience` via `michi::mcp::{Audience, ...}` today, so it needs its import split
+accordingly — see Step 6.
+
 - [ ] **Step 3: Update `src/lib.rs`**
 
 Add the new module declaration, alphabetically first (before `empty`):
@@ -145,7 +152,22 @@ In `to_call_tool_result()`'s body, the `match a { crate::mcp::Audience::Assistan
 crate::mcp::Audience::User => ... }` arms both need `crate::mcp::Audience` →
 `crate::audience::Audience`.
 
-- [ ] **Step 6: Verify nothing broke**
+- [ ] **Step 6: Update the import in `tests/proptest_mcp.rs`**
+
+Step 2's `use` (not `pub use`) means `michi::mcp::Audience` is no longer a valid external path.
+Find:
+```rust
+use michi::mcp::{Audience, CallToolResult, ContentBlock};
+```
+Replace with:
+```rust
+use michi::audience::Audience;
+use michi::mcp::{CallToolResult, ContentBlock};
+```
+No other changes to this file — every use of `Audience` in its body (`audience_strategy()`
+etc.) is unaffected since the type it names is unchanged, only its import path.
+
+- [ ] **Step 7: Verify nothing broke**
 
 Run: `cargo build -p michi --all-features && cargo nextest run -p michi --all-features`
 Expected: clean build, all existing tests pass unchanged — including the new
@@ -155,10 +177,10 @@ that touches `Audience`.
 Run: `cargo clippy -p michi --all-features -- -D warnings && cargo fmt -p michi -- --check`
 Expected: clean.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/audience.rs src/mcp.rs src/lib.rs src/response.rs src/napi.rs
+git add src/audience.rs src/mcp.rs src/lib.rs src/response.rs src/napi.rs tests/proptest_mcp.rs
 git commit -m "refactor: relocate Audience from mcp.rs to its own audience.rs module"
 ```
 
