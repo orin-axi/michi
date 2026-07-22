@@ -240,6 +240,37 @@ impl AgentResponse {
         crate::hints::render_hints(&self.hints)
     }
 
+    /// Render for the given audience. `Assistant` reads whichever of
+    /// `.items()`/`.kv_items()` was populated last — identical to
+    /// `render(OutputFormat::Text)`. `User` returns `human_content` if the
+    /// caller set one; if not, it falls back to that same agent-oriented
+    /// rendering rather than an empty string or a panic.
+    ///
+    /// That fallback is a real behavior to design around, not just a safety
+    /// net: TOON/KV text is comma-syntax built for a model to parse, not
+    /// for a human to read comfortably. A caller intending to actually use
+    /// the `User` path should call `.human_content()` first — use
+    /// [`Self::has_human_content`] to check before rendering if the
+    /// response was built somewhere that may not have set it.
+    #[must_use]
+    pub fn render_for(&self, audience: crate::audience::Audience) -> String {
+        match audience {
+            crate::audience::Audience::Assistant => self.render_text(),
+            crate::audience::Audience::User => self.human_content.clone().unwrap_or_else(|| self.render_text()),
+        }
+    }
+
+    /// Whether `.human_content()` was set on this builder. Lets a caller
+    /// downstream of wherever the response was built — e.g. a renderer
+    /// that only knows the audience, not how the response was constructed
+    /// — decide what to do before calling `render_for(Audience::User)`,
+    /// rather than discovering the fallback only by inspecting the text it
+    /// gets back.
+    #[must_use]
+    pub fn has_human_content(&self) -> bool {
+        self.human_content.is_some()
+    }
+
     /// Build the MCP `CallToolResult` for this response: the rendered body
     /// as the primary `assistant`-audience content block, `human_content`
     /// (if set) as a second `user`-audience block, `is_error`, and
@@ -531,6 +562,44 @@ mod tests {
         let r = AgentResponse::new("t").kv_items(vec![]);
         let result = r.to_call_tool_result();
         assert_eq!(result.content.len(), 1);
+    }
+
+    #[test]
+    fn render_for_assistant_matches_render_text_toon_path() {
+        let r = AgentResponse::new("issues").items(vec![vec![Value::Int(1)]], &["id"]);
+        assert_eq!(r.render_for(crate::audience::Audience::Assistant), r.render_toon());
+    }
+
+    #[test]
+    fn render_for_assistant_matches_render_text_kv_path() {
+        let r = AgentResponse::new("issue").kv_items(vec![KvItem { key: "id".into(), value: KvValue::Int(1) }]);
+        assert_eq!(r.render_for(crate::audience::Audience::Assistant), r.render_kv());
+    }
+
+    #[test]
+    fn render_for_user_returns_human_content_when_set() {
+        let r = AgentResponse::new("issue").kv_items(vec![]).human_content("A friendly summary.");
+        assert_eq!(r.render_for(crate::audience::Audience::User), "A friendly summary.");
+    }
+
+    #[test]
+    fn render_for_user_falls_back_to_agent_rendering_when_unset_toon_path() {
+        let r = AgentResponse::new("issues").items(vec![vec![Value::Int(1)]], &["id"]);
+        assert_eq!(r.render_for(crate::audience::Audience::User), r.render_toon());
+    }
+
+    #[test]
+    fn render_for_user_falls_back_to_agent_rendering_when_unset_kv_path() {
+        let r = AgentResponse::new("issue").kv_items(vec![KvItem { key: "id".into(), value: KvValue::Int(1) }]);
+        assert_eq!(r.render_for(crate::audience::Audience::User), r.render_kv());
+    }
+
+    #[test]
+    fn has_human_content_reflects_whether_it_was_set() {
+        let without = AgentResponse::new("t").kv_items(vec![]);
+        assert!(!without.has_human_content());
+        let with = AgentResponse::new("t").kv_items(vec![]).human_content("hi");
+        assert!(with.has_human_content());
     }
 
     #[test]
