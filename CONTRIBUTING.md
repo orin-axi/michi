@@ -58,7 +58,7 @@ side of the always-compiled / feature-gated line something belongs on.
 | Add or change a rendering primitive | `src/<module>/` — see the module table in `README.md` |
 | Touch anything behind a feature flag | `ARCHITECTURE.md` for the feature graph first |
 | Change the NAPI/npm surface | `src/napi.rs` (the exports) + `packages/michi-node` (the cdylib shim) — not the other way around |
-| Update the TOON grammar or wire format | `docs/01-spec.md` is the source of truth; keep it and `src/toon/` in sync |
+| Update the TOON grammar or wire format | `docs/spec/02-toon-format.md` is the source of truth; keep it and `src/toon/` in sync |
 | Understand *why* something is shaped the way it is | `docs/superpowers/specs/2026-07-03-michi-design.md` |
 
 ## Commit messages

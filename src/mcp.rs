@@ -4,7 +4,7 @@
 //!
 //! michi does not know about the rest of the MCP protocol (no JSON-RPC, no
 //! tool registration, no server bootstrapping, no `outputSchema` validation —
-//! see `docs/01-spec.md`'s Non-goals). This module owns exactly one thing:
+//! see `docs/spec/01-overview-and-setup.md`'s Non-goals). This module owns exactly one thing:
 //! turning an already-built [`crate::response::AgentResponse`] into the
 //! `content`/`isError`/`structuredContent` shape MCP's `tools/call` response
 //! expects — including the real wire-format details (the `"type": "text"`

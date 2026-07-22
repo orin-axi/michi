@@ -3,7 +3,7 @@
 This is the "how it fits together today" doc. For the reasoning behind these choices,
 see [`docs/superpowers/specs/2026-07-03-michi-design.md`](docs/superpowers/specs/2026-07-03-michi-design.md).
 For the full module list and public API, see `README.md` and
-[`docs/01-spec.md`](docs/01-spec.md). This doc only covers structure.
+[`docs/spec/`](docs/spec/README.md). This doc only covers structure.
 
 ## One crate, feature-gated
 
@@ -88,6 +88,6 @@ Plan 2 fills it in.
   there validates collection sizes before doing work and is wrapped in
   `#[napi(catch_unwind)]`. Nowhere else in the crate needs to think about adversarial
   input — callers elsewhere are trusted Rust code.
-- **`docs/01-spec.md`'s TOON grammar is the contract.** If you change what `escape_value`
-  or `render_toon` produce, update the spec in the same PR — they're supposed to describe
-  the same thing.
+- **[`docs/spec/02-toon-format.md`](docs/spec/02-toon-format.md)'s grammar is the contract.**
+  If you change what `escape_value` or `render_toon` produce, update the spec in the same
+  PR — they're supposed to describe the same thing.

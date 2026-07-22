@@ -1,6 +1,6 @@
 //! Test-only TOON parser — NOT part of the public API. Exists purely to
 //! support round-trip property tests (render → parse → compare) per
-//! docs/01-spec.md's testing strategy. Parses only what render_toon actually
+//! docs/spec/05-scope-and-quality.md's testing strategy. Parses only what render_toon actually
 //! produces; not a general-purpose TOON parser for untrusted input.
 //!
 //! Lives under `tests/support/` rather than directly in `tests/` so Cargo's

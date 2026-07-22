@@ -8,7 +8,7 @@ pub use render::Value;
 ///
 /// TOON (Token-Optimized Object Notation) is the canonical agent-facing list
 /// format. Field names appear once in the header; rows are compact
-/// comma-separated values. See `docs/01-spec.md` for the grammar.
+/// comma-separated values. See `docs/spec/02-toon-format.md` for the grammar.
 #[derive(Debug, Clone)]
 pub struct ToonOptions {
     /// Snake_case type name, e.g. `"issue"`, `"component"`.

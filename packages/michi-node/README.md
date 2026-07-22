@@ -55,8 +55,8 @@ help[1]:
 
 The primary integration point — a builder that composes TOON/KV rendering, hints, and
 recovery into one response. Setters return `void`, not `this` (see the main repo's
-`docs/01-spec.md` for why chaining isn't supported across the NAPI boundary) — call methods
-as sequential statements, not a chain:
+`docs/spec/04-mcp-and-napi.md` for why chaining isn't supported across the NAPI boundary) —
+call methods as sequential statements, not a chain:
 
 | Method | Signature |
 |---|---|

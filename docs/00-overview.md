@@ -26,8 +26,8 @@ wrapper `@orin-axi/michi`; Rust consumers take a direct crates.io or git depende
 
 ## Quick start
 
-The same primitives, from either language. (Illustrative — see `docs/01-spec.md` for the precise
-API.)
+The same primitives, from either language. (Illustrative — see [`docs/spec/`](spec/README.md) for
+the precise API.)
 
 ```rust
 use michi::hints::Hint;
@@ -210,16 +210,18 @@ optionality.
 
 ## Documents in this repo
 
-| File                      | Contents                                              |
-| ------------------------- | ----------------------------------------------------- |
-| `docs/00-overview.md`     | This file — project identity, naming, suite context   |
-| `docs/01-spec.md`         | Full technical specification — modules, API, grammar  |
-| `docs/projects/01-mvp.md` | Superseded early MVP draft — see `michi-core.md` instead   |
+| File | Contents |
+| --- | --- |
+| `docs/00-overview.md` | This file — project identity, naming, suite context |
+| `docs/spec/` | Full technical specification — modules, API, grammar, decisions ([start here](spec/README.md)) |
+| `PRINCIPLES.md` | What belongs in michi and why, and how work here gets done |
+| `ARCHITECTURE.md` | How the crate fits together today — feature graph, module boundaries |
+| `CONTRIBUTING.md` | How to actually send a PR |
+| `docs/projects/01-mvp.md` | Superseded early MVP draft — see `michi-core.md` instead |
 
 ---
 
 ## Open questions
 
-See `docs/01-spec.md` § Open questions for the five ADR items that need resolution before or during
-the MVP build (TOON vs KV retrieval accuracy, consumer strategy, `cli` feature scope, NAPI export
-surface, recovery hint typing).
+See [`docs/spec/06-decisions.md`](spec/06-decisions.md) for what's still open — currently TOON vs.
+Markdown-KV retrieval accuracy, crates.io publish readiness, and the `cli` feature's v2 scope.

@@ -214,8 +214,8 @@ fn hints_field_accepts_hint_type() {
 #[test]
 fn crate_root_reexports_are_reachable() {
     // Compiles iff every one of these paths resolves at the crate root, per
-    // docs/01-spec.md's lib.rs sketch. Not exhaustive of every type in the
-    // crate — just the ones spec explicitly lists as top-level re-exports.
+    // docs/spec/03-rust-api.md's lib.rs sketch. Not exhaustive of every type
+    // in the crate — just the ones spec explicitly lists as top-level re-exports.
     let _: fn(&[michi::kv::KvItem], Option<usize>, &[michi::Hint]) -> String = michi::render_kv;
     let _ = michi::empty_state("t");
     let _: fn(Option<String>) -> michi::AlreadyDone = michi::already_done;

@@ -135,7 +135,7 @@ runtime, no surprises in your dependency tree.
 ## Docs
 
 - [`docs/00-overview.md`](docs/00-overview.md) — what this is and where it fits in the suite
-- [`docs/01-spec.md`](docs/01-spec.md) — full API reference and the TOON grammar
+- [`docs/spec/`](docs/spec/README.md) — full API reference and the TOON grammar
 - [`docs/superpowers/specs/2026-07-03-michi-design.md`](docs/superpowers/specs/2026-07-03-michi-design.md) — architecture decisions
 
 ## Development
