@@ -82,6 +82,7 @@ Any TypeScript CLI
   npm dep on @orin-axi/michi
   --format toon dispatch calls into the NAPI wrapper
   Same output; the NAPI boundary is transparent
+  render_for()/renderFor() picks agent vs. human output — see 03-rust-api.md
 
 Any TypeScript MCP server
   npm dep on @orin-axi/michi
@@ -183,7 +184,8 @@ michi/
       mod.rs                     # RetryConfig, parse_retry_after(), next_retry_delay()
       circuit.rs, policy.rs      # pipeline-feature-gated (Plan 2) — out of scope here
     status.rs                   # StatusItem, StatusResponse, Health
-    mcp.rs                      # Audience, ContentBlock, CallToolResult — always compiled
+    audience.rs                 # Audience — always compiled
+    mcp.rs                      # ContentBlock, CallToolResult — always compiled
     recovery.rs                 # RecoveryHint, render_recovery()
     response.rs                 # AgentResponse builder, OutputFormat
     napi.rs                     # #[napi] exports (napi feature only)
