@@ -12,11 +12,8 @@ thing: turning an already-built `AgentResponse` into the shape MCP's `tools/call
 expects.
 
 ```rust
-pub enum Audience {
-    Assistant,
-    User,
-}
-
+// Audience lives in src/audience.rs — not MCP-specific, michi's CLI output
+// path uses it too (see 03-rust-api.md's render_for()/has_human_content()).
 pub struct ContentBlock {
     pub text: String,
     pub audience: Vec<Audience>,   // MCP's annotations.audience is an array
@@ -339,8 +336,15 @@ export declare class AgentResponse {
   recoveryHint(tool: string, reason?: string): void;
   /** Marks this response as an error state, reflected in `renderJson()`'s `isError` field. */
   asError(): void;
-  /** Attaches a `user`-audience companion block, included by `toCallToolResult()`. */
+  /** Attaches a `user`-audience companion block, included by `toCallToolResult()`
+   * and readable via `renderFor("user")`. */
   humanContent(text: string): void;
+  /** Renders for `"assistant"` or `"user"`. `"user"` falls back to the
+   * agent rendering when `humanContent()` was never set — see
+   * `hasHumanContent()`. Throws for any other audience string. */
+  renderFor(audience: string): string;
+  /** Whether `.humanContent()` was set on this builder. */
+  hasHumanContent(): boolean;
   /** Reads the TOON slot unconditionally — see 03-rust-api.md. */
   renderToon(): string;
   /** Reads the KV slot unconditionally — see 03-rust-api.md. */
