@@ -31,6 +31,7 @@
 | Formal TOON grammar | A canonical spec enabling interoperability and testability |
 | `render_hints_only()` | Append hints to an existing body without re-rendering |
 | `mcp::CallToolResult` + `AgentResponse::to_call_tool_result()` | Assembles a wire-conformant MCP `tools/call` response from an already-built `AgentResponse` |
+| `AgentResponse::render_for()` + `has_human_content()` | Dual agent/human output selection for any consumer, not just MCP — no prior shared primitive covered CLI output mode selection |
 
 ### Stays in your application code
 
