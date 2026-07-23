@@ -45,4 +45,6 @@
 | `status` | Health/status response rendering |
 | `recovery` | Recovery hint blocks |
 | `response` | `AgentResponse` builder — composes all primitives |
+| `mcp` | MCP `CallToolResult` assembly — always compiled, no feature gate |
+| `audience` | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()` |
 | `pipeline` | Pipeline pure data type + render (execution in Plan 2) |

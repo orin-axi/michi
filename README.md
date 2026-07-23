@@ -116,6 +116,8 @@ beyond `thiserror`. You opt into more as you need it (see below).
 | `status` | Health/status response rendering |
 | `recovery` | Structured recovery hints for error responses |
 | `response` | `AgentResponse` builder — composes all of the above |
+| `mcp` | MCP `CallToolResult` assembly — always compiled, no feature gate |
+| `audience` | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()` |
 | `pipeline` | Pipeline data model + rendering (execution lands in a later release) |
 
 ## Feature flags
@@ -126,7 +128,6 @@ beyond `thiserror`. You opt into more as you need it (see below).
 | `fuzzy` | nucleo-matcher | fuzzy-resolving ambiguous agent input |
 | `cache` | moka, sha2 | two-tier caching with tag invalidation |
 | `cli` | indicatif, inquire, crossterm, ctrlc | building a CLI surface on top of michi |
-| `mcp` | (pure logic, no extra deps) | building an MCP server surface |
 | `full` | everything above except `napi` | test/bench harnesses |
 
 The default build (no features) is the one most consumers want: pure rendering, no

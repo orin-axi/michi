@@ -18,13 +18,14 @@ flowchart LR
     fuzzy --> pipeline
     cache --> pipeline
     cli --> pipeline
-    mcp --> pipeline
     pipeline --> tokio[("tokio + tokio-util<br/>+ async-trait + uuid")]
     napi --> napideps[("napi + napi-derive")]
 ```
 
-The one thing worth internalizing from this graph: **`fuzzy`, `cache`, `cli`, and `mcp`
-all pull in `pipeline`, and `pipeline` is what pulls in tokio.** Want fuzzy matching with
+The one thing worth internalizing from this graph: **`fuzzy`, `cache`, and `cli`
+all pull in `pipeline`, and `pipeline` is what pulls in tokio.** `mcp` isn't in this
+graph at all — it's an always-compiled module, not a Cargo feature; see
+[`docs/spec/04-mcp-and-napi.md`](docs/spec/04-mcp-and-napi.md). Want fuzzy matching with
 no async runtime? Not possible today — `Resolution<T>` is used in pipeline context, so
 `fuzzy` implies `pipeline` by design. `napi` is the only feature that's a dead end on its
 own — it never touches tokio.
@@ -46,7 +47,7 @@ flowchart LR
     end
     napi_mod --> shim
     shim --> binary[(".node binary")]
-    binary --> npm["npm package \"michi\"<br/>(TypeScript consumers)"]
+    binary --> npm["npm package \"@orin-axi/michi\"<br/>(TypeScript consumers)"]
 ```
 
 Every `#[napi]` export — the actual function bodies, the `JsToonOptions` /
