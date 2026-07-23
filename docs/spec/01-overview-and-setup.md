@@ -82,7 +82,7 @@ Any TypeScript CLI
   npm dep on @orin-axi/michi
   --format toon dispatch calls into the NAPI wrapper
   Same output; the NAPI boundary is transparent
-  render_for()/renderFor() picks agent vs. human output — see 03-rust-api.md
+  render_for()/renderFor() picks agent vs. human output
 
 Any TypeScript MCP server
   npm dep on @orin-axi/michi
