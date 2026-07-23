@@ -141,6 +141,31 @@ TOON for the model to read, JSON for a client to parse programmatically. That's 
 deviation from the spec's backwards-compatibility recommendation, made with eyes open, not an
 oversight.
 
+**`Audience` lives in its own module, not inside `mcp.rs`.** It was originally defined in
+`mcp.rs` because MCP was its first consumer, but the concept itself was never MCP-specific —
+`render_for()`/`has_human_content()` use it for CLI output selection with no MCP involvement at
+all. Moved to `src/audience.rs` once it had a second real consumer, rather than left in a
+module named after the first one.
+
+**`render_for(Audience::User)` falls back to agent rendering instead of returning `None` or an
+empty string.** The alternative — an `Option<String>`-returning method — would be more strictly
+honest about "did you actually get human content," but would force every caller into
+`Option`-handling ceremony even in the common case of just wanting text to print. The resolution:
+keep `render_for` returning a plain `String` (matching `render_toon()`/`render_kv()`'s existing
+family), but add `has_human_content()` as a separate, cheap predicate — a caller who's downstream
+of wherever the response was built (a generic renderer that only knows the audience, not how the
+response was constructed) can check first, without forcing the common case to handle a case it
+usually doesn't need to think about.
+
+**Evidence for `render_for` is real but thinner than `help[]` hints had.** Dual-mode
+CLI output (agent vs. human, or some analogous split) is a well-established pattern across the
+broader CLI ecosystem generally, but this session's own studied consumers only partially confirm
+it: monokl's `output.rs` does TTY-detected dual-mode output today, but between two JSON
+renderings (pretty vs. compact), not genuinely human-prose-vs-agent-TOON. Built anyway, since the
+design costs almost nothing — no new dependency, reuses the existing `Audience` type, roughly 20
+lines total — but worth being explicit that this one is a bet on a well-precedented general
+pattern, not a fully validated one, unlike hints clearing 4-for-4 across every studied tool.
+
 ---
 
 ## Implementation notes
