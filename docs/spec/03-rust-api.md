@@ -711,3 +711,33 @@ Concretely: `AgentResponse::new("x").items(rows, &fields).kv_items(kv_rows).rend
 renders the TOON list — it ignores `target` (which is `Kv` here) the way
 `render(OutputFormat::Text)` wouldn't. Calling both `.items()` and `.kv_items()` on one builder is
 a caller-side logic error to avoid, not a panic. Treat one `AgentResponse` as one output shape.
+
+### `render_for()` and `has_human_content()` — dual CLI/agent output
+
+The same `human_content`/audience split that powers `to_call_tool_result()`
+(see [04-mcp-and-napi.md](04-mcp-and-napi.md)), available directly, for any consumer — not just
+MCP:
+
+```rust
+impl AgentResponse {
+    /// Render for the given audience. `Assistant` matches `render(OutputFormat::Text)`.
+    /// `User` returns `human_content` if set, falling back to the same
+    /// agent-oriented rendering otherwise — never empty, never a panic.
+    pub fn render_for(&self, audience: Audience) -> String
+
+    /// Whether `.human_content()` was set on this builder.
+    pub fn has_human_content(&self) -> bool
+}
+```
+
+Deciding *which* `Audience` applies to a given invocation — TTY detection, a CLI flag, an
+environment variable — stays entirely the caller's job; that's argument-parsing/environment
+territory, inside this crate's existing "no CLI framework" non-goal. michi only owns the signal
+once that decision's already made.
+
+The fallback in `render_for(Audience::User)` is a real behavior worth designing around, not just
+a safety net — TOON/KV text is comma-syntax built for a model to parse, not for a human to read
+comfortably. A caller intending to actually use the `User` path should call `.human_content()`
+first; `has_human_content()` lets a caller downstream of wherever the response was built — a
+renderer that only knows the audience, not how the response was constructed — check before
+rendering, rather than discovering the fallback only by inspecting the text it gets back.
