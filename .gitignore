@@ -8,3 +8,5 @@ lcov.info
 /packages/michi-node/index.d.ts
 /packages/michi-node/index.js
 /.worktrees
+/.moon/cache
+/.moon/hooks

@@ -83,9 +83,9 @@ costs nothing and removes an assumption michi has no business making.
 type `AxiError` and made it the crate's entire error type. The shipped design splits it:
 `DomainError` is the pure data/render type — what [03-rust-api.md](03-rust-api.md) documents.
 `Error` is a `thiserror`-derived enum with a `Domain(DomainError)` variant alongside always-
-compiled `InvalidInput`/`NotFound` variants and, behind the `pipeline` feature, execution-layer
-variants (`Http`, `Timeout`, `StepFailed`) that need `#[source]`-chaining a single struct can't
-express.
+compiled `InvalidInput`/`NotFound` variants, with room for execution-layer variants (`Http`,
+`Timeout`, `StepFailed`) that need `#[source]`-chaining a single struct can't express — those
+return once the `pipeline` crate (Plan 2) lands, not as a feature flag on this crate.
 
 **`idempotency::already_done()` only checks — it doesn't render.** An early draft had one
 function do both. michi owns no persistence layer, so it has no way to know on its own whether an
@@ -97,7 +97,8 @@ renders regardless of how you detected the no-op.
 caller that wants an operation-name-plus-input key builds it themselves
 (`format!("{operation}:{stable_input}")`) before calling `new`, or uses `from_hash` for the hashed
 variant. `from_hash` uses FNV-1a, not SHA-256 — idempotency keys need stability and low collision,
-not cryptographic security, and `sha2` stays behind the `cache` feature only.
+not cryptographic security, and this crate has no `sha2` dependency at all today (it was
+removed along with the rest of the unused `cache` feature — see the crate-boundary entry below).
 
 **`RetryConfig`'s `jitter_factor: f64`, not `jitter: bool`.** `f64` supports partial jitter, not
 just full-jitter-or-none — strictly more capable at the same call-site cost. This was also the

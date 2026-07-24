@@ -29,12 +29,14 @@ pub use toon::{render_toon, ToonOptions, Value};
 pub use truncate::{truncate, truncate_inline, Truncated};
 ```
 
-This is the pure-primitives (Plan 1) surface. The crate additionally has `pipeline`, `sink`,
-`telemetry`, and (behind the `napi` feature) `napi` modules, plus a
-`pipeline`/`fuzzy`/`cache`/`cli`/`full` feature set — the async execution layer, referenced in
-`CLAUDE.md` as "Plan 2." That's out of scope for this spec. `mcp` is not in that feature list — it
-was retired as a Cargo feature; the `mcp` module is always compiled, see
-[04-mcp-and-napi.md](04-mcp-and-napi.md).
+This is the pure-primitives (Plan 1) surface. The crate additionally has `pipeline` and
+`telemetry` modules, and (behind the `napi` feature) a `napi` module. `Cargo.toml`'s only
+optional features are `napi` and `serde` — the async execution layer ("Plan 2" in `CLAUDE.md`:
+the pipeline executor, `fuzzy`, `cache`, `cli`) doesn't exist as code or as Cargo features on
+this crate at all. It lands as genuinely separate crates depending on `michi`, built when each
+piece is actually implemented — see [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and
+[06-decisions.md](06-decisions.md) for the reasoning. (The `sink` module mentioned in earlier
+drafts of this section was removed — it held no real code, only a Plan 2 placeholder comment.)
 
 ---
 
@@ -247,9 +249,10 @@ interpreting whatever failed. That keeps this module free of HTTP knowledge.
 
 `DomainError` is the pure data/render type below. `Error` is a `thiserror`-derived enum wrapping
 it — a `Domain(DomainError)` variant alongside always-compiled `InvalidInput(String)`/
-`NotFound(String)` variants, plus (behind the `pipeline` feature) execution-layer variants like
-`Http`/`Timeout`/`StepFailed` that need `#[source]`-chaining. `Error::render()`/`class()`/
-`exit_code()` delegate to `DomainError`'s when the variant is `Domain`.
+`NotFound(String)` variants, with room for execution-layer variants like `Http`/`Timeout`/
+`StepFailed` that need `#[source]`-chaining once the `pipeline` crate (Plan 2) lands — see
+[06-decisions.md](06-decisions.md). `Error::render()`/`class()`/`exit_code()` delegate to
+`DomainError`'s when the variant is `Domain`.
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -309,7 +312,8 @@ impl DomainError {
 /// The unified error type for the michi crate. Carries both agent-renderable
 /// information (`Error::render()`) and machine-readable classification
 /// (`Error::class() -> ErrorClass`). Execution-layer variants (`Http`,
-/// `Timeout`, etc.) exist only when the `pipeline` feature is enabled.
+/// `Timeout`, etc.) return when the `pipeline` crate (Plan 2) lands — see
+/// `docs/spec/06-decisions.md`'s crate-boundary entry.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     InvalidInput(String),
@@ -354,9 +358,8 @@ impl IdempotencyKey {
     /// or use `from_hash` below.
     pub fn new(s: impl Into<String>) -> Self
     /// Construct from an operation name and raw input bytes, hashed with
-    /// FNV-1a — idempotency keys need stability and low collision, not
-    /// cryptographic security, and `sha2` is gated behind the `cache`
-    /// feature only.
+    /// FNV-1a for a stable, deterministic, low-collision key. Not
+    /// cryptographic — idempotency keys need stability, not security.
     pub fn from_hash(operation: &str, data: &[u8]) -> Self
     pub fn as_str(&self) -> &str
 }
