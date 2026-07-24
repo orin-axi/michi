@@ -1,7 +1,3 @@
-/// Pipeline execution engine (requires the `pipeline` feature).
-#[cfg(feature = "pipeline")]
-pub mod executor;
-
 use std::fmt::Write as _;
 
 /// Status of an individual pipeline step.

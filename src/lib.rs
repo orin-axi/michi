@@ -86,8 +86,6 @@ pub mod recovery;
 pub mod resilience;
 /// `AgentResponse` builder — composes all michi primitives.
 pub mod response;
-/// Output sink abstractions (no-op placeholder; plan 2 adds real sinks).
-pub mod sink;
 /// Health and status response rendering.
 pub mod status;
 /// No-op telemetry provider (zero-cost default).
