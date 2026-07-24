@@ -57,17 +57,17 @@
 default = []
 napi  = ["dep:napi", "dep:napi-derive", "dep:serde_json"]
 serde = ["dep:serde", "dep:serde_json"]
-cli   = []  # reserved: terminal-width-aware rendering (colours, wrap)
 ```
 
 No async runtime dependency, no tokio, no async-std — every public function is sync. `serde` is
 opt-in Rust-side ergonomics (`Serialize`/`Deserialize` on the core value types, `toon::list()`) —
 see [01-overview-and-setup.md](01-overview-and-setup.md) for the full dependency rationale. `cli`
-is reserved for terminal-aware rendering — line wrapping, colour codes for the
-`[DEGRADED: ...]` health signals in `status::StatusResponse` — out of scope for v1, since michi
-v1 targets agent consumers only. When it's fleshed out, it'll pull in a terminal crate
-(`crossterm` or `colored`) gated entirely behind the flag so the default build stays
-dependency-light. See [06-decisions.md](06-decisions.md) for the v2 scope sketch.
+is not a Cargo feature of this crate at all — terminal-aware rendering (line wrapping, colour
+codes for the `[DEGRADED: ...]` health signals in `status::StatusResponse`) is out of scope for
+v1, since michi v1 targets agent consumers only. When that work is actually built, it lands as its
+own crate, downstream of `pipeline`, rather than a feature flag here — see
+[ARCHITECTURE.md](../../ARCHITECTURE.md) and [06-decisions.md](06-decisions.md) for the
+crate-boundary rule and the v2 scope sketch.
 
 ---
 

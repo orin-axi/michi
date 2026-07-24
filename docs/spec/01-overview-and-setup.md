@@ -108,7 +108,6 @@ categories = ["text-processing", "encoding", "development-tools"]
 default = []
 napi    = ["dep:napi", "dep:napi-derive", "dep:serde_json"]
 serde   = ["dep:serde", "dep:serde_json"]
-cli     = []  # reserved: terminal-width-aware rendering, colour support
 
 [dependencies]
 thiserror  = "2"
@@ -153,10 +152,12 @@ enabled. `kv::KvValue` fills the role `serde_json::Value` would have for every c
 doesn't opt in, at zero dependency cost. `preserve_order` keeps `toon::list()`'s field order
 matching each struct's declared order instead of alphabetizing it.
 
-The workspace `Cargo.toml` also carries `pipeline`/`fuzzy`/`cache`/`cli`/`full` for the async
-execution layer (Plan 2) — out of scope for this spec, which covers the pure-primitives surface
-only. `serde` isn't part of that Plan 2 set, despite sitting next to it in the feature table — it
-gates `Serialize`/`Deserialize` on Plan 1's own types.
+`pipeline`/`fuzzy`/`cache`/`cli` are not Cargo features of this crate at all — that async
+execution layer (Plan 2) lands as genuinely separate crates when it's actually built, never again
+as features gated on michi's own `Cargo.toml`. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for
+the crate-boundary layout and [06-decisions.md](06-decisions.md) for the decision rule behind that
+split. `serde` isn't part of that Plan 2 set, despite historically sitting next to it in the
+feature table — it gates `Serialize`/`Deserialize` on Plan 1's own types.
 
 `napi-build` lives in `packages/michi-node/Cargo.toml`, not here — that's the cdylib crate the
 actual napi-rs build step compiles.
@@ -182,7 +183,8 @@ michi/
     idempotency.rs              # IdempotencyKey, already_done(), PartialSuccess
     resilience/
       mod.rs                     # RetryConfig, parse_retry_after(), next_retry_delay()
-      circuit.rs, policy.rs      # pipeline-feature-gated (Plan 2) — out of scope here
+                                  # CircuitBreaker/retry-wrapper (Plan 2) land in the future
+                                  # pipeline crate, not here — see ARCHITECTURE.md
     status.rs                   # StatusItem, StatusResponse, Health
     audience.rs                 # Audience — always compiled
     mcp.rs                      # ContentBlock, CallToolResult — always compiled
