@@ -1,0 +1,18 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+language: typescript
+
+tasks:
+  build:
+    script: cd .. && just build-node
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"
+      - "package.json"
+  test:
+    script: cd .. && just test-node
+    inputs:
+      - "src/**/*"
+      - "__test__/**/*"
+    deps:
+      - build
