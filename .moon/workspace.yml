@@ -1,0 +1,19 @@
+$schema: "https://moonrepo.dev/schemas/workspace.json"
+
+projects:
+  core: "."
+  napi: "packages/michi-node"
+
+vcs:
+  client: git
+  defaultBranch: main
+  sync: true
+  hooks:
+    pre-commit:
+      - '. "$HOME/.cargo/env"'
+      - "cargo fmt --all --check"
+      - "cargo clippy --workspace --all-features -- -D warnings"
+      - "typos"
+      - "cargo deny check"
+
+telemetry: false
