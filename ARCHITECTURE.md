@@ -5,30 +5,35 @@ see [`docs/superpowers/specs/2026-07-03-michi-design.md`](docs/superpowers/specs
 For the full module list and public API, see `README.md` and
 [`docs/spec/`](docs/spec/README.md). This doc only covers structure.
 
-## One crate, feature-gated
+## One crate today, more crates as Plan 2 gets built
 
-`michi` ships as a single crate with everything behind opt-in features rather than as
-several small crates. A consumer who adds `michi` with default features gets pure
-rendering and nothing else — no async runtime, no cache, no CLI deps. That guarantee is
-enforced by Cargo, not by convention: each feature only exists to unlock `optional = true`
-dependencies that nothing in the default build ever references.
+`michi` today is one crate (plus the `packages/michi-node` NAPI shim, split out only because
+`crate-type = ["cdylib"]` can't coexist with a regular `[lib]` in the same `Cargo.toml`). Default
+features get pure rendering and nothing else — no async runtime, no cache, no CLI deps. `napi`
+and `serde` are the only two optional features, and both stay features rather than becoming their
+own crates: `serde`'s derives are low-consequence even if Cargo's feature-unification pulls them
+into a build that didn't ask for them (most Rust consumers already have `serde` somewhere), and
+`napi` requires napi-rs's cdylib build model, which doesn't practically leak into a normal Rust
+binary's dependency graph the way an async runtime would.
 
 ```mermaid
 flowchart LR
-    fuzzy --> pipeline
-    cache --> pipeline
-    cli --> pipeline
-    pipeline --> tokio[("tokio + tokio-util<br/>+ async-trait + uuid")]
     napi --> napideps[("napi + napi-derive")]
 ```
 
-The one thing worth internalizing from this graph: **`fuzzy`, `cache`, and `cli`
-all pull in `pipeline`, and `pipeline` is what pulls in tokio.** `mcp` isn't in this
-graph at all — it's an always-compiled module, not a Cargo feature; see
-[`docs/spec/04-mcp-and-napi.md`](docs/spec/04-mcp-and-napi.md). Want fuzzy matching with
-no async runtime? Not possible today — `Resolution<T>` is used in pipeline context, so
-`fuzzy` implies `pipeline` by design. `napi` is the only feature that's a dead end on its
-own — it never touches tokio.
+**Plan 2 (`pipeline`/`fuzzy`/`cache`/`cli`) does not exist as code or as Cargo features today.**
+It was removed from this crate's feature graph deliberately — see
+[`docs/spec/06-decisions.md`](docs/spec/06-decisions.md)'s crate-boundary entry for the full
+reasoning. The short version: those pieces pull in dependencies heavy and opinionated enough
+(tokio, moka, nucleo-matcher, a terminal stack) that Cargo's feature-unification model would risk
+surprising a consumer of the zero-dep default build who never asked for them — a risk that a
+Cargo *feature* on this crate can't fully close, but a separate *crate* can, since a binary that
+doesn't depend on that crate never pulls its dependencies in at all, regardless of what anything
+else in its graph does. When each piece is actually built, it lands as its own crate depending on
+`michi`, not a feature flag on `michi` itself — `pipeline` first (the others each depend on it),
+`resilience`'s async circuit-breaker/retry-wrapper folded into that same crate rather than split
+further (they have no use case independent of wrapping pipeline step execution), then `fuzzy`,
+`cache`, and `cli` each as their own crate once their turn comes.
 
 ## Two crates, one build-artifact boundary
 
