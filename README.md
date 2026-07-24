@@ -124,11 +124,8 @@ beyond `thiserror`. You opt into more as you need it (see below).
 
 | Feature | Adds | Why you'd enable it |
 |---|---|---|
-| `pipeline` | tokio, async execution types | running actual pipelines, not just rendering their state |
-| `fuzzy` | nucleo-matcher | fuzzy-resolving ambiguous agent input |
-| `cache` | moka, sha2 | two-tier caching with tag invalidation |
-| `cli` | indicatif, inquire, crossterm, ctrlc | building a CLI surface on top of michi |
-| `full` | everything above except `napi` | test/bench harnesses |
+| `napi` | napi, napi-derive, serde_json | building the NAPI/npm boundary |
+| `serde` | serde, serde_json | `Serialize`/`Deserialize` on the core value types, `toon::list()` |
 
 The default build (no features) is the one most consumers want: pure rendering, no
 runtime, no surprises in your dependency tree.
