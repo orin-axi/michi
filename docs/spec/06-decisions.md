@@ -166,6 +166,34 @@ design costs almost nothing — no new dependency, reuses the existing `Audience
 lines total — but worth being explicit that this one is a bet on a well-precedented general
 pattern, not a fully validated one, unlike hints clearing 4-for-4 across every studied tool.
 
+**A separate crate is justified by dependency weight and coupling, not just "this is a distinct
+feature."** The decision rule, for this crate and future ones like it: split into a separate
+crate when (1) it pulls in dependencies heavy/opinionated enough that Cargo's feature-unification
+model would genuinely surprise a consumer of the default build who never asked for them — the
+strongest signal here, since michi's entire identity is "zero-dep by default" in a way most
+crates don't promise as centrally; (2) it has low coupling to the core crate's internals, reaching
+it only through the public API; (3) it would benefit from an independent release cadence rather
+than forcing version bumps on the stable core. A dependency stays a *feature*, not a crate, when
+it's low-consequence even if unified in accidentally (`serde`'s derives — most Rust consumers
+already have `serde` somewhere) or would just create combinatorial Cargo.toml complexity with no
+real benefit.
+
+Applied to Plan 2: `pipeline` (the executor) becomes its own crate — heavy dependency (tokio),
+clean boundary (operates only on the already-public `Pipeline` data type), independent maturity.
+The async halves of `resilience` (`CircuitBreaker`, the retry wrapper) fold *into* that same
+crate rather than becoming a fourth crate of their own — they exist specifically to wrap pipeline
+step execution and have no independent use case, so criterion (2) fails for splitting them out
+further. `fuzzy` and `cache` each become their own crate, downstream of `pipeline` (already true
+today: `Resolution<T>` is used in pipeline context, so `fuzzy` implies `pipeline` by design).
+`cli` becomes its own crate too — a genuinely different kind of consumer (a terminal, not an
+agent) with no coupling to pipeline internals beyond calling into it like any other dependent
+would.
+
+None of this is scaffolded ahead of time. A crate gets created in the same work that writes its
+first real implementation, not before — an empty crate sitting in the workspace is the identical
+ambiguity problem the deleted `pipeline`/`sink`/`resilience` stub files caused, just moved up one
+level of granularity.
+
 ---
 
 ## Implementation notes
