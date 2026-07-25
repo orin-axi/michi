@@ -1,8 +1,6 @@
 # michi
 
-TypeScript/JavaScript bindings for [`michi`](https://github.com/orin-axi/michi) — AXI
-response primitives for agent-ergonomic tools. Native binary via NAPI-RS, no WASM, no
-JS reimplementation of the rendering logic.
+TypeScript/JavaScript bindings for [`michi`](https://github.com/orin-axi/michi) — AXI response primitives for agent-ergonomic tools. Native binary via NAPI-RS, no WASM, no JS reimplementation of the rendering logic.
 
 ## Install
 
@@ -19,8 +17,16 @@ const out = renderToon({
   typeName: "issues",
   fields: ["number", "title", "state"],
   rows: [
-    [{ type: "int", intVal: 51815 }, { type: "str", strVal: "[Bug]: Telegram plugin" }, { type: "str", strVal: "open" }],
-    [{ type: "int", intVal: 51812 }, { type: "str", strVal: "dark mode request" }, { type: "str", strVal: "open" }],
+    [
+      { type: "int", intVal: 51815 },
+      { type: "str", strVal: "[Bug]: Telegram plugin" },
+      { type: "str", strVal: "open" },
+    ],
+    [
+      { type: "int", intVal: 51812 },
+      { type: "str", strVal: "dark mode request" },
+      { type: "str", strVal: "open" },
+    ],
   ],
   totalCount: 8771,
   hints: ["Run `gh-axi issue view <number>` to view an issue"],
@@ -43,7 +49,7 @@ help[1]:
 ### Free functions
 
 | Function | Signature |
-|---|---|
+| --- | --- |
 | `renderToon` | `(opts: JsToonOptions) => string` — TOON list rendering |
 | `emptyState` | `(typeName: string) => string` — definitive empty-state block |
 | `renderHints` | `(hints: string[]) => string` — `help[N]:` block |
@@ -53,13 +59,10 @@ help[1]:
 
 ### `AgentResponse` class
 
-The primary integration point — a builder that composes TOON/KV rendering, hints, and
-recovery into one response. Setters return `void`, not `this` (see the main repo's
-`docs/spec/04-mcp-and-napi.md` for why chaining isn't supported across the NAPI boundary) —
-call methods as sequential statements, not a chain:
+The primary integration point — a builder that composes TOON/KV rendering, hints, and recovery into one response. Setters return `void`, not `this` (see the main repo's `docs/spec/04-mcp-and-napi.md` for why chaining isn't supported across the NAPI boundary) — call methods as sequential statements, not a chain:
 
 | Method | Signature |
-|---|---|
+| --- | --- |
 | `constructor` | `(typeName: string)` |
 | `.items` | `(rows: JsToonValue[][], fields: string[]) => void` |
 | `.totalCount` | `(n: number) => void` |
@@ -74,14 +77,11 @@ call methods as sequential statements, not a chain:
 | `.humanContent` | `(text: string) => void` — attach a `user`-audience companion block for `toCallToolResult()` |
 | `.toCallToolResult` | `() => CallToolResult` — the MCP `tools/call` response shape: `{content, isError, structuredContent}`, with each content block's `annotations.audience` set correctly |
 
-Full type definitions ship in `index.d.ts`. See the
-[main repo](https://github.com/orin-axi/michi) for the complete primitive set, the TOON
-grammar, and the Rust API this wraps.
+Full type definitions ship in `index.d.ts`. See the [main repo](https://github.com/orin-axi/michi) for the complete primitive set, the TOON grammar, and the Rust API this wraps.
 
 ## Supported platforms
 
-Prebuilt native binaries: `darwin-arm64`, `linux-x64-musl`. Building from source requires
-a Rust toolchain (see [`rust-toolchain.toml`](../../rust-toolchain.toml) in the main repo).
+Prebuilt native binaries: `darwin-arm64`, `linux-x64-musl`. Building from source requires a Rust toolchain (see [`rust-toolchain.toml`](../../rust-toolchain.toml) in the main repo).
 
 ## License
 

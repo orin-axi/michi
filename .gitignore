@@ -3,6 +3,7 @@
 Cargo.lock
 *.node
 *.snap.new
+/node_modules
 /packages/michi-node/node_modules
 lcov.info
 /packages/michi-node/index.d.ts

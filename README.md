@@ -1,22 +1,14 @@
 # michi (道)
 
-AXI response primitives for agent-ergonomic tools — TOON lists, key-value blocks,
-truncation, structured errors, status, and `help[]` hints, in one small, pure-computation
-crate.
+AXI response primitives for agent-ergonomic tools — TOON lists, key-value blocks, truncation, structured errors, status, and `help[]` hints, in one small, pure-computation crate.
 
-`michi` is the primitive layer of the **orin-axi** suite. It doesn't know about your
-protocol, your CLI framework, or your async runtime — it takes structured data in and
-returns token-efficient, agent-readable strings out. Four tools in the suite (Monokl,
-Firkin, Lumen, Pulse) build on it instead of re-implementing this formatting themselves.
+`michi` is the primitive layer of the **orin-axi** suite. It doesn't know about your protocol, your CLI framework, or your async runtime — it takes structured data in and returns token-efficient, agent-readable strings out. Four tools in the suite (Monokl, Firkin, Lumen, Pulse) build on it instead of re-implementing this formatting themselves.
 
 Available from Rust directly, or from TypeScript via the `@orin-axi/michi` npm package.
 
 ## Why
 
-Agents pay for every token they read. A JSON list of even modest size burns tokens on
-repeated field names and punctuation that a human reader would never notice and an LLM
-doesn't need restated per row. TOON (Token-Optimized Object Notation) states field names
-once, in the header:
+Agents pay for every token they read. A JSON list of even modest size burns tokens on repeated field names and punctuation that a human reader would never notice and an LLM doesn't need restated per row. TOON (Token-Optimized Object Notation) states field names once, in the header:
 
 ```json
 [
@@ -31,8 +23,7 @@ issues[2]{number,title,state}:
   51812,dark mode request,open
 ```
 
-Same information, fewer tokens. Values only get quoted when they actually contain a
-comma, quote, or newline — no wasted punctuation on the common case.
+Same information, fewer tokens. Values only get quoted when they actually contain a comma, quote, or newline — no wasted punctuation on the common case.
 
 ## Quick start
 
@@ -60,8 +51,16 @@ const out = renderToon({
   typeName: "issues",
   fields: ["number", "title", "state"],
   rows: [
-    [{ type: "int", intVal: 51815 }, { type: "str", strVal: "[Bug]: Telegram plugin" }, { type: "str", strVal: "open" }],
-    [{ type: "int", intVal: 51812 }, { type: "str", strVal: "dark mode request" }, { type: "str", strVal: "open" }],
+    [
+      { type: "int", intVal: 51815 },
+      { type: "str", strVal: "[Bug]: Telegram plugin" },
+      { type: "str", strVal: "open" },
+    ],
+    [
+      { type: "int", intVal: 51812 },
+      { type: "str", strVal: "dark mode request" },
+      { type: "str", strVal: "open" },
+    ],
   ],
   totalCount: 8771,
   hints: ["Run `gh-axi issue view <number>` to view an issue"],
@@ -81,11 +80,7 @@ help[1]:
   Run `gh-axi issue view <number>` to view an issue
 ```
 
-The Rust struct-literal shape is deliberately explicit rather than a fluent builder —
-`ToonOptions` is one struct, easy to construct from whatever data you already have. A
-higher-level `toon::list(type_name, items)` convenience API is also available (behind the
-`serde` feature) for building `ToonOptions` directly from a slice of `Serialize`-able
-structs, inferring `fields` and `rows` from the serialized shape.
+The Rust struct-literal shape is deliberately explicit rather than a fluent builder — `ToonOptions` is one struct, easy to construct from whatever data you already have. A higher-level `toon::list(type_name, items)` convenience API is also available (behind the `serde` feature) for building `ToonOptions` directly from a slice of `Serialize`-able structs, inferring `fields` and `rows` from the serialized shape.
 
 ## Install
 
@@ -98,37 +93,35 @@ michi = "0.1"
 pnpm add @orin-axi/michi     # or npm install / yarn add
 ```
 
-Default features add zero runtime dependencies — no tokio, no async runtime, nothing
-beyond `thiserror`. You opt into more as you need it (see below).
+Default features add zero runtime dependencies — no tokio, no async runtime, nothing beyond `thiserror`. You opt into more as you need it (see below).
 
 ## What's in the box
 
-| Module | Purpose |
-|---|---|
-| `toon` | TOON list rendering — the token-optimized agent list format |
-| `kv` | Key-value single-item rendering |
-| `hints` | `help[]` contextual next-step blocks |
-| `truncate` | Token-safe content truncation, always on char boundaries |
-| `empty` | Definitive empty-state responses (`count: 0`, never silent) |
-| `error` | Unified `michi::Error` with agent-renderable output + retry classification |
-| `idempotency` | Idempotency keys and already-done detection |
-| `resilience` | Retry config, backoff delay calculation, `Retry-After` parsing |
-| `status` | Health/status response rendering |
-| `recovery` | Structured recovery hints for error responses |
-| `response` | `AgentResponse` builder — composes all of the above |
-| `mcp` | MCP `CallToolResult` assembly — always compiled, no feature gate |
-| `audience` | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()` |
-| `pipeline` | Pipeline data model + rendering (execution lands in a later release) |
+| Module        | Purpose                                                                    |
+| ------------- | -------------------------------------------------------------------------- |
+| `toon`        | TOON list rendering — the token-optimized agent list format                |
+| `kv`          | Key-value single-item rendering                                            |
+| `hints`       | `help[]` contextual next-step blocks                                       |
+| `truncate`    | Token-safe content truncation, always on char boundaries                   |
+| `empty`       | Definitive empty-state responses (`count: 0`, never silent)                |
+| `error`       | Unified `michi::Error` with agent-renderable output + retry classification |
+| `idempotency` | Idempotency keys and already-done detection                                |
+| `resilience`  | Retry config, backoff delay calculation, `Retry-After` parsing             |
+| `status`      | Health/status response rendering                                           |
+| `recovery`    | Structured recovery hints for error responses                              |
+| `response`    | `AgentResponse` builder — composes all of the above                        |
+| `mcp`         | MCP `CallToolResult` assembly — always compiled, no feature gate           |
+| `audience`    | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()` |
+| `pipeline`    | Pipeline data model + rendering (execution lands in a later release)       |
 
 ## Feature flags
 
 | Feature | Adds | Why you'd enable it |
-|---|---|---|
+| --- | --- | --- |
 | `napi` | napi, napi-derive, serde_json | building the NAPI/npm boundary |
 | `serde` | serde, serde_json | `Serialize`/`Deserialize` on the core value types, `toon::list()` |
 
-The default build (no features) is the one most consumers want: pure rendering, no
-runtime, no surprises in your dependency tree.
+The default build (no features) is the one most consumers want: pure rendering, no runtime, no surprises in your dependency tree.
 
 ## Docs
 
@@ -146,8 +139,7 @@ just check   # fmt + clippy + deny + typos
 just bench   # divan benchmarks
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contributor guide, or [`CLAUDE.md`](CLAUDE.md)
-if you're an agent working in this repo.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contributor guide, or [`CLAUDE.md`](CLAUDE.md) if you're an agent working in this repo.
 
 ## License
 

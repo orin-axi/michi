@@ -1,21 +1,12 @@
 # TOON Format
 
-TOON (Token-Optimized Object Notation) is the agent-facing list format. It front-loads structure
-— type, count, field names — so the model has full context before reading a single row, then
-encodes rows as compact comma-separated values. Field names appear once, in the header, not once
-per row.
+TOON (Token-Optimized Object Notation) is the agent-facing list format. It front-loads structure — type, count, field names — so the model has full context before reading a single row, then encodes rows as compact comma-separated values. Field names appear once, in the header, not once per row.
 
-This is the canonical implementation of **AXI Principle 1 (Token-Efficient Output)**. Every token
-in a response permanently consumes context-window budget, and that cost compounds across turns.
-TOON skips the braces, quotes, and repeated keys JSON spends on structure the model can already
-infer positionally — roughly 40% fewer tokens than equivalent JSON for list data.
+This is the canonical implementation of **AXI Principle 1 (Token-Efficient Output)**. Every token in a response permanently consumes context-window budget, and that cost compounds across turns. TOON skips the braces, quotes, and repeated keys JSON spends on structure the model can already infer positionally — roughly 40% fewer tokens than equivalent JSON for list data.
 
 ## When to use it
 
-JSON repeats field names on every item. Markdown key-value repeats them too — fine for a single
-item or a handful, expensive at scale. TOON trades per-item repetition for a one-time header, so
-the savings grow with N. Use TOON for 5+ uniform-schema rows; use `kv::render_kv()` for single
-items or small mixed-type metadata.
+JSON repeats field names on every item. Markdown key-value repeats them too — fine for a single item or a handful, expensive at scale. TOON trades per-item repetition for a one-time header, so the savings grow with N. Use TOON for 5+ uniform-schema rows; use `kv::render_kv()` for single items or small mixed-type metadata.
 
 ## Grammar
 
@@ -38,6 +29,7 @@ hint         ::= "  " [^\n]+ NEWLINE
 ## Examples
 
 **List response:**
+
 ```
 issues[3]{number,title,state}:
   42,Fix login redirect,open
@@ -50,6 +42,7 @@ help[2]:
 ```
 
 **Truncated field value:**
+
 ```
 components[2]{name,description,tokens}:
   Button,"Primary action element (148 chars truncated — use full=true)",12
@@ -60,6 +53,7 @@ help[1]:
 ```
 
 **Empty state:**
+
 ```
 issues[0]{}:
 totalCount: 0
@@ -68,20 +62,19 @@ help[1]:
 ```
 
 **Single recovery hint (no list):**
+
 ```
 recovery[1]:
   create_item: suggestedParams: { project: PROJ, type: Task }
 ```
-A dedicated `recovery[N]:` block, not folded into `help[]` — see
-[03-rust-api.md](03-rust-api.md)'s `recovery` section for why. Param values render unquoted in
-plain-text form; `type` above is `KvValue::Text("Task")`, not a JSON string literal.
+
+A dedicated `recovery[N]:` block, not folded into `help[]` — see [03-rust-api.md](03-rust-api.md)'s `recovery` section for why. Param values render unquoted in plain-text form; `type` above is `KvValue::Text("Task")`, not a JSON string literal.
 
 ## Escaping
 
 - Values containing commas **must** be quoted
 - Values containing double quotes use a backslash escape: `\"`
-- Embedded newlines and carriage returns are silently stripped, not escaped — TOON has no
-  multi-line cell format
+- Embedded newlines and carriage returns are silently stripped, not escaped — TOON has no multi-line cell format
 - Null/absent values render as an empty scalar: `val1,,val3`
 - Booleans: `true` / `false`
 - Numbers: unquoted
