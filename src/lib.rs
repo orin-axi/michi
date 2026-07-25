@@ -47,12 +47,13 @@
 //!
 //! | Feature | Adds |
 //! |---|---|
-//! | `pipeline` | `PipelineExecutor`, `CheckpointStore`, `OutputSink`, `CircuitBreaker` (Plan 2, not yet implemented) |
-//! | `fuzzy` | `FuzzyMatcher`, `FuzzyResolver` (Plan 2, not yet implemented) |
-//! | `cache` | Two-tier `Cache` (moka + disk) (Plan 2, not yet implemented) |
-//! | `cli` | CLI surface adapters (indicatif, inquire) (Plan 2, not yet implemented) |
 //! | `napi` | NAPI exports (used by `packages/michi-node`) |
-//! | `full` | All of the above except `napi` |
+//! | `serde` | `Serialize`/`Deserialize` on the core value types, `toon::list()` |
+//!
+//! These are the only two. `pipeline`/`fuzzy`/`cache`/`cli` ("Plan 2" in `CONTRIBUTING.md`) do
+//! not exist as code or as Cargo features on this crate — see `ARCHITECTURE.md` and
+//! `docs/spec/06-decisions.md`'s crate-boundary entry. Each lands as its own crate, depending
+//! on this one, when it's actually built.
 //!
 //! MCP integration (`AgentResponse::to_call_tool_result()`) is always compiled
 //! — no feature flag needed, see the `mcp` module.
