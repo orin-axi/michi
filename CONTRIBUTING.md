@@ -54,7 +54,7 @@ side of the always-compiled / feature-gated line something belongs on.
 
 | You want to... | Look at |
 |---|---|
-| Decide whether something belongs in michi at all | `PHILOSOPHY.md` — the inclusion checklist |
+| Decide whether something belongs in michi at all | `PRINCIPLES.md` — the inclusion checklist |
 | Add or change a rendering primitive | `src/<module>/` — see the module table in `README.md` |
 | Touch anything behind a feature flag | `ARCHITECTURE.md` for the feature graph first |
 | Change the NAPI/npm surface | `src/napi.rs` (the exports) + `packages/michi-node` (the cdylib shim) — not the other way around |

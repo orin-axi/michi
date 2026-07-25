@@ -134,7 +134,9 @@ runtime, no surprises in your dependency tree.
 
 - [`docs/00-overview.md`](docs/00-overview.md) — what this is and where it fits in the suite
 - [`docs/spec/`](docs/spec/README.md) — full API reference and the TOON grammar
-- [`docs/superpowers/specs/2026-07-03-michi-design.md`](docs/superpowers/specs/2026-07-03-michi-design.md) — architecture decisions
+- [`PRINCIPLES.md`](PRINCIPLES.md) — what belongs in this crate and why, and how work here gets done
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — how it fits together today
+- [`docs/superpowers/specs/2026-07-03-michi-design.md`](docs/superpowers/specs/2026-07-03-michi-design.md) — the original design decisions
 
 ## Development
 
@@ -144,7 +146,8 @@ just check   # fmt + clippy + deny + typos
 just bench   # divan benchmarks
 ```
 
-See [`CLAUDE.md`](CLAUDE.md) for the full contributor ground rules.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contributor guide, or [`CLAUDE.md`](CLAUDE.md)
+if you're an agent working in this repo.
 
 ## License
 

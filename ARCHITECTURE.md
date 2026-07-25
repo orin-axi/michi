@@ -64,26 +64,16 @@ napi-derive's registration is linker-section based (`ctor`), not call-site based
 survives crossing a crate boundary via `pub use`. This is verified by an actual `.node`
 build + the JS test suite in CI, not just `cargo build`.
 
-## Always-compiled vs. feature-gated, inside one module
+## Always-compiled data, separate-crate execution
 
-The pattern used throughout: pure, sync computation is always compiled; the async
-extension of the same concept sits behind a feature, in the same directory.
-
-```
-resilience/
-  mod.rs      next_retry_delay(), parse_retry_after()   ← always compiled
-  policy.rs   with_resilience()                          ← #[cfg(feature = "pipeline")]
-  circuit.rs  CircuitBreaker, CircuitState                ← #[cfg(feature = "pipeline")]
-
-pipeline/
-  mod.rs      Pipeline (pure data) + render()             ← always compiled
-  executor.rs PipelineExecutor, PipelineContext            ← #[cfg(feature = "pipeline")]
-```
-
-`pipeline::Pipeline` is deliberately always compiled: a caller should be able to render a
-pipeline's current state without pulling in an executor to run one. The same split applies
-to `resilience` (you can compute a retry delay without tokio) and will apply to `sink` once
-Plan 2 fills it in.
+`pipeline::Pipeline` (the data type) and `resilience`'s `next_retry_delay()`/
+`parse_retry_after()` are always compiled today — a caller can render a pipeline's current
+state, or compute a retry delay, without pulling in an executor or an async runtime at all.
+There is no `pipeline::executor`/`resilience::circuit`/`resilience::policy` in this crate
+anymore, and no `sink` module either — see the section above. When the pipeline executor
+gets built for real, it's a separate crate depending on `michi::pipeline::Pipeline`, not a
+feature-gated submodule here — the data type stays put; the thing that runs it doesn't live
+in this crate.
 
 ## Boundaries worth knowing before you touch them
 
