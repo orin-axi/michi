@@ -3,11 +3,13 @@
 ## Crate root (`src/lib.rs`)
 
 ```rust
+pub mod audience;
 pub mod empty;
 pub mod error;
 pub mod hints;
 pub mod idempotency;
 pub mod kv;
+pub mod mcp;
 pub mod recovery;
 pub mod resilience;
 pub mod response;
@@ -16,11 +18,13 @@ pub mod toon;
 pub mod truncate;
 
 // Top-level re-exports for the common path
+pub use audience::Audience;
 pub use empty::empty_state;
 pub use error::{DomainError, Error, ErrorClass, ErrorCode, Sensitive};
 pub use hints::{append_hints, render_hints, Hint};
 pub use idempotency::{already_done, render_already_done, AlreadyDone, FailedOp, IdempotencyKey, PartialSuccess};
 pub use kv::render_kv;
+pub use mcp::{CallToolResult, ContentBlock};
 pub use recovery::RecoveryHint;
 pub use resilience::{next_retry_delay, parse_retry_after, RetryConfig};
 pub use response::{AgentResponse, OutputFormat};
@@ -29,7 +33,7 @@ pub use toon::{render_toon, ToonOptions, Value};
 pub use truncate::{truncate, truncate_inline, Truncated};
 ```
 
-This is the pure-primitives (Plan 1) surface. The crate additionally has `pipeline` and `telemetry` modules, and (behind the `napi` feature) a `napi` module. `Cargo.toml`'s only optional features are `napi` and `serde` — the async execution layer ("Plan 2" in `CLAUDE.md`: the pipeline executor, `fuzzy`, `cache`, `cli`) doesn't exist as code or as Cargo features on this crate at all. It lands as genuinely separate crates depending on `michi`, built when each piece is actually implemented — see [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and [06-decisions.md](06-decisions.md) for the reasoning. (The `sink` module mentioned in earlier drafts of this section was removed — it held no real code, only a Plan 2 placeholder comment.)
+This is the pure-primitives (Plan 1) surface, including `audience` and `mcp` — both always-compiled, no feature gate (see [04-mcp-and-napi.md](04-mcp-and-napi.md) for what they do). The crate additionally has `pipeline` and `telemetry` modules, and (behind the `napi` feature) a `napi` module. `Cargo.toml`'s only optional features are `napi` and `serde` — the async execution layer ("Plan 2" in `CLAUDE.md`: the pipeline executor, `fuzzy`, `cache`, `cli`) doesn't exist as code or as Cargo features on this crate at all. It lands as genuinely separate crates depending on `michi`, built when each piece is actually implemented — see [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and [06-decisions.md](06-decisions.md) for the reasoning. (The `sink` module mentioned in earlier drafts of this section was removed — it held no real code, only a Plan 2 placeholder comment.)
 
 ---
 

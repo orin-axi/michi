@@ -83,7 +83,7 @@ Format changes are major versions. Treat the rendered string as a contract — t
 
 **MSRV policy:** `rust-version = "1.96"` is the declared minimum. A bump happens only when a needed language or `std` feature requires it, gets recorded in the CHANGELOG, and counts as a **minor** bump — never a patch.
 
-**Version sync:** the npm package version tracks the crate version exactly. CI asserts the two are equal before any publish, so a `michi` crate at `0.3.1` and the `@orin-axi/michi` npm package at `0.3.1` always describe the same source. The publish job builds the per-platform `.node` artifacts, runs `napi prepublish` to emit them as `optionalDependencies`, then publishes the main package. When no native binary matches a consumer's platform, the TypeScript fallback export loads instead.
+**Version sync:** the npm package version tracks the crate version exactly. A `version-sync` CI job asserts the two are equal on every push/PR, so a `michi` crate at `0.3.1` and the `@orin-axi/michi` npm package at `0.3.1` always describe the same source. There is no publish job yet — `cargo publish`/`npm publish` are manual, gated steps for now (see [06-decisions.md](06-decisions.md)); a future publish job would build the per-platform `.node` artifacts, run `napi prepublish` to emit them as `optionalDependencies`, then publish the main package. When no native binary matches a consumer's platform, the TypeScript fallback export loads instead.
 
 ---
 

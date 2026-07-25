@@ -10,7 +10,7 @@
 
 AXI is a set of ten design principles for agent-ergonomic tooling that treats token budget as a first-class constraint. Of the ten, michi encodes **seven** directly: TOON list rendering (P1), content truncation (P3), pre-computed aggregates (P4), definitive empty states (P5), structured errors with exit codes (P6), content-first status responses (P8), and contextual disclosure via `help[]` blocks (P9). It also ships supporting idempotency and retry-delay primitives. The remaining three principles (P2, P7, P10) depend on integration that michi deliberately excludes.
 
-The crate is intentionally narrow: **no protocol knowledge, no async runtime, no CLI framework**. Pure computation — data in, strings and types out. TypeScript consumers reach it via the NAPI npm wrapper `@orin-axi/michi`; Rust consumers take a direct crates.io or git dependency.
+The crate is intentionally narrow: **no protocol knowledge, no async runtime, no CLI framework**. Pure computation — data in, strings and types out. TypeScript consumers will reach it via the NAPI npm wrapper `@orin-axi/michi`; Rust consumers will take a direct crates.io dependency. Neither package is published yet — see [Publishing targets](#publishing-targets) below and [`docs/spec/06-decisions.md`](spec/06-decisions.md) for what's gating that. Today, both are only reachable via a git dependency / cloning this repo — see [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ---
 
@@ -110,11 +110,11 @@ GitHub org: **orin-axi** (`github.com/orin-axi`)
 
 ---
 
-## Where michi fits in the suite
+## Where michi fits in the suite (planned — no current consumer)
 
-michi sits below every other tool in the orin-axi suite as the shared primitive layer. Each agent-facing tool imports it rather than re-implementing AXI formatting.
+michi is designed to sit below every other tool in the orin-axi suite as the shared primitive layer, with each agent-facing tool importing it instead of re-implementing AXI formatting. **No tool in the suite depends on michi yet** — this table describes the intended integration, not current state; see [`docs/spec/README.md`](spec/README.md)'s "Known gaps."
 
-| Tool      | What it does                               | Uses michi for           |
+| Tool      | What it does                               | Would use michi for      |
 | --------- | ------------------------------------------ | ------------------------ |
 | **michi** | AXI response primitives — the shared layer | — (this crate)           |
 | Monokl    | AST-based semantic code search             | TOON list output         |
@@ -122,7 +122,7 @@ michi sits below every other tool in the orin-axi suite as the shared primitive 
 | Lumen     | Coding-session analysis + ambient context  | Status + hint primitives |
 | Pulse     | Code-health intelligence                   | TOON list output         |
 
-Non-agentic infrastructure tools (build scripts, formatters, etc.) never encounter michi — the package boundary enforces the separation.
+Non-agentic infrastructure tools (build scripts, formatters, etc.) are never intended to encounter michi — the package boundary would enforce the separation.
 
 ---
 
@@ -170,13 +170,11 @@ Rationale: viral copyleft is well-suited to CLI/library tools embedded in pipeli
 
 ---
 
-## Publishing targets
+## Publishing targets (planned — neither is published yet)
 
-- **crates.io** — public, `michi`
-- **npmjs.com** — public, `@orin-axi/michi` (NAPI wrapper)
-- NAPI binaries cross-compiled via `cargo-zigbuild`:
-  - `darwin-arm64`
-  - `linux-x64-musl`
+- **crates.io** — `michi` — not yet published; see [`docs/spec/06-decisions.md`](spec/06-decisions.md) for the publish gate
+- **npmjs.com** — `@orin-axi/michi` (NAPI wrapper) — not yet published
+- CI builds NAPI binaries for four targets today: `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl` (the last two cross-compiled via `cargo-zigbuild`) — see `.github/workflows/ci.yml`
 
 ---
 

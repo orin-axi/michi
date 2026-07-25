@@ -1,6 +1,6 @@
 # Contributing to michi
 
-Thanks for taking a look. This is a small, deliberately narrow crate — most contributions will be a bug fix, a new primitive, or filling in a Plan 2 stub. Here's how to get moving.
+Thanks for taking a look. This is a small, deliberately narrow crate — most contributions will be a bug fix or a new primitive. Starting one of the Plan 2 crates (the `pipeline` executor, `fuzzy`, `cache`, `cli`) described in [`ARCHITECTURE.md`](ARCHITECTURE.md) is also welcome, but note none of them exist yet, not even as stubs — that work starts from scratch as a new crate depending on this one. Here's how to get moving.
 
 If you're proposing a new primitive, read [`PRINCIPLES.md`](PRINCIPLES.md) first — it's the checklist for what belongs in michi and why, so you're not guessing at unwritten rules.
 

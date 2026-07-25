@@ -2,7 +2,7 @@
 
 AXI response primitives for agent-ergonomic tools — TOON lists, key-value blocks, truncation, structured errors, status, and `help[]` hints, in one small, pure-computation crate.
 
-`michi` is the primitive layer of the **orin-axi** suite. It doesn't know about your protocol, your CLI framework, or your async runtime — it takes structured data in and returns token-efficient, agent-readable strings out. Four tools in the suite (Monokl, Firkin, Lumen, Pulse) build on it instead of re-implementing this formatting themselves.
+`michi` is the primitive layer of the **orin-axi** suite. It doesn't know about your protocol, your CLI framework, or your async runtime — it takes structured data in and returns token-efficient, agent-readable strings out. Four tools in the suite (Monokl, Firkin, Lumen, Pulse) are designed to build on it instead of re-implementing this formatting themselves — none currently depend on it; see [`docs/spec/README.md`](docs/spec/README.md)'s "Known gaps."
 
 Available from Rust directly, or from TypeScript via the `@orin-axi/michi` npm package.
 
@@ -84,6 +84,8 @@ The Rust struct-literal shape is deliberately explicit rather than a fluent buil
 
 ## Install
 
+**Not yet published to crates.io or npm.** Once published, installation will look like this — for now, see [`CONTRIBUTING.md`](CONTRIBUTING.md) for building from source (`git clone` + `just build`).
+
 ```toml
 [dependencies]
 michi = "0.1"
@@ -97,22 +99,23 @@ Default features add zero runtime dependencies — no tokio, no async runtime, n
 
 ## What's in the box
 
-| Module        | Purpose                                                                    |
-| ------------- | -------------------------------------------------------------------------- |
-| `toon`        | TOON list rendering — the token-optimized agent list format                |
-| `kv`          | Key-value single-item rendering                                            |
-| `hints`       | `help[]` contextual next-step blocks                                       |
-| `truncate`    | Token-safe content truncation, always on char boundaries                   |
-| `empty`       | Definitive empty-state responses (`count: 0`, never silent)                |
-| `error`       | Unified `michi::Error` with agent-renderable output + retry classification |
-| `idempotency` | Idempotency keys and already-done detection                                |
-| `resilience`  | Retry config, backoff delay calculation, `Retry-After` parsing             |
-| `status`      | Health/status response rendering                                           |
-| `recovery`    | Structured recovery hints for error responses                              |
-| `response`    | `AgentResponse` builder — composes all of the above                        |
-| `mcp`         | MCP `CallToolResult` assembly — always compiled, no feature gate           |
-| `audience`    | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()` |
-| `pipeline`    | Pipeline data model + rendering (execution lands in a later release)       |
+| Module        | Purpose                                                                        |
+| ------------- | ------------------------------------------------------------------------------ |
+| `toon`        | TOON list rendering — the token-optimized agent list format                    |
+| `kv`          | Key-value single-item rendering                                                |
+| `hints`       | `help[]` contextual next-step blocks                                           |
+| `truncate`    | Token-safe content truncation, always on char boundaries                       |
+| `empty`       | Definitive empty-state responses (`count: 0`, never silent)                    |
+| `error`       | Unified `michi::Error` with agent-renderable output + retry classification     |
+| `idempotency` | Idempotency keys and already-done detection                                    |
+| `resilience`  | Retry config, backoff delay calculation, `Retry-After` parsing                 |
+| `status`      | Health/status response rendering                                               |
+| `recovery`    | Structured recovery hints for error responses                                  |
+| `response`    | `AgentResponse` builder — composes all of the above                            |
+| `mcp`         | MCP `CallToolResult` assembly — always compiled, no feature gate               |
+| `audience`    | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()`     |
+| `pipeline`    | Pipeline data model + rendering (execution lands in a later release)           |
+| `telemetry`   | No-op telemetry provider (`NoopProvider`) — zero-cost default, always compiled |
 
 ## Feature flags
 
@@ -135,7 +138,7 @@ The default build (no features) is the one most consumers want: pure rendering, 
 
 ```bash
 just test    # rust + node tests
-just check   # fmt + clippy + deny + typos
+just check   # fmt + clippy + deny + typos + markdown format check
 just bench   # divan benchmarks
 ```
 

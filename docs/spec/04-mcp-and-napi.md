@@ -145,31 +145,18 @@ Any `#[napi]` function returning `napi::Result<T>` throws a JS `Error` on `Err`.
 
 ### Cross-compilation and CI
 
-`@napi-rs/cli`'s `--cross-compile` flag selects `cargo-zigbuild` as the linker for non-native Linux/macOS targets (and `cargo-xwin` for Windows). Both shipped targets build from a single Linux runner:
+`@napi-rs/cli`'s `--cross-compile` flag selects `cargo-zigbuild` as the linker for non-native Linux targets (and `cargo-xwin` for Windows, unused here). In CI, three of the four targets build natively on their own runner (`x86_64-apple-darwin` on `macos-13`, `aarch64-apple-darwin` on `macos-latest`, `x86_64-unknown-linux-gnu` on `ubuntu-latest`); only `x86_64-unknown-linux-musl` cross-compiles, from an `ubuntu-latest` runner:
 
 ```bash
 cargo install cargo-zigbuild
-napi build --release --cross-compile --target aarch64-apple-darwin
 napi build --release --cross-compile --target x86_64-unknown-linux-musl
 ```
 
-Publish CI uses a `fail-fast: false` matrix — one `.node` per target, uploaded as an artifact — then a publish job downloads everything and runs `napi prepublish`:
+Today's `.github/workflows/ci.yml` has a `napi` job with a `fail-fast: false` matrix that **builds and tests** four targets on every push — `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl` (the last cross-compiled via `cargo-zigbuild`) — but there is no publish job. Nothing in this repo runs `napi prepublish` or uploads to npm yet; `cargo publish`/`npm publish` are still manual, gated steps (see [`docs/spec/06-decisions.md`](06-decisions.md)).
 
-```yaml
-strategy:
-  fail-fast: false
-  matrix:
-    include:
-      - target: x86_64-unknown-linux-musl
-        host: ubuntu-latest
-        cross: true # triggers cargo-zigbuild
-      - target: aarch64-apple-darwin
-        host: macos-latest # native build (preferred for code-signing)
-```
+A future publish job would look roughly like: build each target as an artifact, then a downstream job downloads them all and runs `napi prepublish` to emit the per-platform packages plus the main `@orin-axi/michi` package together. The `version-sync` job already asserts the npm package version equals the crate version on every push/PR (see [05-scope-and-quality.md](05-scope-and-quality.md)) — that check exists today and would gate a publish job once one is built.
 
-The publish job emits the per-platform packages and the main `@orin-axi/michi` package together. CI asserts the npm package version equals the crate version before publish (see [05-scope-and-quality.md](05-scope-and-quality.md)).
-
-**Windows is a non-goal for v1.** michi's agent consumers (MCP servers, CLIs invoked by coding agents) run on Linux and macOS hosts; a `windows-x64` target would add `cargo-xwin` tooling and a third CI lane for no current consumer. Nothing blocks adding it later.
+**Windows is a non-goal for v1.** michi's agent consumers (MCP servers, CLIs invoked by coding agents) run on Linux and macOS hosts; a `windows-x64` target would add `cargo-xwin` tooling and another CI lane for no current consumer. Nothing blocks adding it later.
 
 ### TypeScript types (`index.d.ts`)
 
