@@ -114,13 +114,13 @@ GitHub org: **orin-axi** (`github.com/orin-axi`)
 
 michi sits below every other tool in the orin-axi suite as the shared primitive layer. Each agent-facing tool imports it rather than re-implementing AXI formatting.
 
-| Tool | What it does | Uses michi for |
-| --- | --- | --- |
-| **michi** | AXI response primitives — the shared layer | — (this crate) |
-| Monokl | AST-based semantic code search | TOON list output |
-| Firkin | Barrel / index file generator | Structured error output |
-| Lumen | Coding-session analysis + ambient context | Status + hint primitives |
-| Pulse | Code-health intelligence | TOON list output |
+| Tool      | What it does                               | Uses michi for           |
+| --------- | ------------------------------------------ | ------------------------ |
+| **michi** | AXI response primitives — the shared layer | — (this crate)           |
+| Monokl    | AST-based semantic code search             | TOON list output         |
+| Firkin    | Barrel / index file generator              | Structured error output  |
+| Lumen     | Coding-session analysis + ambient context  | Status + hint primitives |
+| Pulse     | Code-health intelligence                   | TOON list output         |
 
 Non-agentic infrastructure tools (build scripts, formatters, etc.) never encounter michi — the package boundary enforces the separation.
 

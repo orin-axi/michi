@@ -211,11 +211,7 @@ export declare function appendHints(body: string, hints: Array<string>): string;
 
 /** Only the inline form crosses the NAPI boundary — unlike Rust's `truncate()`,
  * which returns a richer `Truncated` struct, this returns the final string directly. */
-export declare function truncate(
-  content: string,
-  maxChars: number,
-  hint: string,
-): string;
+export declare function truncate(content: string, maxChars: number, hint: string): string;
 
 export interface JsRecoveryHint {
   tool: string;

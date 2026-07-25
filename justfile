@@ -45,10 +45,10 @@ typos:
     typos
 
 fmt-md:
-    pnpm exec prettier --write "**/*.md"
+    pnpm exec oxfmt --ignore-path=.oxfmtignore --write "**/*.md"
 
 fmt-md-check:
-    pnpm exec prettier --check "**/*.md"
+    pnpm exec oxfmt --ignore-path=.oxfmtignore --check "**/*.md"
 
 # ── Snapshots ──────────────────────────────────────────────────────────────
 snapshots:

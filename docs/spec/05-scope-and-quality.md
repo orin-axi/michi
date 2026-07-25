@@ -89,16 +89,16 @@ Format changes are major versions. Treat the rendered string as a contract — t
 
 ## Performance contract
 
-| Operation | Target | Basis |
-| --- | --- | --- |
-| `render_toon()` — 100 items, 4 fields | < 500µs | Simple string allocation, no I/O |
-| `render_toon()` — 1000 items, 4 fields | < 3ms | Linear in N×fields |
-| `render_kv()` — 10 items | < 20µs | Column-width scan + string join |
-| `render_hints()` — 5 hints | < 10µs | Trivial string join |
-| `truncate_inline()` | < 5µs | Single pass, char boundary safe |
-| `parse_retry_after()` | < 2µs | String parse only |
-| `next_retry_delay()` | < 1µs | Pure arithmetic |
-| NAPI boundary overhead | < 5µs | Established from napi-rs benchmarks |
+| Operation                              | Target  | Basis                               |
+| -------------------------------------- | ------- | ----------------------------------- |
+| `render_toon()` — 100 items, 4 fields  | < 500µs | Simple string allocation, no I/O    |
+| `render_toon()` — 1000 items, 4 fields | < 3ms   | Linear in N×fields                  |
+| `render_kv()` — 10 items               | < 20µs  | Column-width scan + string join     |
+| `render_hints()` — 5 hints             | < 10µs  | Trivial string join                 |
+| `truncate_inline()`                    | < 5µs   | Single pass, char boundary safe     |
+| `parse_retry_after()`                  | < 2µs   | String parse only                   |
+| `next_retry_delay()`                   | < 1µs   | Pure arithmetic                     |
+| NAPI boundary overhead                 | < 5µs   | Established from napi-rs benchmarks |
 
 **Allocation:** `render_toon()` pre-allocates via `String::with_capacity` before any writes (see [06-decisions.md](06-decisions.md) for the exact heuristic). Every function is allocation-bounded — no references held across call boundaries. `escape.rs` avoids heap allocation for the common case (no special chars in a cell).
 

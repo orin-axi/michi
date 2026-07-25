@@ -34,7 +34,7 @@ The short version — full detail in [`CLAUDE.md`](CLAUDE.md):
 - Strings that get built up are pre-allocated with `String::with_capacity`
 - Truncation always respects char boundaries — never byte-slice blindly
 - Tests run via `cargo nextest`, not `cargo test`; benchmarks are `divan`, not `criterion`
-- Markdown prose isn't hard-wrapped — one line per paragraph, enforced by `just fmt-md` (Prettier, `proseWrap: never`)
+- Markdown prose isn't hard-wrapped — one line per paragraph, enforced by `just fmt-md` (oxfmt, `proseWrap: never`)
 
 These aren't arbitrary — they're what keeps a crate meant to sit under four other tools predictable to depend on. If a rule is actively fighting you on something, say so in the PR rather than working around it quietly; the lint config has already been tuned once based on exactly that kind of feedback.
 

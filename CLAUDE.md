@@ -36,19 +36,19 @@
 
 ## Module guide
 
-| Module | Purpose |
-| --- | --- |
-| `toon` | TOON list rendering — token-optimized agent list format |
-| `kv` | Key-value single-item rendering |
-| `hints` | `help[]` hint blocks |
-| `truncate` | Token-safe content truncation |
-| `empty` | Definitive empty state responses |
-| `error` | Unified `michi::Error` type with agent rendering |
-| `idempotency` | Idempotency keys, already-done detection |
-| `resilience` | Retry config, delay calculation, retry-after parsing |
-| `status` | Health/status response rendering |
-| `recovery` | Recovery hint blocks |
-| `response` | `AgentResponse` builder — composes all primitives |
-| `mcp` | MCP `CallToolResult` assembly — always compiled, no feature gate |
-| `audience` | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()` |
-| `pipeline` | Pipeline pure data type + render (execution in Plan 2) |
+| Module        | Purpose                                                                    |
+| ------------- | -------------------------------------------------------------------------- |
+| `toon`        | TOON list rendering — token-optimized agent list format                    |
+| `kv`          | Key-value single-item rendering                                            |
+| `hints`       | `help[]` hint blocks                                                       |
+| `truncate`    | Token-safe content truncation                                              |
+| `empty`       | Definitive empty state responses                                           |
+| `error`       | Unified `michi::Error` type with agent rendering                           |
+| `idempotency` | Idempotency keys, already-done detection                                   |
+| `resilience`  | Retry config, delay calculation, retry-after parsing                       |
+| `status`      | Health/status response rendering                                           |
+| `recovery`    | Recovery hint blocks                                                       |
+| `response`    | `AgentResponse` builder — composes all primitives                          |
+| `mcp`         | MCP `CallToolResult` assembly — always compiled, no feature gate           |
+| `audience`    | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()` |
+| `pipeline`    | Pipeline pure data type + render (execution in Plan 2)                     |

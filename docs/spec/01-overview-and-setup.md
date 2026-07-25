@@ -10,15 +10,15 @@ michi encodes the subset of AXI that's pure, language-agnostic computation — t
 
 **Seven of the ten principles, as typed Rust:**
 
-| Principle | Module(s) |
-| --- | --- |
-| P1 — Token-Efficient Output | `toon`, `kv` |
-| P3 — Content Truncation | `truncate` |
-| P4 — Pre-Computed Aggregates | `ToonOptions::total_count`, `status` health summaries |
-| P5 — Definitive Empty States | `empty` |
-| P6 — Structured Errors & Exit Codes | `error`, `idempotency` |
-| P8 — Content First | `status` |
-| P9 — Contextual Disclosure | `hints`, `recovery` |
+| Principle                           | Module(s)                                             |
+| ----------------------------------- | ----------------------------------------------------- |
+| P1 — Token-Efficient Output         | `toon`, `kv`                                          |
+| P3 — Content Truncation             | `truncate`                                            |
+| P4 — Pre-Computed Aggregates        | `ToonOptions::total_count`, `status` health summaries |
+| P5 — Definitive Empty States        | `empty`                                               |
+| P6 — Structured Errors & Exit Codes | `error`, `idempotency`                                |
+| P8 — Content First                  | `status`                                              |
+| P9 — Contextual Disclosure          | `hints`, `recovery`                                   |
 
 The other three stay out of scope on purpose. **P2 (Minimal Default Schemas)** is supported — callers pass exactly the fields they want — but not enforced. **P7 (Ambient Context)** and **P10 (Consistent Help)** are session-hook and CLI-framework concerns; they belong in the consuming tool, not a rendering crate.
 

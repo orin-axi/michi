@@ -97,22 +97,22 @@ Default features add zero runtime dependencies — no tokio, no async runtime, n
 
 ## What's in the box
 
-| Module | Purpose |
-| --- | --- |
-| `toon` | TOON list rendering — the token-optimized agent list format |
-| `kv` | Key-value single-item rendering |
-| `hints` | `help[]` contextual next-step blocks |
-| `truncate` | Token-safe content truncation, always on char boundaries |
-| `empty` | Definitive empty-state responses (`count: 0`, never silent) |
-| `error` | Unified `michi::Error` with agent-renderable output + retry classification |
-| `idempotency` | Idempotency keys and already-done detection |
-| `resilience` | Retry config, backoff delay calculation, `Retry-After` parsing |
-| `status` | Health/status response rendering |
-| `recovery` | Structured recovery hints for error responses |
-| `response` | `AgentResponse` builder — composes all of the above |
-| `mcp` | MCP `CallToolResult` assembly — always compiled, no feature gate |
-| `audience` | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()` |
-| `pipeline` | Pipeline data model + rendering (execution lands in a later release) |
+| Module        | Purpose                                                                    |
+| ------------- | -------------------------------------------------------------------------- |
+| `toon`        | TOON list rendering — the token-optimized agent list format                |
+| `kv`          | Key-value single-item rendering                                            |
+| `hints`       | `help[]` contextual next-step blocks                                       |
+| `truncate`    | Token-safe content truncation, always on char boundaries                   |
+| `empty`       | Definitive empty-state responses (`count: 0`, never silent)                |
+| `error`       | Unified `michi::Error` with agent-renderable output + retry classification |
+| `idempotency` | Idempotency keys and already-done detection                                |
+| `resilience`  | Retry config, backoff delay calculation, `Retry-After` parsing             |
+| `status`      | Health/status response rendering                                           |
+| `recovery`    | Structured recovery hints for error responses                              |
+| `response`    | `AgentResponse` builder — composes all of the above                        |
+| `mcp`         | MCP `CallToolResult` assembly — always compiled, no feature gate           |
+| `audience`    | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()` |
+| `pipeline`    | Pipeline data model + rendering (execution lands in a later release)       |
 
 ## Feature flags
 

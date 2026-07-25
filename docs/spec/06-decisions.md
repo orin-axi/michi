@@ -126,10 +126,10 @@ function assembleToolResult(opts: RespondOpts): ToolResult {
 
 **`parse_retry_after()` format details.** Accepts both forms from RFC 7231 §7.1.3:
 
-| Form | Example | Notes |
-| --- | --- | --- |
-| Integer seconds | `"120"` | Seconds to wait from response time |
-| HTTP-date | `"Wed, 21 Oct 2026 07:28:00 GMT"` | Absolute datetime, UTC only |
+| Form            | Example                           | Notes                              |
+| --------------- | --------------------------------- | ---------------------------------- |
+| Integer seconds | `"120"`                           | Seconds to wait from response time |
+| HTTP-date       | `"Wed, 21 Oct 2026 07:28:00 GMT"` | Absolute datetime, UTC only        |
 
 Returns `None` for anything malformed — callers should treat that as "use backoff only" and call `next_retry_delay()` with `retry_after: None`. Doesn't validate that an HTTP-date is in the future: a server returning a past date (clock skew, a bug) produces a zero or very small duration from this function alone, but `next_retry_delay()` clamps the final result to at least `config.initial_delay` regardless, so no extra handling is needed at the call site.
 
