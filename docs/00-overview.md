@@ -8,9 +8,17 @@
 
 `michi` is a Rust crate of pure agentic response primitives — the formatting and signalling conventions that make tools ergonomic for LLMs regardless of protocol or language. It is the primitive layer of the **orin-axi** suite, encoding the [AXI](https://axi.md) (Agent eXperience Interface) design principles as typed, tested Rust.
 
-AXI is a set of ten design principles for agent-ergonomic tooling that treats token budget as a first-class constraint. Of the ten, michi encodes **seven** directly: TOON list rendering (P1), content truncation (P3), pre-computed aggregates (P4), definitive empty states (P5), structured errors with exit codes (P6), content-first status responses (P8), and contextual disclosure via `help[]` blocks (P9). It also ships supporting idempotency and retry-delay primitives. The remaining three principles (P2, P7, P10) depend on integration that michi deliberately excludes.
+AXI is a set of ten design principles for agent-ergonomic tooling that treats token budget as a first-class constraint.
 
-The crate is intentionally narrow: **no protocol knowledge, no async runtime, no CLI framework**. Pure computation — data in, strings and types out. TypeScript consumers will reach it via the NAPI npm wrapper `@orin-axi/michi`; Rust consumers will take a direct crates.io dependency. Neither package is published yet — see [Publishing targets](#publishing-targets) below and [`docs/spec/06-decisions.md`](spec/06-decisions.md) for what's gating that. Today, both are only reachable via a git dependency / cloning this repo — see [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+- michi encodes **seven** of the ten directly: TOON list rendering (P1), content truncation (P3), pre-computed aggregates (P4), definitive empty states (P5), structured errors with exit codes (P6), content-first status responses (P8), and contextual disclosure via `help[]` blocks (P9).
+- It also ships supporting idempotency and retry-delay primitives.
+- The remaining three principles (P2, P7, P10) depend on integration that michi deliberately excludes.
+
+The crate is intentionally narrow: **no protocol knowledge, no async runtime, no CLI framework**. Pure computation — data in, strings and types out.
+
+- TypeScript consumers will reach it via the NAPI npm wrapper `@orin-axi/michi`; Rust consumers will take a direct crates.io dependency.
+- Neither package is published yet — see [Publishing targets](#publishing-targets-planned--neither-is-published-yet) below and [`docs/spec/06-decisions.md`](spec/06-decisions.md) for what's gating that.
+- Today, both are only reachable via a git dependency / cloning this repo — see [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ---
 
@@ -88,7 +96,10 @@ help[1]:
 
 **michi** — from 道 (Japanese: path, way, road).
 
-The character 道 is the root of _dō_ in martial arts and traditional arts: judo, kendo, aikido, shodō, chadō. It means the path itself — and the act of travelling it with intention. In the context of this crate, every `help[]` block is michi: a marker that tells an agent which path to take next, with what parameters.
+The character 道 is the root of _dō_ in martial arts and traditional arts — judo, kendo, aikido, shodō, chadō.
+
+- It means the path itself — and the act of travelling it with intention.
+- In the context of this crate, every `help[]` block is michi: a marker that tells an agent which path to take next, with what parameters.
 
 Fits the suite's naming aesthetic: short real words borrowed from a specific domain, with a metaphor that earns its place.
 
@@ -112,7 +123,9 @@ GitHub org: **orin-axi** (`github.com/orin-axi`)
 
 ## Where michi fits in the suite (planned — no current consumer)
 
-michi is designed to sit below every other tool in the orin-axi suite as the shared primitive layer, with each agent-facing tool importing it instead of re-implementing AXI formatting. **No tool in the suite depends on michi yet** — this table describes the intended integration, not current state; see [`docs/spec/README.md`](spec/README.md)'s "Known gaps."
+michi is designed to sit below every other tool in the orin-axi suite as the shared primitive layer, with each agent-facing tool importing it instead of re-implementing AXI formatting.
+
+- **No tool in the suite depends on michi yet** — this table describes the intended integration, not current state; see [`docs/spec/README.md`](spec/README.md)'s "Known gaps."
 
 | Tool      | What it does                               | Would use michi for      |
 | --------- | ------------------------------------------ | ------------------------ |
@@ -141,7 +154,9 @@ Non-agentic infrastructure tools (build scripts, formatters, etc.) are never int
 | P9 — Contextual disclosure | `hints` | `help[]` blocks of concrete next-step templates | Encoded |
 | P10 — Consistent way to get help | — | Per-subcommand `--help` reference contract | Caller |
 
-michi encodes **seven** principles directly — P1, P3, P4, P5, P6, P8, and P9 — as typed, tested Rust, alongside supporting idempotency and retry-delay primitives (`idempotency`) that underpin P6's robustness guarantees and make combined operations safe to retry.
+michi encodes **seven** principles directly — P1, P3, P4, P5, P6, P8, and P9 — as typed, tested Rust.
+
+- Supporting idempotency and retry-delay primitives (`idempotency`) underpin P6's robustness guarantees and make combined operations safe to retry.
 
 The remaining three are the **caller's responsibility**, because each requires integration michi deliberately omits:
 
@@ -166,7 +181,11 @@ The remaining three are the **caller's responsibility**, because each requires i
 
 AGPL v3 (`AGPL-3.0-or-later`).
 
-Rationale: viral copyleft is well-suited to CLI/library tools embedded in pipelines. Creates natural friction against agentic services wrapping michi commercially without contributing back. A CLA or contributor copyright assignment clause per repo preserves future dual-licensing optionality.
+Rationale:
+
+- Viral copyleft is well-suited to CLI/library tools embedded in pipelines.
+- Creates natural friction against agentic services wrapping michi commercially without contributing back.
+- A CLA or contributor copyright assignment clause per repo preserves future dual-licensing optionality.
 
 ---
 
@@ -174,7 +193,11 @@ Rationale: viral copyleft is well-suited to CLI/library tools embedded in pipeli
 
 - **crates.io** — `michi` — not yet published; see [`docs/spec/06-decisions.md`](spec/06-decisions.md) for the publish gate
 - **npmjs.com** — `@orin-axi/michi` (NAPI wrapper) — not yet published
-- CI builds NAPI binaries for four targets today: `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl` (the last two cross-compiled via `cargo-zigbuild`) — see `.github/workflows/ci.yml`
+- CI builds NAPI binaries for four targets today — see `.github/workflows/ci.yml`:
+  - `x86_64-apple-darwin`
+  - `aarch64-apple-darwin`
+  - `x86_64-unknown-linux-gnu` (cross-compiled via `cargo-zigbuild`)
+  - `x86_64-unknown-linux-musl` (cross-compiled via `cargo-zigbuild`)
 
 ---
 
@@ -193,4 +216,8 @@ Rationale: viral copyleft is well-suited to CLI/library tools embedded in pipeli
 
 ## Open questions
 
-See [`docs/spec/06-decisions.md`](spec/06-decisions.md) for what's still open — currently TOON vs. Markdown-KV retrieval accuracy, crates.io publish readiness, and the `cli` feature's v2 scope.
+See [`docs/spec/06-decisions.md`](spec/06-decisions.md) for what's still open — currently:
+
+- TOON vs. Markdown-KV retrieval accuracy
+- crates.io publish readiness
+- the `cli` feature's v2 scope

@@ -17,10 +17,22 @@ New to the crate? Read 01 → 02 → 03 in order — that's the whole mental mod
 
 ## Known gaps
 
-- **TOON vs. Markdown-KV retrieval accuracy hasn't been measured.** The token-count win is real; whether it holds up on retrieval accuracy across model sizes is untested. See [06-decisions.md](06-decisions.md).
-- **No real consumer depends on michi yet.** crates.io publish is explicitly gated on that happening first.
-- **`cli` isn't a Cargo feature of this crate at all.** Reserved name for future terminal-aware rendering, in a separate crate, not implemented.
-- **Plan 2 (the async execution layer) doesn't exist as code in this crate.** `pipeline` has a real, tested data type and `render()`, always compiled; the actual executor, `fuzzy`, `cache`, and the resilience `circuit`/`policy` modules don't exist here at all — not even as stubs (earlier placeholder stub files were deliberately deleted, see [`ARCHITECTURE.md`](../../ARCHITECTURE.md)). Each lands as its own crate, depending on `michi`, when it's actually built. This spec covers Plan 1, the pure-primitives crate, only.
+**TOON vs. Markdown-KV retrieval accuracy hasn't been measured.**
+
+- The token-count win is real.
+- Whether it holds up on retrieval accuracy across model sizes is untested.
+- See [06-decisions.md](06-decisions.md).
+
+**No real consumer depends on michi yet.** crates.io publish is explicitly gated on that happening first.
+
+**`cli` isn't a Cargo feature of this crate at all.** Reserved name for future terminal-aware rendering, in a separate crate, not implemented.
+
+**Plan 2 (the async execution layer) doesn't exist as code in this crate.**
+
+- `pipeline` has a real, tested data type and `render()` — always compiled.
+- The actual executor, `fuzzy`, `cache`, and the resilience `circuit`/`policy` modules don't exist here at all — not even as stubs. Earlier placeholder stub files were deliberately deleted; see [`ARCHITECTURE.md`](../../ARCHITECTURE.md).
+- Each lands as its own crate, depending on `michi`, when it's actually built.
+- This spec covers Plan 1, the pure-primitives crate, only.
 
 ## Companion docs
 

@@ -4,7 +4,10 @@ michi is a Rust crate of pure agentic response primitives — the formatting and
 
 ## What it is
 
-AXI (Agent eXperience Interface) is a set of ten design principles for agent-ergonomic tooling that treats token budget as a first-class constraint. Its core claim: "MCP vs. CLI" is the wrong frame — the real question is which design principles make _any_ interface effective for an LLM agent. A well-designed interface following these principles measurably beats both naive CLIs and MCP on task success rate, cost, duration, and turn count.
+AXI (Agent eXperience Interface) is a set of ten design principles for agent-ergonomic tooling that treats token budget as a first-class constraint.
+
+- **Core claim:** "MCP vs. CLI" is the wrong frame — the real question is which design principles make _any_ interface effective for an LLM agent.
+- A well-designed interface following these principles measurably beats both naive CLIs and MCP on task success rate, cost, duration, and turn count.
 
 michi encodes the subset of AXI that's pure, language-agnostic computation — the parts worth one canonical, tested implementation instead of ad hoc re-derivation in every tool.
 
@@ -20,13 +23,25 @@ michi encodes the subset of AXI that's pure, language-agnostic computation — t
 | P8 — Content First                  | `status`                                              |
 | P9 — Contextual Disclosure          | `hints`, `recovery`                                   |
 
-The other three stay out of scope on purpose. **P2 (Minimal Default Schemas)** is supported — callers pass exactly the fields they want — but not enforced. **P7 (Ambient Context)** and **P10 (Consistent Help)** are session-hook and CLI-framework concerns; they belong in the consuming tool, not a rendering crate.
+The other three stay out of scope on purpose.
 
-No protocol knowledge, no async runtime. Pure computation: data in, strings and types out. Rust consumers take a direct crates.io or git dependency; TypeScript consumers reach it through the `@orin-axi/michi` npm package.
+- **P2 (Minimal Default Schemas)** is supported — callers pass exactly the fields they want — but not enforced.
+- **P7 (Ambient Context)** and **P10 (Consistent Help)** are session-hook and CLI-framework concerns; they belong in the consuming tool, not a rendering crate.
+
+No protocol knowledge, no async runtime. Pure computation: data in, strings and types out.
+
+- Rust consumers take a direct crates.io or git dependency.
+- TypeScript consumers reach it through the `@orin-axi/michi` npm package.
 
 ## Why this exists
 
-AXI's principles usually get implemented ad hoc — scattered TypeScript conventions in MCP servers, implicit CLI patterns, per-tool string formatting that drifts over time. With michi:
+AXI's principles usually get implemented ad hoc, scattered across tools instead of shared:
+
+- Scattered TypeScript conventions in MCP servers
+- Implicit CLI patterns
+- Per-tool string formatting that drifts over time
+
+With michi:
 
 - TOON has one canonical, tested implementation shared by every consumer
 - `help[]` hints, `totalCount` formatting, truncation signals, and recovery shapes are defined once and can't drift between tools
@@ -123,9 +138,17 @@ name    = "kv_render"
 harness = false
 ```
 
-Default features add zero runtime dependencies. `serde_json` only enters the tree through `napi` (typed `structuredContent`, wire-conformant MCP types) or `serde` (`Serialize`/`Deserialize` on the core value types, plus `toon::list()`) — never both unconditionally, never with neither enabled. `kv::KvValue` fills the role `serde_json::Value` would have for every consumer who doesn't opt in, at zero dependency cost. `preserve_order` keeps `toon::list()`'s field order matching each struct's declared order instead of alphabetizing it.
+Default features add zero runtime dependencies.
 
-`pipeline`/`fuzzy`/`cache`/`cli` are not Cargo features of this crate at all — that async execution layer (Plan 2) lands as genuinely separate crates when it's actually built, never again as features gated on michi's own `Cargo.toml`. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the crate-boundary layout and [06-decisions.md](06-decisions.md) for the decision rule behind that split. `serde` isn't part of that Plan 2 set, despite historically sitting next to it in the feature table — it gates `Serialize`/`Deserialize` on Plan 1's own types.
+- `serde_json` only enters the tree through `napi` (typed `structuredContent`, wire-conformant MCP types) or `serde` (`Serialize`/`Deserialize` on the core value types, plus `toon::list()`) — never both unconditionally, never with neither enabled.
+- `kv::KvValue` fills the role `serde_json::Value` would have for every consumer who doesn't opt in, at zero dependency cost.
+- `preserve_order` keeps `toon::list()`'s field order matching each struct's declared order instead of alphabetizing it.
+
+`pipeline`/`fuzzy`/`cache`/`cli` are not Cargo features of this crate at all.
+
+- That async execution layer (Plan 2) lands as genuinely separate crates when it's actually built, never again as features gated on michi's own `Cargo.toml`.
+- See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the crate-boundary layout and [06-decisions.md](06-decisions.md) for the decision rule behind that split.
+- `serde` isn't part of that Plan 2 set, despite historically sitting next to it in the feature table — it gates `Serialize`/`Deserialize` on Plan 1's own types.
 
 `napi-build` lives in `packages/michi-node/Cargo.toml`, not here — that's the cdylib crate the actual napi-rs build step compiles.
 

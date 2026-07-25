@@ -59,7 +59,11 @@ napi  = ["dep:napi", "dep:napi-derive", "dep:serde_json"]
 serde = ["dep:serde", "dep:serde_json"]
 ```
 
-No async runtime dependency, no tokio, no async-std — every public function is sync. `serde` is opt-in Rust-side ergonomics (`Serialize`/`Deserialize` on the core value types, `toon::list()`) — see [01-overview-and-setup.md](01-overview-and-setup.md) for the full dependency rationale. `cli` is not a Cargo feature of this crate at all — terminal-aware rendering (line wrapping, colour codes for the `[DEGRADED: ...]` health signals in `status::StatusResponse`) is out of scope for v1, since michi v1 targets agent consumers only. When that work is actually built, it lands as its own crate, downstream of `pipeline`, rather than a feature flag here — see [ARCHITECTURE.md](../../ARCHITECTURE.md) and [06-decisions.md](06-decisions.md) for the crate-boundary rule and the v2 scope sketch.
+No async runtime dependency, no tokio, no async-std — every public function is sync.
+
+- `serde` is opt-in Rust-side ergonomics: `Serialize`/`Deserialize` on the core value types, plus `toon::list()`. See [01-overview-and-setup.md](01-overview-and-setup.md) for the full dependency rationale.
+- `cli` is **not** a Cargo feature of this crate at all. Terminal-aware rendering (line wrapping, colour codes for the `[DEGRADED: ...]` health signals in `status::StatusResponse`) is out of scope for v1, since michi v1 targets agent consumers only.
+- When that work is actually built, it lands as its own crate, downstream of `pipeline`, rather than a feature flag here — see [ARCHITECTURE.md](../../ARCHITECTURE.md) and [06-decisions.md](06-decisions.md) for the crate-boundary rule and the v2 scope sketch.
 
 ---
 
@@ -83,7 +87,12 @@ Format changes are major versions. Treat the rendered string as a contract — t
 
 **MSRV policy:** `rust-version = "1.96"` is the declared minimum. A bump happens only when a needed language or `std` feature requires it, gets recorded in the CHANGELOG, and counts as a **minor** bump — never a patch.
 
-**Version sync:** the npm package version tracks the crate version exactly. A `version-sync` CI job asserts the two are equal on every push/PR, so a `michi` crate at `0.3.1` and the `@orin-axi/michi` npm package at `0.3.1` always describe the same source. There is no publish job yet — `cargo publish`/`npm publish` are manual, gated steps for now (see [06-decisions.md](06-decisions.md)); a future publish job would build the per-platform `.node` artifacts, run `napi prepublish` to emit them as `optionalDependencies`, then publish the main package. When no native binary matches a consumer's platform, the TypeScript fallback export loads instead.
+**Version sync:** the npm package version tracks the crate version exactly.
+
+- A `version-sync` CI job asserts the two are equal on every push/PR, so a `michi` crate at `0.3.1` and the `@orin-axi/michi` npm package at `0.3.1` always describe the same source.
+- There is no publish job yet — `cargo publish`/`npm publish` are manual, gated steps for now (see [06-decisions.md](06-decisions.md)).
+- A future publish job would build the per-platform `.node` artifacts, run `napi prepublish` to emit them as `optionalDependencies`, then publish the main package.
+- When no native binary matches a consumer's platform, the TypeScript fallback export loads instead.
 
 ---
 
@@ -100,9 +109,17 @@ Format changes are major versions. Treat the rendered string as a contract — t
 | `next_retry_delay()`                   | < 1µs   | Pure arithmetic                     |
 | NAPI boundary overhead                 | < 5µs   | Established from napi-rs benchmarks |
 
-**Allocation:** `render_toon()` pre-allocates via `String::with_capacity` before any writes (see [06-decisions.md](06-decisions.md) for the exact heuristic). Every function is allocation-bounded — no references held across call boundaries. `escape.rs` avoids heap allocation for the common case (no special chars in a cell).
+**Allocation:**
 
-**Thread safety:** every public function is a stateless pure function. `AgentResponse` is `Send + Sync` (all fields owned, no interior mutability). The NAPI wrapper uses napi-rs's safe threading model.
+- `render_toon()` pre-allocates via `String::with_capacity` before any writes (see [06-decisions.md](06-decisions.md) for the exact heuristic).
+- Every function is allocation-bounded — no references held across call boundaries.
+- `escape.rs` avoids heap allocation for the common case (no special chars in a cell).
+
+**Thread safety:**
+
+- Every public function is a stateless pure function.
+- `AgentResponse` is `Send + Sync` (all fields owned, no interior mutability).
+- The NAPI wrapper uses napi-rs's safe threading model.
 
 Benchmarks run via `divan`, in CI, on any PR touching `src/`.
 

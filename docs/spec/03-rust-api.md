@@ -33,7 +33,13 @@ pub use toon::{render_toon, ToonOptions, Value};
 pub use truncate::{truncate, truncate_inline, Truncated};
 ```
 
-This is the pure-primitives (Plan 1) surface, including `audience` and `mcp` — both always-compiled, no feature gate (see [04-mcp-and-napi.md](04-mcp-and-napi.md) for what they do). The crate additionally has `pipeline` and `telemetry` modules, and (behind the `napi` feature) a `napi` module. `Cargo.toml`'s only optional features are `napi` and `serde` — the async execution layer ("Plan 2" in `CLAUDE.md`: the pipeline executor, `fuzzy`, `cache`, `cli`) doesn't exist as code or as Cargo features on this crate at all. It lands as genuinely separate crates depending on `michi`, built when each piece is actually implemented — see [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and [06-decisions.md](06-decisions.md) for the reasoning. (The `sink` module mentioned in earlier drafts of this section was removed — it held no real code, only a Plan 2 placeholder comment.)
+This is the pure-primitives (Plan 1) surface.
+
+- `audience` and `mcp` are both always-compiled, no feature gate — see [04-mcp-and-napi.md](04-mcp-and-napi.md) for what they do.
+- The crate additionally has `pipeline` and `telemetry` modules, and (behind the `napi` feature) a `napi` module.
+- `Cargo.toml`'s only optional features are `napi` and `serde`.
+- The async execution layer ("Plan 2" in `CLAUDE.md`: the pipeline executor, `fuzzy`, `cache`, `cli`) doesn't exist as code or as Cargo features on this crate at all. It lands as genuinely separate crates depending on `michi`, built when each piece is actually implemented — see [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and [06-decisions.md](06-decisions.md) for the reasoning.
+- The `sink` module mentioned in earlier drafts of this section was removed — it held no real code, only a Plan 2 placeholder comment.
 
 ---
 
@@ -91,7 +97,9 @@ impl From<bool>           for Value { ... }
 impl From<Option<String>> for Value { ... }
 ```
 
-Every scalar variant has a `From` conversion, so callers build rows with `.into()` uniformly. `render_toon()` pre-allocates output capacity via `String::with_capacity` (see [06-decisions.md](06-decisions.md) for the exact heuristic) — this is the hot path, no intermediate allocations. `escape.rs` handles comma/quote escaping inline, with no heap allocation for the common case of a cell with no special characters.
+- Every scalar variant has a `From` conversion, so callers build rows with `.into()` uniformly.
+- `render_toon()` pre-allocates output capacity via `String::with_capacity` (see [06-decisions.md](06-decisions.md) for the exact heuristic) — this is the hot path, no intermediate allocations.
+- `escape.rs` handles comma/quote escaping inline, with no heap allocation for the common case of a cell with no special characters.
 
 ---
 
@@ -137,7 +145,10 @@ help[1]:
 
 ## `hints` — contextual disclosure blocks
 
-Implements **AXI Principle 9 (Contextual Disclosure)**: append a `help[]` section after every output, suggesting logical next steps as concrete, parameterized command templates. Carry forward fixed disambiguating flags from the current context, but leave runtime values as named placeholders (`<id>`) rather than guessing them. This kills the discovery round trip — the agent sees its next move in the output it just got, instead of guessing subcommands or issuing a separate `--help` call.
+Implements **AXI Principle 9 (Contextual Disclosure)**: append a `help[]` section after every output, suggesting logical next steps as concrete, parameterized command templates.
+
+- Carry forward fixed disambiguating flags from the current context, but leave runtime values as named placeholders (`<id>`) rather than guessing them.
+- This kills the discovery round trip — the agent sees its next move in the output it just got, instead of guessing subcommands or issuing a separate `--help` call.
 
 ```rust
 /// A single next-step hint appended after tool output.
@@ -169,7 +180,9 @@ pub fn append_hints(out: &mut String, hints: &[Hint])
 
 ## `truncate` — size-bounded output with escape hatches
 
-Implements **AXI Principle 3 (Content Truncation)**: large text fields get capped to a configurable character limit with a size hint that explains the truncation and names an escape hatch (`use full=true`). One verbose field can otherwise burn thousands of tokens, exhausting the budget before the agent has read the rest of a list.
+Implements **AXI Principle 3 (Content Truncation)**: large text fields get capped to a configurable character limit with a size hint that explains the truncation and names an escape hatch (`use full=true`).
+
+- One verbose field can otherwise burn thousands of tokens, exhausting the budget before the agent has read the rest of a list.
 
 ```rust
 pub struct Truncated {
@@ -197,7 +210,9 @@ pub fn truncate_inline(content: &str, max_chars: usize, hint: &str) -> String
 
 ## `empty` — definitive zero states
 
-Implements **AXI Principle 5 (Definitive Empty States)**: when a query returns nothing, emit an explicit zero-result message instead of silent empty output. Agents can't reliably tell "no results" from "command failed silently" — an explicit `[0]` count plus `totalCount: 0` removes the ambiguity that otherwise drives retry loops.
+Implements **AXI Principle 5 (Definitive Empty States)**: when a query returns nothing, emit an explicit zero-result message instead of silent empty output.
+
+- Agents can't reliably tell "no results" from "command failed silently" — an explicit `[0]` count plus `totalCount: 0` removes the ambiguity that otherwise drives retry loops.
 
 ```rust
 /// Render an explicit empty-state TOON response.
@@ -216,11 +231,15 @@ pub fn empty_state_with_hints(type_name: &str, hints: &[Hint]) -> String
 
 ## `error` — structured errors with exit codes
 
-Implements **AXI Principle 6 (Structured Errors and Exit Codes)**: errors go to **stdout** (not stderr), carry a clean exit code (`0` success, `1` error), carry recovery hints, and never block on an interactive prompt. Agents can't answer `Are you sure? [y/n]`, may not capture stderr at all, and can't reliably parse freeform error text. `DomainError` encodes that contract as a type.
+Implements **AXI Principle 6 (Structured Errors and Exit Codes)**: errors go to **stdout** (not stderr), carry a clean exit code (`0` success, `1` error), carry recovery hints, and never block on an interactive prompt.
 
-The HTTP status → `ErrorCode` mapping isn't in michi — callers produce an `ErrorCode` after interpreting whatever failed. That keeps this module free of HTTP knowledge.
+- Agents can't answer `Are you sure? [y/n]`, may not capture stderr at all, and can't reliably parse freeform error text. `DomainError` encodes that contract as a type.
+- The HTTP status → `ErrorCode` mapping isn't in michi — callers produce an `ErrorCode` after interpreting whatever failed. That keeps this module free of HTTP knowledge.
 
-`DomainError` is the pure data/render type below. `Error` is a `thiserror`-derived enum wrapping it — a `Domain(DomainError)` variant alongside always-compiled `InvalidInput(String)`/ `NotFound(String)` variants, with room for execution-layer variants like `Http`/`Timeout`/ `StepFailed` that need `#[source]`-chaining once the `pipeline` crate (Plan 2) lands — see [06-decisions.md](06-decisions.md). `Error::render()`/`class()`/`exit_code()` delegate to `DomainError`'s when the variant is `Domain`.
+`DomainError` is the pure data/render type below.
+
+- `Error` is a `thiserror`-derived enum wrapping it — a `Domain(DomainError)` variant alongside always-compiled `InvalidInput(String)`/ `NotFound(String)` variants, with room for execution-layer variants like `Http`/`Timeout`/ `StepFailed` that need `#[source]`-chaining once the `pipeline` crate (Plan 2) lands — see [06-decisions.md](06-decisions.md).
+- `Error::render()`/`class()`/`exit_code()` delegate to `DomainError`'s when the variant is `Domain`.
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -291,7 +310,9 @@ pub enum Error {
 }
 ```
 
-`ErrorCode` is `Copy + Eq`, renders as snake_case. `DomainError::render()` produces a KV-shaped block on stdout — for `DomainError::new(ErrorCode::NotFound, "Issue #9999 does not exist in this repository").hint("Call list_issues to see available numbers")`:
+`ErrorCode` is `Copy + Eq`, renders as snake_case.
+
+`DomainError::render()` produces a KV-shaped block on stdout — for `DomainError::new(ErrorCode::NotFound, "Issue #9999 does not exist in this repository").hint("Call list_issues to see available numbers")`:
 
 ```
 error: not_found
@@ -305,9 +326,11 @@ help[1]:
 
 ## `idempotency` — already-done signals and partial success
 
-Types and rendering for idempotency checks, already-done detection, and partial-success reporting — the mutation-safety half of **AXI P6**. Write operations must be idempotent so an agent can retry a transient failure without duplicating records. The caller owns the persistence layer that tracks what's been done; michi owns the rendering contract.
+Types and rendering for idempotency checks, already-done detection, and partial-success reporting — the mutation-safety half of **AXI P6**.
 
-Checking and rendering are two independent functions, not one — michi has no persistence layer and can't itself decide whether an operation already happened. Only your store knows that.
+- Write operations must be idempotent so an agent can retry a transient failure without duplicating records.
+- The caller owns the persistence layer that tracks what's been done; michi owns the rendering contract.
+- Checking and rendering are two independent functions, not one — michi has no persistence layer and can't itself decide whether an operation already happened. Only your store knows that.
 
 ```rust
 /// A canonical idempotency key.
@@ -380,7 +403,11 @@ help[1]:
   Call get_issue with number=42 to view it
 ```
 
-`PartialSuccess::render()` is the most involved output in the crate — a P4 summary line, one block per outcome category, then per-op recovery hints folded into a trailing `help[]` block (rendered with the same `tool: suggestedParams: { key: value, ... }` shape `recovery::render_recovery` uses):
+`PartialSuccess::render()` is the most involved output in the crate:
+
+- a P4 summary line
+- one block per outcome category
+- then per-op recovery hints folded into a trailing `help[]` block (rendered with the same `tool: suggestedParams: { key: value, ... }` shape `recovery::render_recovery` uses)
 
 ```
 partial_success: 2 completed, 1 failed, 1 skipped
@@ -478,9 +505,12 @@ for attempt in 0..config.max_retries {
 
 ## `status` — content-first orientation responses (P8)
 
-Implements **AXI Principle 8 (Content First)**: a bare tool invocation shows live, actionable state, not a wall of help text. An agent invoking a tool for the first time almost always wants current state — open issues, recent PRs, CI status — so serving data instead of help collapses "orient + query" into one call. `StatusResponse` is what any tool returns when called with no arguments.
+Implements **AXI Principle 8 (Content First)**: a bare tool invocation shows live, actionable state, not a wall of help text.
 
-Built on `kv::render_kv()`. Health signals surface degraded state alongside nominal metrics — approaching a rate limit, a stale index, an expiring auth token — which is itself a pre-computed aggregate (**P4**): the agent reads summarized health inline instead of fetching component metrics separately.
+- An agent invoking a tool for the first time almost always wants current state — open issues, recent PRs, CI status — so serving data instead of help collapses "orient + query" into one call.
+- `StatusResponse` is what any tool returns when called with no arguments.
+- Built on `kv::render_kv()`.
+- Health signals surface degraded state alongside nominal metrics — approaching a rate limit, a stale index, an expiring auth token — which is itself a pre-computed aggregate (**P4**): the agent reads summarized health inline instead of fetching component metrics separately.
 
 ```rust
 pub struct StatusItem {
@@ -526,7 +556,10 @@ help[1]:
 
 ## `recovery` — recovery hint shapes
 
-Recovery hints are the failure-path arm of **AXI P9**: when an operation fails, emit a concrete, parameterized "here's how to recover" template instead of a dead end. `render_recovery()` formats them as a dedicated `recovery[N]:` block carrying `suggestedParams` — deliberately not folded into the generic `help[]` block. `AgentResponse.recovery: Vec<RecoveryHint>` can carry several structured recovery hints per response; mixing those into the same block a plain next-step hint uses would lose a downstream parser's ability to tell "next-step suggestion" from "how to recover from this specific failure" apart.
+Recovery hints are the failure-path arm of **AXI P9**: when an operation fails, emit a concrete, parameterized "here's how to recover" template instead of a dead end.
+
+- `render_recovery()` formats them as a dedicated `recovery[N]:` block carrying `suggestedParams` — deliberately not folded into the generic `help[]` block.
+- `AgentResponse.recovery: Vec<RecoveryHint>` can carry several structured recovery hints per response; mixing those into the same block a plain next-step hint uses would lose a downstream parser's ability to tell "next-step suggestion" from "how to recover from this specific failure" apart.
 
 ```rust
 pub struct RecoveryHint {
@@ -551,7 +584,10 @@ pub fn render_recovery(hints: &[RecoveryHint]) -> String
 
 `params` uses `kv::KvValue`, not `serde_json::Value` — same zero-dependency reasoning as the rest of the crate. `KvValue`'s `Text`/`Int`/`Float`/`Bool`/`Duration`/`Missing` variants carry equivalent expressiveness without pulling in `serde_json`.
 
-Text-format rendering (`render_recovery()`) stringifies every param value (`{ user: alice, seconds: 30 }` — no quotes, plain text). JSON-format rendering (`AgentResponse::render_json()`) is different: it emits each param using its _native_ JSON type — `Int`/`Float`/`Bool` as unquoted literals, `Text` as a quoted string, `Missing` as `null` — so a downstream JSON consumer gets typed values instead of everything flattened to a string.
+Text- and JSON-format rendering diverge on how they represent param values:
+
+- Text-format rendering (`render_recovery()`) stringifies every param value (`{ user: alice, seconds: 30 }` — no quotes, plain text).
+- JSON-format rendering (`AgentResponse::render_json()`) emits each param using its _native_ JSON type instead — `Int`/`Float`/`Bool` as unquoted literals, `Text` as a quoted string, `Missing` as `null` — so a downstream JSON consumer gets typed values instead of everything flattened to a string.
 
 ---
 
@@ -634,9 +670,17 @@ impl AgentResponse {
 }
 ```
 
-`render_json(&self) -> String` isn't a public method — JSON is reached via `render(OutputFormat::Json)`, matching the rest of the crate's zero-`serde_json` default. It's hand-built JSON text, not `serde_json::Value`. (The NAPI wrapper does expose a convenience `renderJson(): string` — TypeScript callers shouldn't need to import an `OutputFormat` enum just to reach the JSON path.)
+`render_json(&self) -> String` isn't a public method — JSON is reached via `render(OutputFormat::Json)`, matching the rest of the crate's zero-`serde_json` default.
 
-The `items` (TOON) and `single_item` (KV) slots are stored independently, so the two paths never conflict at the data level. `render(format)` dispatches on `target` — whichever of `.items()`/`.kv_items()` was called _last_ — for both text and JSON. The named shorthand methods are stronger: `render_toon()` reads only the `items`/`fields` slot and `render_kv()` reads only `single_item`, regardless of which setter was called last or what `target` currently is. Concretely: `AgentResponse::new("x").items(rows, &fields).kv_items(kv_rows).render_toon()` still renders the TOON list — it ignores `target` (which is `Kv` here) the way `render(OutputFormat::Text)` wouldn't. Calling both `.items()` and `.kv_items()` on one builder is a caller-side logic error to avoid, not a panic. Treat one `AgentResponse` as one output shape.
+- It's hand-built JSON text, not `serde_json::Value`.
+- The NAPI wrapper does expose a convenience `renderJson(): string` — TypeScript callers shouldn't need to import an `OutputFormat` enum just to reach the JSON path.
+
+The `items` (TOON) and `single_item` (KV) slots are stored independently, so the two paths never conflict at the data level.
+
+- `render(format)` dispatches on `target` — whichever of `.items()`/`.kv_items()` was called _last_ — for both text and JSON.
+- The named shorthand methods are stronger: `render_toon()` reads only the `items`/`fields` slot and `render_kv()` reads only `single_item`, regardless of which setter was called last or what `target` currently is.
+- Concretely: `AgentResponse::new("x").items(rows, &fields).kv_items(kv_rows).render_toon()` still renders the TOON list — it ignores `target` (which is `Kv` here) the way `render(OutputFormat::Text)` wouldn't.
+- Calling both `.items()` and `.kv_items()` on one builder is a caller-side logic error to avoid, not a panic. Treat one `AgentResponse` as one output shape.
 
 ### `render_for()` and `has_human_content()` — dual CLI/agent output
 
@@ -654,6 +698,13 @@ impl AgentResponse {
 }
 ```
 
-Deciding _which_ `Audience` applies to a given invocation — TTY detection, a CLI flag, an environment variable — stays entirely the caller's job; that's argument-parsing/environment territory, inside this crate's existing "no CLI framework" non-goal. michi only owns the signal once that decision's already made.
+Deciding _which_ `Audience` applies to a given invocation — TTY detection, a CLI flag, an environment variable — stays entirely the caller's job.
 
-The fallback in `render_for(Audience::User)` is a real behavior worth designing around, not just a safety net — TOON/KV text is comma-syntax built for a model to parse, not for a human to read comfortably. A caller intending to actually use the `User` path should call `.human_content()` first; `has_human_content()` lets a caller downstream of wherever the response was built — a renderer that only knows the audience, not how the response was constructed — check before rendering, rather than discovering the fallback only by inspecting the text it gets back.
+- That's argument-parsing/environment territory, inside this crate's existing "no CLI framework" non-goal.
+- michi only owns the signal once that decision's already made.
+
+The fallback in `render_for(Audience::User)` is a real behavior worth designing around, not just a safety net.
+
+- TOON/KV text is comma-syntax built for a model to parse, not for a human to read comfortably.
+- A caller intending to actually use the `User` path should call `.human_content()` first.
+- `has_human_content()` lets a caller downstream of wherever the response was built — a renderer that only knows the audience, not how the response was constructed — check before rendering, rather than discovering the fallback only by inspecting the text it gets back.
