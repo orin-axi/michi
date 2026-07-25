@@ -5,7 +5,7 @@ The technical reference for the `michi` crate — what it does, how it's shaped,
 ## Reading order
 
 | Doc | Covers |
-|---|---|
+| --- | --- |
 | [01-overview-and-setup.md](01-overview-and-setup.md) | What michi is, why it exists, what's deliberately out of scope, who consumes it, `Cargo.toml`, crate layout |
 | [02-toon-format.md](02-toon-format.md) | The TOON grammar — the agent-facing list format |
 | [03-rust-api.md](03-rust-api.md) | Every module: `toon`, `kv`, `hints`, `truncate`, `empty`, `error`, `idempotency`, `resilience`, `status`, `recovery`, `response` |

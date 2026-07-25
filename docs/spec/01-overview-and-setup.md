@@ -1,23 +1,17 @@
 # Overview & Setup
 
-michi is a Rust crate of pure agentic response primitives — the formatting and signaling
-conventions that make tools ergonomic for LLM agents, regardless of protocol or language.
+michi is a Rust crate of pure agentic response primitives — the formatting and signaling conventions that make tools ergonomic for LLM agents, regardless of protocol or language.
 
 ## What it is
 
-AXI (Agent eXperience Interface) is a set of ten design principles for agent-ergonomic tooling
-that treats token budget as a first-class constraint. Its core claim: "MCP vs. CLI" is the wrong
-frame — the real question is which design principles make *any* interface effective for an LLM
-agent. A well-designed interface following these principles measurably beats both naive CLIs and
-MCP on task success rate, cost, duration, and turn count.
+AXI (Agent eXperience Interface) is a set of ten design principles for agent-ergonomic tooling that treats token budget as a first-class constraint. Its core claim: "MCP vs. CLI" is the wrong frame — the real question is which design principles make _any_ interface effective for an LLM agent. A well-designed interface following these principles measurably beats both naive CLIs and MCP on task success rate, cost, duration, and turn count.
 
-michi encodes the subset of AXI that's pure, language-agnostic computation — the parts worth one
-canonical, tested implementation instead of ad hoc re-derivation in every tool.
+michi encodes the subset of AXI that's pure, language-agnostic computation — the parts worth one canonical, tested implementation instead of ad hoc re-derivation in every tool.
 
 **Seven of the ten principles, as typed Rust:**
 
 | Principle | Module(s) |
-|---|---|
+| --- | --- |
 | P1 — Token-Efficient Output | `toon`, `kv` |
 | P3 — Content Truncation | `truncate` |
 | P4 — Pre-Computed Aggregates | `ToonOptions::total_count`, `status` health summaries |
@@ -26,49 +20,33 @@ canonical, tested implementation instead of ad hoc re-derivation in every tool.
 | P8 — Content First | `status` |
 | P9 — Contextual Disclosure | `hints`, `recovery` |
 
-The other three stay out of scope on purpose. **P2 (Minimal Default Schemas)** is supported —
-callers pass exactly the fields they want — but not enforced. **P7 (Ambient Context)** and
-**P10 (Consistent Help)** are session-hook and CLI-framework concerns; they belong in the
-consuming tool, not a rendering crate.
+The other three stay out of scope on purpose. **P2 (Minimal Default Schemas)** is supported — callers pass exactly the fields they want — but not enforced. **P7 (Ambient Context)** and **P10 (Consistent Help)** are session-hook and CLI-framework concerns; they belong in the consuming tool, not a rendering crate.
 
-No protocol knowledge, no async runtime. Pure computation: data in, strings and types out. Rust
-consumers take a direct crates.io or git dependency; TypeScript consumers reach it through the
-`@orin-axi/michi` npm package.
+No protocol knowledge, no async runtime. Pure computation: data in, strings and types out. Rust consumers take a direct crates.io or git dependency; TypeScript consumers reach it through the `@orin-axi/michi` npm package.
 
 ## Why this exists
 
-AXI's principles usually get implemented ad hoc — scattered TypeScript conventions in MCP
-servers, implicit CLI patterns, per-tool string formatting that drifts over time. With michi:
+AXI's principles usually get implemented ad hoc — scattered TypeScript conventions in MCP servers, implicit CLI patterns, per-tool string formatting that drifts over time. With michi:
 
 - TOON has one canonical, tested implementation shared by every consumer
-- `help[]` hints, `totalCount` formatting, truncation signals, and recovery shapes are defined
-  once and can't drift between tools
+- `help[]` hints, `totalCount` formatting, truncation signals, and recovery shapes are defined once and can't drift between tools
 - Any agent-facing Rust CLI imports the primitives directly
 - Any TypeScript MCP server or CLI reaches them through the npm package
 
-Non-agentic tools — build scripts, infrastructure CLIs — never touch michi. The package boundary
-keeps agentic concepts out of code that doesn't need them.
+Non-agentic tools — build scripts, infrastructure CLIs — never touch michi. The package boundary keeps agentic concepts out of code that doesn't need them.
 
 ## What's out of scope, deliberately
 
-- **Display-format Markdown.** michi is the `audience: ["assistant"]` compact surface. Display
-  rendering for `audience: ["user"]` stays in your MCP SDK or application layer.
-- **Full MCP protocol knowledge.** No JSON-RPC, no tool registration, no server bootstrapping, no
-  `outputSchema` validation. `AgentResponse::to_call_tool_result()` assembles the
-  `content[]`/`isError`/`structuredContent` shape from an already-built response — see
-  [04-mcp-and-napi.md](04-mcp-and-napi.md) — but nothing beyond that one assembly step.
+- **Display-format Markdown.** michi is the `audience: ["assistant"]` compact surface. Display rendering for `audience: ["user"]` stays in your MCP SDK or application layer.
+- **Full MCP protocol knowledge.** No JSON-RPC, no tool registration, no server bootstrapping, no `outputSchema` validation. `AgentResponse::to_call_tool_result()` assembles the `content[]`/`isError`/`structuredContent` shape from an already-built response — see [04-mcp-and-napi.md](04-mcp-and-napi.md) — but nothing beyond that one assembly step.
 - **CLI framework.** No argument parsing, no stdin/stdout handling.
-- **HTTP client.** No auth, no request construction — just retry-delay primitives you plug into
-  your own client.
-- **Async runtime.** Zero tokio, zero async-std. Every function is sync and pure; you own the
-  retry loop.
-- **Full retry implementation.** michi gives you `RetryConfig`, `parse_retry_after()`,
-  `next_retry_delay()`. The sleep-and-re-execute loop is yours.
+- **HTTP client.** No auth, no request construction — just retry-delay primitives you plug into your own client.
+- **Async runtime.** Zero tokio, zero async-std. Every function is sync and pure; you own the retry loop.
+- **Full retry implementation.** michi gives you `RetryConfig`, `parse_retry_after()`, `next_retry_delay()`. The sleep-and-re-execute loop is yours.
 - **Caching.** Use `moka` or equivalent.
 - **Logging / telemetry.** Use `tracing` independently.
 - **Schema validation.** Your concern, your type system.
-- **MCP server bootstrapping.** `server.tool()`, tool discovery, deferred loading — stays in your
-  SDK.
+- **MCP server bootstrapping.** `server.tool()`, tool discovery, deferred loading — stays in your SDK.
 
 ## Who consumes this, and how
 
@@ -145,22 +123,11 @@ name    = "kv_render"
 harness = false
 ```
 
-Default features add zero runtime dependencies. `serde_json` only enters the tree through `napi`
-(typed `structuredContent`, wire-conformant MCP types) or `serde` (`Serialize`/`Deserialize` on
-the core value types, plus `toon::list()`) — never both unconditionally, never with neither
-enabled. `kv::KvValue` fills the role `serde_json::Value` would have for every consumer who
-doesn't opt in, at zero dependency cost. `preserve_order` keeps `toon::list()`'s field order
-matching each struct's declared order instead of alphabetizing it.
+Default features add zero runtime dependencies. `serde_json` only enters the tree through `napi` (typed `structuredContent`, wire-conformant MCP types) or `serde` (`Serialize`/`Deserialize` on the core value types, plus `toon::list()`) — never both unconditionally, never with neither enabled. `kv::KvValue` fills the role `serde_json::Value` would have for every consumer who doesn't opt in, at zero dependency cost. `preserve_order` keeps `toon::list()`'s field order matching each struct's declared order instead of alphabetizing it.
 
-`pipeline`/`fuzzy`/`cache`/`cli` are not Cargo features of this crate at all — that async
-execution layer (Plan 2) lands as genuinely separate crates when it's actually built, never again
-as features gated on michi's own `Cargo.toml`. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for
-the crate-boundary layout and [06-decisions.md](06-decisions.md) for the decision rule behind that
-split. `serde` isn't part of that Plan 2 set, despite historically sitting next to it in the
-feature table — it gates `Serialize`/`Deserialize` on Plan 1's own types.
+`pipeline`/`fuzzy`/`cache`/`cli` are not Cargo features of this crate at all — that async execution layer (Plan 2) lands as genuinely separate crates when it's actually built, never again as features gated on michi's own `Cargo.toml`. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the crate-boundary layout and [06-decisions.md](06-decisions.md) for the decision rule behind that split. `serde` isn't part of that Plan 2 set, despite historically sitting next to it in the feature table — it gates `Serialize`/`Deserialize` on Plan 1's own types.
 
-`napi-build` lives in `packages/michi-node/Cargo.toml`, not here — that's the cdylib crate the
-actual napi-rs build step compiles.
+`napi-build` lives in `packages/michi-node/Cargo.toml`, not here — that's the cdylib crate the actual napi-rs build step compiles.
 
 ## Crate layout
 

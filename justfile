@@ -27,9 +27,9 @@ test-node: build-node
     cd packages/michi-node && pnpm test
 
 # ── Lint ───────────────────────────────────────────────────────────────────
-check: fmt-check clippy deny typos
+check: fmt-check clippy deny typos fmt-md-check
 
-fmt:
+fmt: fmt-md
     cargo fmt --all
 
 fmt-check:
@@ -43,6 +43,12 @@ deny:
 
 typos:
     typos
+
+fmt-md:
+    pnpm exec prettier --write "**/*.md"
+
+fmt-md-check:
+    pnpm exec prettier --check "**/*.md"
 
 # ── Snapshots ──────────────────────────────────────────────────────────────
 snapshots:

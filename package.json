@@ -1,0 +1,8 @@
+{
+  "name": "michi-repo",
+  "private": true,
+  "description": "Root tooling for the michi repo — markdown formatting only. See packages/michi-node for the published package.",
+  "devDependencies": {
+    "prettier": "^3.4.2"
+  }
+}

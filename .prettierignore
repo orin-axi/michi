@@ -1,0 +1,13 @@
+# Historical, append-only record — not reformatted, ever.
+docs/superpowers/
+docs/projects/
+
+# Generated / vendored
+target/
+packages/michi-node/target/
+packages/michi-node/node_modules/
+packages/michi-node/index.d.ts
+node_modules/
+Cargo.lock
+*.snap
+*.snap.new
