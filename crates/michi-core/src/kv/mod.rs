@@ -33,7 +33,18 @@ pub enum KvValue {
 
 pub(crate) fn push_kv_value(out: &mut String, value: &KvValue) {
     match value {
-        KvValue::Text(s) => out.push_str(s),
+        KvValue::Text(s) => {
+            // Strip \n and \r — they break the one-line-per-key KV format
+            if s.contains('\n') || s.contains('\r') {
+                for ch in s.chars() {
+                    if ch != '\n' && ch != '\r' {
+                        out.push(ch);
+                    }
+                }
+            } else {
+                out.push_str(s);
+            }
+        }
         KvValue::Int(n) => {
             let _ = write!(out, "{n}");
         }
@@ -76,7 +87,14 @@ pub(crate) fn kv_value_to_json(out: &mut String, value: &KvValue) {
             let _ = write!(out, "{n}");
         }
         KvValue::Float(f, decimals) => {
-            let _ = write!(out, "{f:.*}", *decimals as usize);
+            if f.is_nan() || f.is_infinite() {
+                // NaN and Infinity are not valid JSON numbers — render as quoted strings
+                // to avoid producing invalid JSON output
+                let s = format!("{f:.*}", *decimals as usize);
+                json_escape_str(out, &s);
+            } else {
+                let _ = write!(out, "{f:.*}", *decimals as usize);
+            }
         }
         KvValue::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
         KvValue::Duration(d) => {
@@ -89,6 +107,11 @@ pub(crate) fn kv_value_to_json(out: &mut String, value: &KvValue) {
 }
 
 /// Render a list of key-value pairs as a column-aligned multi-line block.
+///
+/// Key padding uses `chars().count()`, not display width. Keys containing
+/// CJK or other wide Unicode characters will appear misaligned in monospace
+/// terminals. This is acceptable: michi targets agent readability (where
+/// display width is not relevant), not human terminal rendering.
 #[must_use]
 pub fn render_kv(items: &[KvItem], total_count: Option<usize>, hints: &[Hint]) -> String {
     if items.is_empty() {
@@ -124,5 +147,45 @@ mod tests {
     fn single_key_needs_no_padding() {
         let items = vec![KvItem { key: "id".into(), value: KvValue::Int(1) }];
         assert_eq!(render_kv(&items, None, &[]), "id: 1\n");
+    }
+
+    #[test]
+    fn text_value_with_newline_is_stripped_in_render() {
+        let item = KvItem { key: "msg".into(), value: KvValue::Text("line1\nline2".into()) };
+        let out = render_kv(&[item], None, &[]);
+        // A newline in value must not create extra lines — KV is one-line-per-key
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 1, "newline in value must not break KV format, got:\n{out}");
+    }
+
+    #[test]
+    fn float_nan_in_json_is_quoted() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Float(f64::NAN, 2));
+        // Must be valid JSON — not the bare NaN token
+        assert!(out.starts_with('"'), "NaN must be JSON-quoted, got: {out}");
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn float_nan_in_json_is_valid_json_with_serde() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Float(f64::NAN, 2));
+        let parsed: serde_json::Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert!(parsed.is_string(), "NaN must serialize as a JSON string");
+    }
+
+    #[test]
+    fn float_inf_in_json_is_quoted() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Float(f64::INFINITY, 0));
+        assert!(out.starts_with('"'), "Inf must be JSON-quoted, got: {out}");
+    }
+
+    #[test]
+    fn float_neg_inf_in_json_is_quoted() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Float(f64::NEG_INFINITY, 0));
+        assert!(out.starts_with('"'), "-Inf must be JSON-quoted, got: {out}");
     }
 }
