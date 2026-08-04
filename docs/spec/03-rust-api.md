@@ -2,30 +2,22 @@
 
 ## Crate Root (`michi`)
 
-`michi` is a unified facade crate that re-exports all primitives from its workspace sub-crates (`michi-truncate`, `michi-resilience`, `michi-toon`, `michi-core`):
+`michi` is a unified facade crate. It re-exports sub-crates as modules and star-exports `michi-core` directly so all core types are available at the root:
 
 ```rust
-pub use michi_core::audience::Audience;
-pub use michi_core::empty::{empty_state, empty_state_with_hints};
-pub use michi_core::error::{DomainError, Error, ErrorClass, ErrorCode, Sensitive};
-pub use michi_core::hints::{append_hints, render_hints, Hint};
-pub use michi_core::kv::render_kv;
-pub use michi_core::mcp::{CallToolResult, ContentBlock};
-pub use michi_core::recovery::RecoveryHint;
-pub use michi_core::response::{AgentResponse, OutputFormat};
-pub use michi_core::status::StatusResponse;
-
-pub use michi_resilience::{already_done, next_retry_delay, parse_retry_after, render_already_done, AlreadyDone, IdempotencyKey, RetryConfig};
-
-pub use michi_toon::{list, render_toon, ToonOptions, Value};
-pub use michi_truncate::{truncate, truncate_inline, Truncated};
+pub use michi_core::*;            // DomainError, AgentResponse, KvItem, … at michi::*
+pub use michi_resilience as resilience;   // michi::resilience::RetryConfig, …
+pub use michi_toon as toon;              // michi::toon::ToonOptions, michi::toon::list(), …
+pub use michi_truncate as truncate;      // michi::truncate::truncate(), …
 ```
 
-All sub-crates compile to `wasm32-unknown-unknown` and `wasm32-wasip1` without OS dependencies.
+`michi_resilience::*` is also re-exported from `michi_core`, so `michi::RetryConfig`, `michi::already_done`, etc. are available at the root without the `resilience::` prefix.
+
+All sub-crates compile for `wasm32-unknown-unknown` and `wasm32-wasip1` without OS dependencies.
 
 ## `michi-toon` — List Rendering
 
-`michi-toon` formats tabular lists using Token-Optimized Object Notation (**AXI P1**). Field headers are declared once, and small cell strings ($\le 24$ bytes) are stored on the stack using `compact_str::CompactString`.
+`michi-toon` formats tabular lists using Token-Optimized Object Notation (**AXI P1**). Small cell strings (≤ 24 bytes) are stack-inlined via `compact_str::CompactString`.
 
 ```rust
 #[non_exhaustive]
@@ -40,9 +32,13 @@ pub struct ToonOptions {
 
 impl ToonOptions {
     pub fn new(type_name: impl Into<String>, fields: Vec<String>, rows: Vec<Vec<Value>>) -> Self;
-    pub fn total_count(mut self, total: Option<usize>) -> Self;
-    pub fn hints(mut self, hints: Vec<String>) -> Self;
-    pub fn max_cell_len(mut self, len: usize) -> Self;
+    pub fn total_count(self, total: Option<usize>) -> Self;
+    pub fn hints(self, hints: Vec<String>) -> Self;
+    pub fn max_cell_len(self, len: usize) -> Self;
+    /// Validate structural invariants before rendering.
+    /// Returns Err if type_name or any field name contains structural chars,
+    /// or if any row's length differs from fields.len().
+    pub fn validate(&self) -> Result<(), ToonError>;
 }
 
 pub enum Value {
@@ -58,16 +54,29 @@ impl From<String> for Value { ... }
 impl From<i64> for Value { ... }
 impl From<f64> for Value { ... }
 impl From<bool> for Value { ... }
+
+#[non_exhaustive]
+pub enum ToonError {
+    InvalidTypeName { name: String },
+    InvalidFieldName { name: String },
+    RowLengthMismatch { row_index: usize, expected: usize, actual: usize },
+    InvalidItem { row_index: usize, reason: String },
+}
 ```
 
-### Direct Serde Streaming (`ToonSerializer`)
+### Serde Integration (`list()`)
 
-When the `serde` feature is enabled, `michi::toon::list("type", &slice)` streams any `T: serde::Serialize` slice directly into `ToonOptions` without allocating intermediate `serde_json::Value` trees.
+When the `serde` feature is enabled, `toon::list()` serializes any `T: serde::Serialize` slice to a rendered TOON string:
 
 ```rust
 #[cfg(feature = "serde")]
-pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T]) -> ToonOptions;
+pub fn list<T: serde::Serialize>(
+    type_name: impl Into<String>,
+    items: &[T],
+) -> Result<String, ToonError>;
 ```
+
+Items are serialized via `serde_json::to_value()` and must produce JSON objects (structs or maps). Non-object items and structural chars in `type_name` or field names return `Err(ToonError)`.
 
 ## `michi-core` — High-Level Response Compositor
 
@@ -88,16 +97,21 @@ pub struct DomainError {
 
 impl DomainError {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self;
-    pub fn hint(mut self, hint: impl Into<String>) -> Self;
-    pub fn recovery(mut self, r: RecoveryHint) -> Self;
+    pub fn hint(self, hint: impl Into<String>) -> Self;
+    pub fn recovery(self, r: RecoveryHint) -> Self;
+    pub fn retryable(self, retryable: bool) -> Self;
+    pub fn retry_after(self, d: Duration) -> Self;
     pub fn render(&self) -> String;
     pub fn render_github_annotation(&self) -> String;
+    pub fn render_json(&self) -> String;
+    pub fn to_call_tool_result(&self) -> CallToolResult;
 }
 ```
 
-- `render()` outputs an agent-readable key-value block with exit code and hints.
-- `render_github_annotation()` outputs a GitHub Actions workflow annotation (`::error title=code::message`).
-- When the `miette` feature is enabled, `DomainError` implements `miette::Diagnostic` for colorized CLI error card rendering.
+- `render()` outputs an agent-readable key-value block with exit code, hints, and recovery.
+- `render_github_annotation()` outputs a GitHub Actions annotation (`::error title=code::message`). Newlines and CRs are percent-encoded.
+- `render_json()` outputs a JSON object: `{"isError":true,"error":"...","message":"...","retryable":bool,"hints":[...],"recovery":null|{...}}`.
+- `to_call_tool_result()` builds an MCP `CallToolResult` with `is_error:true` and the rendered JSON as `structured_content`.
 - When the `schemars` feature is enabled, `DomainError`, `StatusResponse`, and `ToonOptions` derive `JsonSchema`.
 
 ### `AgentResponse` Builder
@@ -109,14 +123,52 @@ pub struct AgentResponse { ... }
 
 impl AgentResponse {
     pub fn new(type_name: impl Into<String>) -> Self;
-    pub fn items(mut self, rows: Vec<Vec<Value>>, fields: &[&str]) -> Self;
-    pub fn kv_items(mut self, items: Vec<KvItem>) -> Self;
-    pub fn total_count(mut self, total: usize) -> Self;
-    pub fn hint(mut self, hint: impl Into<String>) -> Self;
-    pub fn human_content(mut self, content: impl Into<String>) -> Self;
-    pub fn render(&self, format: OutputFormat) -> String;
+    pub fn items(&mut self, rows: Vec<Vec<Value>>, fields: &[&str]);
+    pub fn kv_items(&mut self, items: Vec<KvItem>);
+    pub fn total_count(&mut self, total: usize);
+    pub fn hint(&mut self, hint: impl Into<String>);
+    pub fn recovery_hint(&mut self, r: RecoveryHint);
+    pub fn human_content(&mut self, content: impl Into<String>);
+    pub fn as_error(&mut self);
+    pub fn render_toon(&self) -> String;
+    pub fn render_kv(&self) -> String;
+    pub fn render(&self) -> String;
     pub fn render_for(&self, audience: Audience) -> String;
+    pub fn render_json(&self) -> String;
+    pub fn has_human_content(&self) -> bool;
     pub fn to_call_tool_result(&self) -> CallToolResult;
+}
+```
+
+### Idempotency
+
+```rust
+// In michi-core::idempotency (also at michi::PartialSuccess, michi::FailedOp)
+pub struct PartialSuccess {
+    pub completed: Vec<String>,
+    pub failed: Vec<FailedOp>,
+    pub skipped: Vec<String>,
+}
+
+impl PartialSuccess {
+    pub fn render(&self) -> String;
+    pub fn exit_code(&self) -> i32;   // 0 = no failures, 1 = any failed
+}
+
+pub struct FailedOp {
+    pub operation: String,
+    pub reason: String,
+    pub recovery: Option<RecoveryHint>,
+}
+
+// In michi-resilience (also at michi::already_done, michi::AlreadyDone)
+pub enum AlreadyDone { Yes { result: String }, No }
+pub fn already_done(stored: Option<String>) -> AlreadyDone;
+pub fn render_already_done(operation: &str, summary: &str, hints: &[String]) -> String;
+pub struct IdempotencyKey(pub String);
+impl IdempotencyKey {
+    pub fn new(s: impl Into<String>) -> Self;
+    pub fn from_hash(operation: &str, data: &[u8]) -> Self;
 }
 ```
 
@@ -127,6 +179,8 @@ pub struct Truncated {
     pub content: String,
     pub original_len: usize,
     pub was_truncated: bool,
+    /// The signal text actually embedded in content (None when not truncated
+    /// or when max_chars was too small to fit any signal).
     pub signal: Option<String>,
 }
 
@@ -146,10 +200,22 @@ pub struct RetryConfig {
     pub jitter_factor: f64,
 }
 
-pub fn next_retry_delay(config: &RetryConfig, attempt: u32, jitter_seed: f64, retry_after: Option<Duration>) -> Option<Duration>;
+impl RetryConfig {
+    /// Normalizing constructor — clamps out-of-range values.
+    pub fn new(max_retries: u32, base_delay: Duration, max_delay: Duration, jitter_factor: f64) -> Self;
+    /// Strict constructor — returns Err for out-of-range values.
+    pub fn try_new(...) -> Result<Self, RetryConfigError>;
+}
+
+pub fn next_retry_delay(
+    config: &RetryConfig,
+    attempt: u32,
+    jitter_seed: f64,          // per-call RNG value in [0.0, 1.0]
+    retry_after: Option<Duration>,
+) -> Option<Duration>;
+
 pub fn parse_retry_after(header_value: &str) -> Option<Duration>;
-pub fn already_done(stored: Option<String>) -> AlreadyDone;
-pub fn render_already_done(operation: &str, summary: &str, hints: &[String]) -> String;
+pub fn is_retryable_status(status: u16) -> bool;
 ```
 
-Calculates exponential backoff with jitter and parses RFC 7231 `Retry-After` HTTP header values.
+Calculates exponential backoff with caller-supplied jitter and parses RFC 7231 `Retry-After` HTTP header values (delta-seconds and HTTP-date formats).
