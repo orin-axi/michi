@@ -1,4 +1,5 @@
 use michi::empty::empty_state_with_hints;
+use michi::error::{DomainError, ErrorCode};
 use michi::hints::Hint;
 use michi::kv::{render_kv, KvItem, KvValue};
 use michi::response::{AgentResponse, OutputFormat};
@@ -94,4 +95,27 @@ fn snapshot_call_tool_result_kv() {
         .human_content("Issue abc-123 is currently open.");
     let result = r.to_call_tool_result();
     insta::assert_debug_snapshot!(result);
+}
+
+#[test]
+fn error_structured_content_schemas_are_compatible() {
+    let domain_json = DomainError::new(ErrorCode::NotFound, "missing item").render_json();
+    let response_json = AgentResponse::new("items").as_error().render(OutputFormat::Json);
+
+    // Both must be JSON objects starting with '{'
+    assert!(domain_json.starts_with('{'), "DomainError JSON must be an object, got: {domain_json}");
+    assert!(response_json.starts_with('{'), "AgentResponse JSON must be an object, got: {response_json}");
+
+    // Both must include isError and hints — the fields callers depend on
+    assert!(domain_json.contains("\"isError\""), "DomainError JSON must have isError, got: {domain_json}");
+    assert!(domain_json.contains("\"hints\""), "DomainError JSON must have hints, got: {domain_json}");
+    assert!(response_json.contains("\"isError\""), "AgentResponse JSON must have isError, got: {response_json}");
+    assert!(response_json.contains("\"hints\""), "AgentResponse JSON must have hints, got: {response_json}");
+
+    // DomainError always sets isError:true; AgentResponse.as_error() must also set true
+    assert!(domain_json.contains("\"isError\":true"), "DomainError isError must be true, got: {domain_json}");
+    assert!(
+        response_json.contains("\"isError\":true"),
+        "AgentResponse.as_error() isError must be true, got: {response_json}"
+    );
 }

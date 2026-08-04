@@ -329,4 +329,53 @@ mod tests {
         let out = r.render(OutputFormat::Text);
         assert!(out.contains("error:"), "expected error output for invalid type_name, got: {out}");
     }
+
+    #[test]
+    fn render_hints_only_contains_help_block() {
+        let r = AgentResponse::new("items").hint("Try again with fewer params");
+        let out = r.render_hints_only();
+        assert!(out.contains("help[1]:"), "expected help block, got: {out}");
+        assert!(out.contains("Try again with fewer params"), "got: {out}");
+    }
+
+    #[test]
+    fn render_hints_only_empty_when_no_hints() {
+        let r = AgentResponse::new("items");
+        assert!(r.render_hints_only().is_empty(), "no hints should produce empty string");
+    }
+
+    #[test]
+    fn render_for_assistant_returns_text_output() {
+        let r = AgentResponse::new("items").items(vec![vec![Value::from("ok")]], &["name"]);
+        let out = r.render_for(crate::audience::Audience::Assistant);
+        assert!(!out.is_empty(), "assistant render must not be empty");
+        assert!(out.contains("items"), "got: {out}");
+    }
+
+    #[test]
+    fn render_for_user_returns_human_content_when_set() {
+        let r = AgentResponse::new("items").human_content("Human-readable summary.");
+        let out = r.render_for(crate::audience::Audience::User);
+        assert_eq!(out, "Human-readable summary.");
+    }
+
+    #[test]
+    fn render_for_user_falls_back_to_text_when_no_human_content() {
+        let r = AgentResponse::new("items").items(vec![vec![Value::from("x")]], &["name"]);
+        let assistant_out = r.render_for(crate::audience::Audience::Assistant);
+        let user_out = r.render_for(crate::audience::Audience::User);
+        assert_eq!(assistant_out, user_out, "user render must match assistant render when no human_content set");
+    }
+
+    #[test]
+    fn has_human_content_false_when_empty() {
+        let r = AgentResponse::new("items");
+        assert!(!r.has_human_content());
+    }
+
+    #[test]
+    fn has_human_content_true_when_set() {
+        let r = AgentResponse::new("items").human_content("Some text for humans.");
+        assert!(r.has_human_content());
+    }
 }
