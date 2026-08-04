@@ -63,7 +63,9 @@ pub struct CallToolResult {
     pub content: Vec<ContentBlock>,
     /// Whether this is a tool execution error.
     pub is_error: bool,
-    /// The same data as `content[0]`, as a JSON string.
+    /// Machine-readable JSON companion to the text in `content`. This is
+    /// typically a richer, typed representation (e.g. `AgentResponse::render_json()`
+    /// or `DomainError::render_json()`) — it is NOT a copy of `content[0].text`.
     pub structured_content: String,
 }
 

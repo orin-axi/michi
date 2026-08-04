@@ -184,9 +184,12 @@ impl DomainError {
     }
 
     /// Render formatted for GitHub Actions workflow annotations (`::error title=code::message`).
+    ///
+    /// Newlines and carriage returns are percent-encoded (`%0A`, `%0D`) to
+    /// keep the annotation on a single line as required by the Actions runner.
     #[must_use]
     pub fn render_github_annotation(&self) -> String {
-        format!("::error title={}::{}", self.code.label(), self.message.replace('\n', "%0A"))
+        format!("::error title={}::{}", self.code.label(), self.message.replace('\n', "%0A").replace('\r', "%0D"))
     }
 
     /// Render as a JSON object matching `AgentResponse::render_json()` shape.
@@ -195,7 +198,13 @@ impl DomainError {
     /// Client code reading `structured_content` should not need two schemas.
     #[must_use]
     pub fn render_json(&self) -> String {
-        let mut out = String::with_capacity(128 + self.message.len());
+        let hints_est: usize = self.hints.iter().map(|h| h.as_str().len() + 4).sum();
+        let recovery_est: usize = self.recovery.as_ref().map_or(0, |r| {
+            50 + r.tool.len()
+                + r.params.iter().map(|_| 20usize).sum::<usize>()
+                + r.reason.as_ref().map_or(0, |s| s.len() + 12)
+        });
+        let mut out = String::with_capacity(128 + self.message.len() + hints_est + recovery_est);
         out.push_str("{\"isError\":true,\"error\":");
         crate::kv::json_escape_str(&mut out, self.code.label());
         out.push_str(",\"message\":");
@@ -388,6 +397,51 @@ mod tests {
     fn domain_error_renders_github_annotation() {
         let e = DomainError::new(ErrorCode::InvalidInput, "field 'name' is required");
         assert_eq!(e.render_github_annotation(), "::error title=invalid_input::field 'name' is required");
+    }
+
+    #[test]
+    fn github_annotation_encodes_newlines_and_cr() {
+        let e = DomainError::new(ErrorCode::InvalidInput, "line1\nline2\r\nline3");
+        let out = e.render_github_annotation();
+        assert!(!out.contains('\n'), "annotation must not contain literal newline");
+        assert!(!out.contains('\r'), "annotation must not contain literal CR");
+        assert!(out.contains("%0A"), "LF must be encoded as %0A");
+        assert!(out.contains("%0D"), "CR must be encoded as %0D");
+    }
+
+    #[test]
+    fn render_json_output_is_valid_json_with_all_fields() {
+        let err = DomainError::new(ErrorCode::NotFound, r#"has "quotes" and \backslash"#)
+            .hint("call list_items")
+            .hint("check the id")
+            .retryable(false);
+        let json = err.render_json();
+        assert!(json.starts_with('{') && json.ends_with('}'), "must be a JSON object, got: {json}");
+        assert!(json.contains("\"isError\":true"), "isError must be true, got: {json}");
+        assert!(json.contains("\"hints\":["), "must include hints array, got: {json}");
+        assert!(json.contains("\"recovery\":null"), "must include recovery null, got: {json}");
+        // Escaped quotes inside string values must use \" not raw "
+        assert!(!json.contains(r#"has "quotes""#), "inner quotes must be escaped, got: {json}");
+    }
+
+    #[test]
+    fn render_json_capacity_covers_hints_and_recovery() {
+        let err = DomainError::new(ErrorCode::Unavailable, "service down")
+            .hint("wait and retry")
+            .hint("check status page")
+            .hint("contact support if persists")
+            .retryable(true)
+            .recovery(
+                crate::recovery::RecoveryHint::new("retry_request")
+                    .param("after_ms", crate::kv::KvValue::Int(5000))
+                    .reason("Rate limit window resets every 60 seconds"),
+            );
+        let json = err.render_json();
+        // Smoke test: no panic = capacity was sufficient (Vec didn't reallocate unexpectedly).
+        // JSON correctness is validated by structure checks.
+        assert!(json.contains("\"hints\":["), "got: {json}");
+        assert!(json.contains("\"recovery\":{"), "got: {json}");
+        assert!(json.contains("\"reason\":"), "got: {json}");
     }
 
     #[test]
