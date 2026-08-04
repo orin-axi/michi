@@ -188,6 +188,72 @@ impl DomainError {
     pub fn render_github_annotation(&self) -> String {
         format!("::error title={}::{}", self.code.label(), self.message.replace('\n', "%0A"))
     }
+
+    /// Render as a JSON object matching `AgentResponse::render_json()` shape.
+    ///
+    /// Keys: `isError`, `error`, `message`, `retryable`, `hints`, `recovery`.
+    /// Client code reading `structured_content` should not need two schemas.
+    #[must_use]
+    pub fn render_json(&self) -> String {
+        let mut out = String::with_capacity(128 + self.message.len());
+        out.push_str("{\"isError\":true,\"error\":");
+        crate::kv::json_escape_str(&mut out, self.code.label());
+        out.push_str(",\"message\":");
+        crate::kv::json_escape_str(&mut out, &self.message);
+        out.push_str(",\"retryable\":");
+        out.push_str(if self.retryable { "true" } else { "false" });
+        out.push_str(",\"hints\":[");
+        for (i, h) in self.hints.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            crate::kv::json_escape_str(&mut out, h.as_str());
+        }
+        out.push_str("],\"recovery\":");
+        match &self.recovery {
+            None => out.push_str("null"),
+            Some(r) => {
+                out.push_str("{\"tool\":");
+                crate::kv::json_escape_str(&mut out, &r.tool);
+                out.push_str(",\"params\":{");
+                for (j, (k, v)) in r.params.iter().enumerate() {
+                    if j > 0 {
+                        out.push(',');
+                    }
+                    crate::kv::json_escape_str(&mut out, k);
+                    out.push(':');
+                    crate::kv::kv_value_to_json(&mut out, v);
+                }
+                out.push('}');
+                if let Some(reason) = &r.reason {
+                    out.push_str(",\"reason\":");
+                    crate::kv::json_escape_str(&mut out, reason);
+                }
+                out.push('}');
+            }
+        }
+        out.push('}');
+        out
+    }
+
+    /// Build an MCP [`CallToolResult`] representing this error.
+    ///
+    /// Sets `is_error: true`. Text content uses [`DomainError::render()`];
+    /// `structured_content` uses [`DomainError::render_json()`].
+    ///
+    /// **Canonical path:** call this directly when you hold a `DomainError`.
+    /// Do not wrap in `AgentResponse::as_error()` — that loses typed fields.
+    #[must_use]
+    pub fn to_call_tool_result(&self) -> crate::mcp::CallToolResult {
+        crate::mcp::CallToolResult {
+            content: vec![crate::mcp::ContentBlock {
+                text: self.render(),
+                audience: vec![crate::audience::Audience::Assistant],
+            }],
+            is_error: true,
+            structured_content: self.render_json(),
+        }
+    }
 }
 
 impl std::fmt::Display for DomainError {
@@ -266,6 +332,40 @@ impl Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn domain_error_render_json_basic() {
+        let err = DomainError::new(ErrorCode::NotFound, "Item 42 not found");
+        let json = err.render_json();
+        assert!(json.contains("\"isError\":true"), "got: {json}");
+        assert!(json.contains("\"error\":"), "got: {json}");
+        assert!(json.contains("\"message\":\"Item 42 not found\""), "got: {json}");
+        assert!(json.contains("\"retryable\":false"), "got: {json}");
+        assert!(json.contains("\"hints\":["), "got: {json}");
+    }
+
+    #[test]
+    fn domain_error_render_json_includes_hints() {
+        let err = DomainError::new(ErrorCode::NotFound, "not found").hint("Try searching with get_items");
+        let json = err.render_json();
+        assert!(json.contains("\"hints\""), "got: {json}");
+        assert!(json.contains("Try searching"), "got: {json}");
+    }
+
+    #[test]
+    fn domain_error_to_call_tool_result_is_error() {
+        let err = DomainError::new(ErrorCode::Unavailable, "down");
+        let result = err.to_call_tool_result();
+        assert!(result.is_error);
+        assert!(!result.content.is_empty());
+    }
+
+    #[test]
+    fn domain_error_json_escapes_message() {
+        let err = DomainError::new(ErrorCode::InvalidInput, r#"field "name" invalid"#);
+        let json = err.render_json();
+        assert!(json.contains("\\\"name\\\""), "quotes in message must be JSON-escaped, got: {json}");
+    }
 
     #[test]
     fn invalid_input_renders() {

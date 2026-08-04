@@ -86,7 +86,11 @@ struct CallToolResultWire {
 #[cfg(feature = "serde")]
 impl From<CallToolResult> for CallToolResultWire {
     fn from(r: CallToolResult) -> Self {
-        let structured_content = serde_json::from_str(&r.structured_content).unwrap_or(serde_json::Value::Null);
+        // structured_content is always produced by render_json() which emits valid JSON.
+        // If parsing fails, preserve the raw value as a JSON string rather than silently
+        // replacing it with null — bad JSON from render_json() is a bug, not an expected case.
+        let structured_content = serde_json::from_str(&r.structured_content)
+            .unwrap_or_else(|_| serde_json::Value::String(r.structured_content));
         Self { content: r.content, is_error: r.is_error, structured_content }
     }
 }

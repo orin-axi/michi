@@ -22,11 +22,81 @@ pub struct RetryConfig {
     pub jitter_factor: f64,
 }
 
+/// Error returned by [`RetryConfig::try_new()`] when parameters are out of range.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RetryConfigError {
+    /// `max_delay` must be non-zero (zero silently drops server `retry_after` hints).
+    MaxDelayIsZero,
+    /// `base_delay` must not exceed `max_delay`.
+    BaseDelayExceedsMaxDelay {
+        /// The provided `base_delay`.
+        base: std::time::Duration,
+        /// The provided `max_delay`.
+        max: std::time::Duration,
+    },
+    /// `jitter_factor` must be in `[0.0, 1.0]`.
+    JitterFactorOutOfRange {
+        /// The provided `jitter_factor`.
+        factor: f64,
+    },
+}
+
+impl std::fmt::Display for RetryConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MaxDelayIsZero => f.write_str("max_delay must be non-zero"),
+            Self::BaseDelayExceedsMaxDelay { base, max } => {
+                write!(f, "base_delay ({base:?}) must not exceed max_delay ({max:?})")
+            }
+            Self::JitterFactorOutOfRange { factor } => write!(f, "jitter_factor {factor} is outside [0.0, 1.0]"),
+        }
+    }
+}
+
+impl std::error::Error for RetryConfigError {}
+
 impl RetryConfig {
-    /// Create a new RetryConfig with custom values.
+    /// Normalizing constructor — clamps all inputs to valid ranges silently.
+    ///
+    /// - `jitter_factor` → clamped to `[0.0, 1.0]`
+    /// - `base_delay` → clamped to `min(base_delay, max_delay)`
+    /// - `max_delay` → floored to `1ms` (prevents silent `retry_after` discard
+    ///   when the caller passes zero)
+    ///
+    /// For NAPI-boundary callers (untrusted inputs), or wherever clamping is
+    /// acceptable. Use [`RetryConfig::try_new()`] when you need explicit errors.
     #[must_use]
-    pub fn new(max_retries: u32, base_delay: Duration, max_delay: Duration, jitter_factor: f64) -> Self {
+    pub fn new(
+        max_retries: u32,
+        base_delay: std::time::Duration,
+        max_delay: std::time::Duration,
+        jitter_factor: f64,
+    ) -> Self {
+        let max_delay = max_delay.max(std::time::Duration::from_millis(1));
+        let base_delay = base_delay.min(max_delay);
+        let jitter_factor = jitter_factor.clamp(0.0, 1.0);
         Self { max_retries, base_delay, max_delay, jitter_factor }
+    }
+
+    /// Strict constructor — returns `Err` if any parameter is out of range.
+    ///
+    /// For NAPI-boundary callers, use the normalizing [`RetryConfig::new()`] instead.
+    pub fn try_new(
+        max_retries: u32,
+        base_delay: std::time::Duration,
+        max_delay: std::time::Duration,
+        jitter_factor: f64,
+    ) -> Result<Self, RetryConfigError> {
+        if max_delay.is_zero() {
+            return Err(RetryConfigError::MaxDelayIsZero);
+        }
+        if base_delay > max_delay {
+            return Err(RetryConfigError::BaseDelayExceedsMaxDelay { base: base_delay, max: max_delay });
+        }
+        if !(0.0..=1.0).contains(&jitter_factor) {
+            return Err(RetryConfigError::JitterFactorOutOfRange { factor: jitter_factor });
+        }
+        Ok(Self { max_retries, base_delay, max_delay, jitter_factor })
     }
 }
 
@@ -271,5 +341,53 @@ mod tests {
         assert_send_sync_static::<RetryConfig>();
         assert_send_sync_static::<IdempotencyKey>();
         assert_send_sync_static::<AlreadyDone>();
+    }
+
+    #[test]
+    fn new_clamps_jitter_factor_above_one() {
+        let c = RetryConfig::new(3, Duration::from_millis(500), Duration::from_secs(30), 2.5);
+        assert!(c.jitter_factor <= 1.0, "jitter_factor must be clamped to 1.0, got {}", c.jitter_factor);
+    }
+
+    #[test]
+    fn new_clamps_negative_jitter_to_zero() {
+        let c = RetryConfig::new(3, Duration::from_millis(500), Duration::from_secs(30), -0.5);
+        assert_eq!(c.jitter_factor, 0.0, "jitter_factor must be clamped to 0.0, got {}", c.jitter_factor);
+    }
+
+    #[test]
+    fn new_clamps_base_delay_exceeding_max() {
+        let c = RetryConfig::new(3, Duration::from_secs(60), Duration::from_secs(10), 0.2);
+        assert!(c.base_delay <= c.max_delay, "base_delay must not exceed max_delay after normalization");
+    }
+
+    #[test]
+    fn new_floors_zero_max_delay_to_one_ms() {
+        let c = RetryConfig::new(3, Duration::ZERO, Duration::ZERO, 0.0);
+        assert!(c.max_delay >= Duration::from_millis(1), "max_delay=0 must be floored to 1ms");
+    }
+
+    #[test]
+    fn try_new_rejects_zero_max_delay() {
+        let result = RetryConfig::try_new(3, Duration::from_millis(500), Duration::ZERO, 0.2);
+        assert!(matches!(result, Err(RetryConfigError::MaxDelayIsZero)));
+    }
+
+    #[test]
+    fn try_new_rejects_base_exceeding_max() {
+        let result = RetryConfig::try_new(3, Duration::from_secs(60), Duration::from_secs(10), 0.2);
+        assert!(matches!(result, Err(RetryConfigError::BaseDelayExceedsMaxDelay { .. })));
+    }
+
+    #[test]
+    fn try_new_rejects_out_of_range_jitter() {
+        let result = RetryConfig::try_new(3, Duration::from_millis(100), Duration::from_secs(30), 1.5);
+        assert!(matches!(result, Err(RetryConfigError::JitterFactorOutOfRange { .. })));
+    }
+
+    #[test]
+    fn try_new_accepts_valid_config() {
+        let result = RetryConfig::try_new(3, Duration::from_millis(500), Duration::from_secs(30), 0.2);
+        assert!(result.is_ok());
     }
 }

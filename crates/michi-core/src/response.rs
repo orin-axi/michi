@@ -127,6 +127,9 @@ impl AgentResponse {
         let opts = michi_toon::ToonOptions::new(self.type_name.clone(), self.fields.clone(), self.items.clone())
             .total_count(self.total_count)
             .max_cell_len(self.truncate_cells_at);
+        if let Err(e) = opts.validate() {
+            return format!("error: toon_validation_failed\nmessage: {e}\n");
+        }
         michi_toon::render_toon(&opts)
     }
 
@@ -274,5 +277,56 @@ mod tests {
         let r = AgentResponse::new("issues").items(vec![vec![Value::Int(1), Value::from("open")]], &["id", "state"]);
         let out = r.render(OutputFormat::Text);
         assert!(out.starts_with("issues[1]{id,state}:\n  1,open\n"), "got: {out}");
+    }
+
+    #[test]
+    fn render_json_basic_structure() {
+        let r = AgentResponse::new("items").items(vec![vec![Value::from("hello world")]], &["name"]);
+        let json = r.render_json();
+        assert!(json.contains("\"isError\":false"), "got: {json}");
+        assert!(json.contains("\"body\""), "got: {json}");
+        assert!(json.contains("\"hints\":[]"), "got: {json}");
+    }
+
+    #[test]
+    fn render_json_is_error_flag() {
+        let r = AgentResponse::new("items").items(vec![vec![Value::from("fail")]], &["name"]).as_error();
+        let json = r.render_json();
+        assert!(json.contains("\"isError\":true"), "got: {json}");
+    }
+
+    #[test]
+    fn render_json_recovery_int_param_is_numeric_not_string() {
+        use crate::kv::KvValue;
+        use crate::recovery::RecoveryHint;
+        let recovery = RecoveryHint::new("retry").param("limit", KvValue::Int(10));
+        let r =
+            AgentResponse::new("items").items(vec![vec![Value::from("hit limit")]], &["name"]).recovery_hint(recovery);
+        let json = r.render_json();
+        assert!(json.contains("\"limit\":10"), "Int param must be unquoted, got: {json}");
+        assert!(!json.contains("\"limit\":\"10\""), "Int param must not be quoted string, got: {json}");
+    }
+
+    #[test]
+    fn render_json_hint_with_quotes_is_escaped() {
+        let r = AgentResponse::new("items").hint(r#"Use "get_item" instead"#);
+        let json = r.render_json();
+        assert!(json.contains("\\\"get_item\\\""), "quotes in hints must be escaped, got: {json}");
+    }
+
+    #[test]
+    fn to_call_tool_result_composes_correctly() {
+        let r = AgentResponse::new("items").items(vec![vec![Value::from("ok")]], &["name"]).as_error();
+        let result = r.to_call_tool_result();
+        assert!(result.is_error);
+        assert!(!result.content.is_empty(), "content must not be empty");
+        assert!(result.structured_content.starts_with('{'), "structured_content must be JSON object");
+    }
+
+    #[test]
+    fn toon_body_returns_error_on_invalid_type_name() {
+        let r = AgentResponse::new("items[bad]").items(vec![vec![Value::from("x")]], &["name"]);
+        let out = r.render(OutputFormat::Text);
+        assert!(out.contains("error:"), "expected error output for invalid type_name, got: {out}");
     }
 }
