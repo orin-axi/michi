@@ -11,9 +11,6 @@ pub(crate) mod render;
 pub use escape::{escape_value, escape_value_quoted};
 pub use render::Value;
 
-#[cfg(feature = "serde")]
-pub mod serializer;
-
 /// Error returned by [`ToonOptions::validate()`] when structural invariants are violated.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
