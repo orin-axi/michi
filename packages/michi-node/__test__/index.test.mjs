@@ -123,9 +123,21 @@ void describe('standalone helpers', () => {
   })
 
   void it('nextRetryDelay calculates exponential backoff', () => {
-    const delay = nextRetryDelay(3, 100, 1000, 0.0, 0)
+    const delay = nextRetryDelay(3, 100, 1000, 0.0, 0.5, 0)
     assert.strictEqual(typeof delay, 'number')
     assert.ok(delay >= 100)
+  })
+
+  void it('nextRetryDelay throws on NaN delay input', () => {
+    assert.throws(() => nextRetryDelay(3, NaN, 1000, 0.0, 0.5, 0), /finite non-negative/)
+  })
+
+  void it('nextRetryDelay throws on negative delay input', () => {
+    assert.throws(() => nextRetryDelay(3, -1, 1000, 0.0, 0.5, 0), /finite non-negative/)
+  })
+
+  void it('nextRetryDelay throws on Infinity delay input', () => {
+    assert.throws(() => nextRetryDelay(3, Infinity, 1000, 0.0, 0.5, 0), /finite non-negative/)
   })
 
   void it('isRetryableStatus identifies 429 and 503 as retryable', () => {
@@ -141,6 +153,10 @@ void describe('standalone helpers', () => {
 
     const gh = renderDomainError('not_found', 'Item not found', [], true)
     assert.strictEqual(gh, '::error title=not_found::Item not found')
+  })
+
+  void it('renderDomainError throws on unknown error code', () => {
+    assert.throws(() => renderDomainError('made_up_code', 'msg', []), /unknown error code/)
   })
 
   void it('renderStatus formats orientation block', () => {

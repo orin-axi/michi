@@ -262,15 +262,32 @@ pub fn parse_retry_after(header_value: String) -> Option<f64> {
 }
 
 /// Calculate the next retry delay in milliseconds.
+///
+/// `jitter_seed` must be in `[0.0, 1.0]`; pass a per-call random value from
+/// your preferred RNG to avoid thundering-herd retries across concurrent callers.
+/// Delay inputs must be finite and non-negative; `retry_after_ms` may be `null`.
 #[napi(catch_unwind)]
+#[allow(clippy::too_many_arguments)] // NAPI boundary: all params are scalar and directly map to the JS API
 pub fn next_retry_delay(
     max_retries: u32,
     base_delay_ms: f64,
     max_delay_ms: f64,
     jitter_factor: f64,
+    jitter_seed: f64,
     attempt: u32,
     retry_after_ms: Option<f64>,
-) -> Option<f64> {
+) -> napi::Result<Option<f64>> {
+    for (name, val) in [("base_delay_ms", base_delay_ms), ("max_delay_ms", max_delay_ms)] {
+        if !val.is_finite() || val < 0.0 {
+            return Err(napi::Error::from_reason(format!("{name} must be a finite non-negative number, got {val}")));
+        }
+    }
+    if let Some(ms) = retry_after_ms {
+        if !ms.is_finite() || ms < 0.0 {
+            return Err(napi::Error::from_reason(format!("retry_after_ms must be finite and non-negative, got {ms}")));
+        }
+    }
+    let jitter_seed = jitter_seed.clamp(0.0, 1.0);
     let config = michi_resilience::RetryConfig::new(
         max_retries,
         std::time::Duration::from_secs_f64(base_delay_ms / 1000.0),
@@ -278,7 +295,7 @@ pub fn next_retry_delay(
         jitter_factor,
     );
     let retry_after = retry_after_ms.map(|ms| std::time::Duration::from_secs_f64(ms / 1000.0));
-    michi_resilience::next_retry_delay(&config, attempt, 0.5, retry_after).map(|d| d.as_secs_f64() * 1000.0)
+    Ok(michi_resilience::next_retry_delay(&config, attempt, jitter_seed, retry_after).map(|d| d.as_secs_f64() * 1000.0))
 }
 
 /// Return `true` if the HTTP status code is conventionally retryable (429, 502, 503, 504).
@@ -309,7 +326,13 @@ pub fn render_domain_error(
         "unavailable" => crate::error::ErrorCode::Unavailable,
         "timeout" => crate::error::ErrorCode::Timeout,
         "external_failure" => crate::error::ErrorCode::ExternalFailure,
-        _ => crate::error::ErrorCode::NotFound,
+        "not_found" => crate::error::ErrorCode::NotFound,
+        other => {
+            return Err(napi::Error::from_reason(format!(
+                "unknown error code {other:?}; expected one of: invalid_input, not_found, \
+                 unauthorized, forbidden, conflict, rate_limited, unavailable, timeout, external_failure"
+            )));
+        }
     };
     let mut err = crate::error::DomainError::new(error_code, message);
     for h in hints {
