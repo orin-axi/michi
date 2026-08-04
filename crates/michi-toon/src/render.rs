@@ -162,12 +162,12 @@ pub(crate) fn render(
     // rows
     for row in rows {
         out.push_str("  ");
-        for (i, val) in row.iter().enumerate() {
+        for i in 0..field_count {
             if i > 0 {
                 out.push(',');
             }
-            match val {
-                Value::Str(s) => {
+            match row.get(i) {
+                Some(Value::Str(s)) => {
                     if s.len() <= max_cell_len {
                         out.push_str(&escape_value(s));
                     } else {
@@ -175,14 +175,20 @@ pub(crate) fn render(
                         out.push_str(&escape_value(&truncated));
                     }
                 }
-                Value::Int(n) => {
+                Some(Value::Int(n)) => {
                     let _ = write!(out, "{n}");
                 }
-                Value::Float(f) => {
-                    let _ = write!(out, "{f}");
+                Some(Value::Float(f)) => {
+                    if f.is_nan() || f.is_infinite() {
+                        // NaN and Inf are not valid TOON scalars — render as quoted strings
+                        let s = f.to_string();
+                        let _ = write!(out, "\"{s}\"");
+                    } else {
+                        let _ = write!(out, "{f}");
+                    }
                 }
-                Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-                Value::Null => {}
+                Some(Value::Bool(b)) => out.push_str(if *b { "true" } else { "false" }),
+                Some(Value::Null) | None => {} // Null or missing cell → empty
             }
         }
         out.push('\n');
@@ -237,6 +243,21 @@ mod tests {
     fn field_with_comma_is_sanitized() {
         let out = super::render("t", &["a,b".to_string()], &[vec![Value::from("v")]], None, &[], 200);
         assert!(out.contains("{a_b}"), "got: {out}");
+    }
+
+    #[test]
+    fn float_nan_renders_as_quoted_string() {
+        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::NAN)]], None, &[], 200);
+        // NaN must not appear as bare token
+        assert!(!out.contains(",NaN") && !out.contains("  NaN\n"), "got: {out}");
+        // Must be quoted
+        assert!(out.contains('"'), "NaN must be quoted, got: {out}");
+    }
+
+    #[test]
+    fn float_inf_renders_as_quoted_string() {
+        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::INFINITY)]], None, &[], 200);
+        assert!(out.contains('"'), "inf must be quoted, got: {out}");
     }
 
     #[test]

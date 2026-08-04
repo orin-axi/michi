@@ -14,6 +14,49 @@ pub use render::Value;
 #[cfg(feature = "serde")]
 pub mod serializer;
 
+/// Error returned by [`ToonOptions::validate()`] when structural invariants are violated.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum ToonError {
+    /// `type_name` contains a structural character (`[`, `]`, `{`, `}`, `\n`, `\r`).
+    InvalidTypeName {
+        /// The offending name.
+        name: String,
+    },
+    /// A field name contains a structural character (`,`, `{`, `}`, `\n`, `\r`).
+    InvalidFieldName {
+        /// The offending field name.
+        name: String,
+    },
+    /// Row `row_index` has `actual` values but `fields` declares `expected`.
+    RowLengthMismatch {
+        /// Zero-based index of the mismatched row.
+        row_index: usize,
+        /// Number of fields declared in the header.
+        expected: usize,
+        /// Actual number of values in the row.
+        actual: usize,
+    },
+}
+
+impl std::fmt::Display for ToonError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidTypeName { name } => {
+                write!(f, "type_name {name:?} contains a structural character")
+            }
+            Self::InvalidFieldName { name } => {
+                write!(f, "field {name:?} contains a structural character")
+            }
+            Self::RowLengthMismatch { row_index, expected, actual } => {
+                write!(f, "row {row_index} has {actual} values but {expected} fields declared")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ToonError {}
+
 /// Options for rendering a TOON document.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -60,6 +103,40 @@ impl ToonOptions {
         self.max_cell_len = len;
         self
     }
+
+    /// Validate structural invariants before rendering.
+    ///
+    /// [`render_toon()`] sanitizes bad input gracefully; call this when you
+    /// need explicit error signals. Caller opt-in for direct
+    /// [`render_toon()`] usage — not called automatically there. See
+    /// `PRINCIPLES.md` §1 (invariant policy).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ToonError::InvalidTypeName`] if `type_name` contains a
+    /// structural character, [`ToonError::InvalidFieldName`] if any field name
+    /// contains a structural character, or [`ToonError::RowLengthMismatch`] if
+    /// any row's length differs from `fields.len()`.
+    pub fn validate(&self) -> Result<(), ToonError> {
+        if self.type_name.contains(['[', ']', '{', '}', '\n', '\r']) {
+            return Err(ToonError::InvalidTypeName { name: self.type_name.clone() });
+        }
+        for field in &self.fields {
+            if field.contains([',', '{', '}', '\n', '\r']) {
+                return Err(ToonError::InvalidFieldName { name: field.clone() });
+            }
+        }
+        for (i, row) in self.rows.iter().enumerate() {
+            if row.len() != self.fields.len() {
+                return Err(ToonError::RowLengthMismatch {
+                    row_index: i,
+                    expected: self.fields.len(),
+                    actual: row.len(),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for ToonOptions {
@@ -100,23 +177,47 @@ fn json_value_to_toon_value(v: Option<&serde_json::Value>) -> Value {
     }
 }
 
-/// Build [`ToonOptions`] from a slice of `Serialize`-able items.
+/// Build and render a TOON document from a slice of `Serialize`-able items.
+///
+/// Returns the rendered TOON string on success. Returns `Err` if any item
+/// does not serialize to a JSON object (e.g. a bare integer or string slice)
+/// — use only with homogeneous struct slices.
+///
+/// Requires the `serde` feature.
+///
+/// # Errors
+///
+/// Returns [`ToonError::InvalidTypeName`] if an item fails to serialize or
+/// does not produce a JSON object.
 #[cfg(feature = "serde")]
-#[must_use]
-pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T]) -> ToonOptions {
+pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T]) -> Result<String, ToonError> {
+    let type_name = type_name.into();
     let mut fields: Vec<String> = Vec::new();
     let mut rows: Vec<Vec<Value>> = Vec::with_capacity(items.len());
-    for item in items {
+    for (row_index, item) in items.iter().enumerate() {
         let obj = match serde_json::to_value(item) {
             Ok(serde_json::Value::Object(map)) => map,
-            _ => serde_json::Map::new(),
+            Ok(other) => {
+                return Err(ToonError::InvalidTypeName {
+                    name: format!(
+                        "{type_name}: item at index {row_index} is not a JSON object (got {})",
+                        other.to_string()
+                    ),
+                });
+            }
+            Err(e) => {
+                return Err(ToonError::InvalidTypeName {
+                    name: format!("{type_name}: item at index {row_index} failed to serialize: {e}"),
+                });
+            }
         };
         if fields.is_empty() && !obj.is_empty() {
             fields = obj.keys().cloned().collect();
         }
         rows.push(fields.iter().map(|f| json_value_to_toon_value(obj.get(f))).collect());
     }
-    ToonOptions { type_name: type_name.into(), fields, rows, total_count: None, hints: Vec::new(), max_cell_len: 200 }
+    let opts = ToonOptions { type_name, fields, rows, total_count: None, hints: Vec::new(), max_cell_len: 200 };
+    Ok(render_toon(&opts))
 }
 
 #[cfg(test)]
@@ -129,5 +230,73 @@ mod auto_trait_tests {
     fn test_auto_traits() {
         assert_send_sync_static::<ToonOptions>();
         assert_send_sync_static::<Value>();
+    }
+}
+
+#[cfg(test)]
+mod validate_tests {
+    use super::*;
+
+    #[test]
+    fn validate_ok_for_valid_options() {
+        let opts = ToonOptions {
+            type_name: "file".into(),
+            fields: vec!["path".into(), "size".into()],
+            rows: vec![vec![Value::from("a.rs"), Value::from(100i64)]],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert!(opts.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_type_name_with_bracket() {
+        let opts = ToonOptions {
+            type_name: "foo[bar".into(),
+            fields: vec![],
+            rows: vec![],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert!(matches!(opts.validate(), Err(ToonError::InvalidTypeName { .. })));
+    }
+
+    #[test]
+    fn validate_rejects_field_with_comma() {
+        let opts = ToonOptions {
+            type_name: "t".into(),
+            fields: vec!["a,b".into()],
+            rows: vec![],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert!(matches!(opts.validate(), Err(ToonError::InvalidFieldName { .. })));
+    }
+
+    #[test]
+    fn validate_rejects_row_length_mismatch() {
+        let opts = ToonOptions {
+            type_name: "t".into(),
+            fields: vec!["a".into()],
+            rows: vec![vec![Value::from("x"), Value::from("y")]],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert!(matches!(opts.validate(), Err(ToonError::RowLengthMismatch { row_index: 0, expected: 1, actual: 2 })));
+    }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod list_tests {
+    use super::*;
+
+    #[test]
+    fn list_rejects_non_object_items() {
+        let result = list("t", &[1u32, 2, 3]);
+        assert!(result.is_err(), "non-object items must return Err, got: {result:?}");
     }
 }
