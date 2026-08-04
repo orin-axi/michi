@@ -169,7 +169,8 @@ fn parse_http_date(s: &str) -> Option<std::time::SystemTime> {
     let hour: u64 = time_parts.next()?.parse().ok()?;
     let minute: u64 = time_parts.next()?.parse().ok()?;
     let second: u64 = time_parts.next()?.parse().ok()?;
-    if time_parts.next().is_some() || hour > 23 || minute > 59 || second > 60 || day == 0 || day > 31 {
+    let max_day = days_in_month(year, month)?;
+    if time_parts.next().is_some() || hour > 23 || minute > 59 || second > 60 || day == 0 || day > max_day {
         return None;
     }
 
@@ -178,6 +179,22 @@ fn parse_http_date(s: &str) -> Option<std::time::SystemTime> {
     let epoch_secs = days.checked_mul(86_400)?.checked_add((hour * 3600 + minute * 60 + second) as i64)?;
     let unix_secs = u64::try_from(epoch_secs).ok()?;
     Some(std::time::UNIX_EPOCH + Duration::from_secs(unix_secs))
+}
+
+fn days_in_month(year: i64, month: u64) -> Option<u64> {
+    Some(match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+            if is_leap {
+                29
+            } else {
+                28
+            }
+        }
+        _ => return None,
+    })
 }
 
 fn month_number(name: &str) -> Option<u64> {
@@ -468,6 +485,39 @@ mod tests {
     fn http_date_with_absurd_year_returns_none_instead_of_panicking() {
         let now = std::time::SystemTime::UNIX_EPOCH;
         assert_eq!(parse_retry_after_at("Wed, 21 Oct 999999999999999999 07:28:00 GMT", now), None);
+    }
+
+    #[test]
+    fn parse_http_date_rejects_feb_30() {
+        let now = std::time::UNIX_EPOCH;
+        assert!(parse_retry_after_at("Wed, 30 Feb 2026 07:28:00 GMT", now).is_none(), "Feb 30 is impossible");
+    }
+
+    #[test]
+    fn parse_http_date_rejects_feb_29_non_leap() {
+        let now = std::time::UNIX_EPOCH;
+        assert!(parse_retry_after_at("Sun, 29 Feb 2026 00:00:00 GMT", now).is_none(), "2026 is not a leap year");
+    }
+
+    #[test]
+    fn parse_http_date_accepts_feb_29_leap_year() {
+        let now = std::time::UNIX_EPOCH;
+        // 2028 is a leap year (divisible by 4, not a century)
+        let result = parse_retry_after_at("Tue, 29 Feb 2028 00:00:00 GMT", now);
+        assert!(result.is_some(), "Feb 29 2028 is valid");
+    }
+
+    #[test]
+    fn parse_http_date_rejects_april_31() {
+        let now = std::time::UNIX_EPOCH;
+        assert!(parse_retry_after_at("Thu, 31 Apr 2026 00:00:00 GMT", now).is_none(), "April has 30 days");
+    }
+
+    #[test]
+    fn parse_http_date_accepts_jan_31() {
+        let now = std::time::UNIX_EPOCH;
+        let result = parse_retry_after_at("Sat, 31 Jan 2026 00:00:00 GMT", now);
+        assert!(result.is_some(), "Jan 31 is valid");
     }
 
     #[test]
