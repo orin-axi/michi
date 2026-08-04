@@ -1,5 +1,12 @@
 [workspace]
-members  = [".", "packages/michi-node"]
+members  = [
+  ".",
+  "crates/michi-truncate",
+  "crates/michi-resilience",
+  "crates/michi-toon",
+  "crates/michi-core",
+  "packages/michi-node"
+]
 resolver = "2"
 
 [workspace.package]
@@ -10,7 +17,12 @@ repository   = "https://github.com/orin-axi/michi"
 authors      = ["orin-axi"]
 
 [workspace.dependencies]
-thiserror = "2"
+thiserror   = "2"
+compact_str = "0.8"
+serde       = { version = "1.0.228", features = ["derive"] }
+serde_json  = { version = "1.0.150", features = ["preserve_order"] }
+schemars    = "0.8"
+miette      = "7"
 
 [profile.release]
 opt-level     = 3
@@ -34,22 +46,25 @@ license.workspace      = true
 repository.workspace   = true
 
 [features]
-default = []
-napi    = ["dep:napi", "dep:napi-derive", "dep:serde_json"]
-serde   = ["dep:serde", "dep:serde_json"]
+default  = []
+napi     = ["dep:napi", "dep:napi-derive", "dep:serde_json", "michi-core/serde"]
+serde    = ["michi-core/serde", "michi-toon/serde"]
+schemars = ["michi-core/schemars", "michi-toon/schemars"]
+miette   = ["michi-core/miette"]
 
 [dependencies]
-thiserror.workspace = true
+michi-truncate   = { path = "crates/michi-truncate", version = "0.1.0" }
+michi-resilience = { path = "crates/michi-resilience", version = "0.1.0" }
+michi-toon       = { path = "crates/michi-toon", version = "0.1.0" }
+michi-core       = { path = "crates/michi-core", version = "0.1.0" }
 
 # napi feature
 napi        = { version = "3", features = ["napi6", "serde-json"], optional = true }
 napi-derive = { version = "3", optional = true }
-serde_json  = { version = "1", optional = true, features = ["preserve_order"] }
-
-# serde feature
-serde      = { version = "1", features = ["derive"], optional = true }
+serde_json  = { workspace = true, optional = true }
 
 [dev-dependencies]
+serde    = { workspace = true }
 divan    = "0.1"
 proptest = "1"
 insta    = { version = "1", features = ["yaml"] }

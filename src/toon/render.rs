@@ -24,15 +24,60 @@ impl From<&str> for Value {
     }
 }
 
+impl From<&String> for Value {
+    fn from(s: &String) -> Self {
+        Self::Str(s.clone())
+    }
+}
+
 impl From<String> for Value {
     fn from(s: String) -> Self {
         Self::Str(s)
     }
 }
 
+impl From<std::borrow::Cow<'_, str>> for Value {
+    fn from(s: std::borrow::Cow<'_, str>) -> Self {
+        Self::Str(s.into_owned())
+    }
+}
+
+impl From<i32> for Value {
+    fn from(n: i32) -> Self {
+        Self::Int(i64::from(n))
+    }
+}
+
+impl From<u32> for Value {
+    fn from(n: u32) -> Self {
+        Self::Int(i64::from(n))
+    }
+}
+
 impl From<i64> for Value {
     fn from(n: i64) -> Self {
         Self::Int(n)
+    }
+}
+
+impl From<u64> for Value {
+    fn from(n: u64) -> Self {
+        // u64 fits in i64 for non-overflowing range, clamp to i64::MAX if larger
+        #[allow(clippy::cast_possible_wrap)]
+        Self::Int(n.try_into().unwrap_or(i64::MAX))
+    }
+}
+
+impl From<usize> for Value {
+    fn from(n: usize) -> Self {
+        #[allow(clippy::cast_possible_wrap)]
+        Self::Int(n.try_into().unwrap_or(i64::MAX))
+    }
+}
+
+impl From<f32> for Value {
+    fn from(f: f32) -> Self {
+        Self::Float(f64::from(f))
     }
 }
 
@@ -56,6 +101,7 @@ impl From<Option<String>> for Value {
         }
     }
 }
+
 
 /// Render a TOON document string from its parts.
 ///

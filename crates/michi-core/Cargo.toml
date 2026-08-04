@@ -1,0 +1,25 @@
+[package]
+name        = "michi-core"
+version     = "0.1.0"
+description = "AXI response primitives, AgentResponse builder, Audience routing, and structured diagnostics"
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+
+[dependencies]
+michi-truncate   = { path = "../michi-truncate", version = "0.1.0" }
+michi-resilience = { path = "../michi-resilience", version = "0.1.0" }
+michi-toon       = { path = "../michi-toon", version = "0.1.0" }
+thiserror.workspace = true
+
+serde      = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+schemars   = { workspace = true, optional = true }
+miette     = { workspace = true, optional = true }
+
+[features]
+default  = []
+serde    = ["dep:serde", "dep:serde_json", "michi-toon/serde"]
+schemars = ["dep:schemars", "michi-toon/schemars"]
+miette   = ["dep:miette"]

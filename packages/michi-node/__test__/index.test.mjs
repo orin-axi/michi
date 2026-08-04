@@ -1,6 +1,21 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { renderToon, emptyState, renderHints, appendHints, renderRecovery, truncate, AgentResponse } from '../index.js'
+import {
+  renderToon,
+  emptyState,
+  renderHints,
+  appendHints,
+  renderRecovery,
+  truncate,
+  AgentResponse,
+  renderKv,
+  renderAlreadyDone,
+  parseRetryAfter,
+  nextRetryDelay,
+  isRetryableStatus,
+  renderDomainError,
+  renderStatus,
+} from '../index.js'
 
 void describe('renderToon', () => {
   void it('renders a basic list', () => {
@@ -83,6 +98,60 @@ void describe('truncate', () => {
   })
 })
 
+void describe('standalone helpers', () => {
+  void it('renderKv formats key-value block', () => {
+    const out = renderKv(
+      [{ key: 'name', value: { type: 'str', strVal: 'michi' } }],
+      1,
+      ['hint 1']
+    )
+    assert.ok(out.includes('name:'))
+    assert.ok(out.includes('michi'))
+    assert.ok(out.includes('totalCount: 1'))
+    assert.ok(out.includes('help[1]:'))
+  })
+
+  void it('renderAlreadyDone formats no-op block', () => {
+    const out = renderAlreadyDone('create_issue', 'Already exists', ['view issue 42'])
+    assert.ok(out.includes('status:    already_done'))
+    assert.ok(out.includes('summary:   Already exists'))
+    assert.ok(out.includes('help[1]:'))
+  })
+
+  void it('parseRetryAfter parses integer seconds', () => {
+    assert.strictEqual(parseRetryAfter('120'), 120)
+  })
+
+  void it('nextRetryDelay calculates exponential backoff', () => {
+    const delay = nextRetryDelay(3, 100, 1000, 0.0, 0)
+    assert.strictEqual(typeof delay, 'number')
+    assert.ok(delay >= 100)
+  })
+
+  void it('isRetryableStatus identifies 429 and 503 as retryable', () => {
+    assert.strictEqual(isRetryableStatus(429), true)
+    assert.strictEqual(isRetryableStatus(503), true)
+    assert.strictEqual(isRetryableStatus(404), false)
+  })
+
+  void it('renderDomainError formats error card and github annotation', () => {
+    const card = renderDomainError('not_found', 'Item not found', ['check ID'])
+    assert.ok(card.includes('error: not_found'))
+    assert.ok(card.includes('message: Item not found'))
+
+    const gh = renderDomainError('not_found', 'Item not found', [], true)
+    assert.strictEqual(gh, '::error title=not_found::Item not found')
+  })
+
+  void it('renderStatus formats orientation block', () => {
+    const out = renderStatus('my_tool', 'Does work', [
+      { key: 'cache', value: { type: 'str', strVal: 'ready' }, health: 'ok' },
+    ])
+    assert.ok(out.includes('tool:        my_tool'))
+    assert.ok(out.includes('description: Does work'))
+  })
+})
+
 void describe('AgentResponse', () => {
   void it('builds a TOON response with hints via chained calls', () => {
     const r = new AgentResponse('issues')
@@ -117,8 +186,6 @@ void describe('AgentResponse', () => {
   void it('renderToon/renderKv are slot-specific, not last-call-wins', () => {
     const r = new AgentResponse('issues')
     r.items([[{ type: 'int', intVal: 1 }]], ['id'])
-    // kvItems() is called last, but renderToon() must still read the
-    // items/fields slot, not follow the last-populated slot.
     r.kvItems([{ key: 'id', value: { type: 'int', intVal: 99 } }])
     const toon = r.renderToon()
     const kv = r.renderKv()

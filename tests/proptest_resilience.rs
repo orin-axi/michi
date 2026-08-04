@@ -16,12 +16,12 @@ proptest! {
         max_secs in 10u64..60,
         jitter_factor in 0.0f64..1.0,
     ) {
-        let config = RetryConfig {
-            max_retries: 10,
-            base_delay: Duration::from_secs(base_secs),
-            max_delay: Duration::from_secs(max_secs),
+        let config = RetryConfig::new(
+            10,
+            Duration::from_secs(base_secs),
+            Duration::from_secs(max_secs),
             jitter_factor,
-        };
+        );
         if let Some(delay) = next_retry_delay(&config, attempt, jitter_seed, None) {
             prop_assert!(delay <= config.max_delay, "delay {delay:?} exceeded max_delay {:?}", config.max_delay);
 

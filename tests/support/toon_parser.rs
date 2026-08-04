@@ -82,7 +82,7 @@ fn split_toon_row(line: &str) -> Vec<String> {
 #[allow(dead_code)]
 pub fn value_to_string(v: &Value) -> String {
     match v {
-        Value::Str(s) => s.clone(),
+        Value::Str(s) => s.to_string(),
         Value::Int(n) => n.to_string(),
         Value::Float(f) => f.to_string(),
         Value::Bool(b) => (if *b { "true" } else { "false" }).to_string(),

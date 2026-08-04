@@ -1,0 +1,20 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+language: rust
+
+tasks:
+  build:
+    command: just build
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"
+  test:
+    command: just test-rust-all
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"
+  check-wasm:
+    command: just check-wasm
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"

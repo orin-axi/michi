@@ -7,21 +7,20 @@ use michi::toon::{render_toon, ToonOptions, Value};
 
 #[test]
 fn snapshot_toon_basic_list() {
-    let opts = ToonOptions {
-        type_name: "issue".into(),
-        fields: vec!["number".into(), "title".into(), "state".into()],
-        rows: vec![
+    let opts = ToonOptions::new(
+        "issue",
+        vec!["number".into(), "title".into(), "state".into()],
+        vec![
             vec![Value::Int(42), Value::Str("Fix login redirect".into()), Value::Str("open".into())],
             vec![Value::Int(43), Value::Str("Add dark mode".into()), Value::Str("open".into())],
             vec![Value::Int(44), Value::Str("Update deps, bump major".into()), Value::Str("closed".into())],
         ],
-        total_count: Some(47),
-        hints: vec![
-            Hint::new("Call get_issue with number=<number> for full detail"),
-            Hint::new("Call list_issues with state=open to filter"),
-        ],
-        ..Default::default()
-    };
+    )
+    .total_count(Some(47))
+    .hints(vec![
+        "Call get_issue with number=<number> for full detail".to_string(),
+        "Call list_issues with state=open to filter".to_string(),
+    ]);
     insta::assert_snapshot!(render_toon(&opts));
 }
 

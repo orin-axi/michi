@@ -2,7 +2,7 @@
 ///
 /// Values containing commas or double-quotes are wrapped in double-quotes
 /// with internal double-quotes escaped as `\"`. Embedded newlines and
-/// carriage returns are stripped, since TOON does not support multi-line
+/// carriage returns are stripped, since TOON v0.1 does not support multi-line
 /// cell values. Empty values are returned as-is (the comma delimiter is
 /// still emitted by the caller).
 pub(crate) fn escape_value(v: &str) -> std::borrow::Cow<'_, str> {
@@ -127,3 +127,5 @@ mod tests {
         assert_eq!(escape_value_quoted("line\nbreak"), r#""linebreak""#);
     }
 }
+
+

@@ -4,15 +4,17 @@ language: typescript
 
 tasks:
   build:
-    script: cd .. && just build-node
-    inputs:
-      - "src/**/*"
-      - "Cargo.toml"
-      - "package.json"
-  test:
-    script: cd .. && just test-node
+    command: just build-node
     inputs:
       - "src/**/*"
       - "__test__/**/*"
+      - "package.json"
+  test:
+    command: just test-node
+    inputs:
+      - "index.js"
+      - "index.d.ts"
+      - "__test__/**/*"
+      - "package.json"
     deps:
       - build

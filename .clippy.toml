@@ -15,3 +15,9 @@ disallowed-macros = [
     { path = "std::eprintln", reason = "library code must not print to stderr" },
     { path = "std::dbg",      reason = "debug macro must not ship in library code" },
 ]
+
+# Ban unwrap in library code
+disallowed-methods = [
+    { path = "core::option::Option::unwrap", reason = "library code must use fallible handling or error cards instead of unwrap" },
+    { path = "core::result::Result::unwrap", reason = "library code must use fallible handling or error cards instead of unwrap" },
+]

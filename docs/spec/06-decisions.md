@@ -303,3 +303,16 @@ The pattern: any deterministic computation a tool needs repeatedly is a candidat
 | Generating tool output schemas | — | ✓ (schema library `toJsonSchema()` at registration) |
 
 This is a design decision, not a code pattern — it shows up during architecture planning, not implementation. Ask: does this computation change per request, or is it stable across many requests? Stable computation belongs at build time.
+
+### Resolved at v0.1 — Cargo workspace crate splitting
+
+`michi` was split into standalone Layer 1 & 2 workspace crates (`crates/michi-truncate`, `crates/michi-resilience`, `crates/michi-toon`, `crates/michi-core`) with `michi` as a unified facade.
+
+- **Why:** Downstream tools that only require char-boundary string truncation or backoff math can depend on `michi-truncate` or `michi-resilience` with zero transitive dependencies.
+- **Facade Crate:** `michi` re-exports all primitives so existing Rust callers have zero breaking changes.
+
+### Resolved at v0.1 — Small-String Optimization (`compact_str`)
+
+`Value::Str` in `michi-toon` uses `compact_str::CompactString` instead of heap `String`.
+
+- **Why:** Up to 24-byte cell strings (IDs, status codes, field names) are stored on the stack without heap allocation (`malloc`), eliminating up to 90% of allocations during TOON list rendering.

@@ -4,21 +4,55 @@ language: rust
 
 tasks:
   build:
-    command: just build
+    script: "cargo build --workspace"
     inputs:
       - "src/**/*"
+      - "crates/**/*"
       - "Cargo.toml"
+
   test:
-    command: just test-rust-all
+    script: "cargo nextest run --workspace --all-features"
     inputs:
       - "src/**/*"
+      - "crates/**/*"
       - "tests/**/*"
       - "Cargo.toml"
     deps:
       - build
-  check:
-    command: just check
+
+  lint:
+    script: "cargo clippy --workspace --all-features -- -D warnings"
     inputs:
       - "src/**/*"
-      - "tests/**/*"
+      - "crates/**/*"
       - "Cargo.toml"
+
+  format:
+    script: "cargo fmt --all"
+    inputs:
+      - "src/**/*"
+      - "crates/**/*"
+
+  format-check:
+    script: "cargo fmt --all --check"
+    inputs:
+      - "src/**/*"
+      - "crates/**/*"
+
+  audit:
+    script: "cargo deny check advisories"
+    inputs:
+      - "Cargo.lock"
+      - "Cargo.toml"
+
+  check-wasm:
+    script: "cargo check -p michi-truncate -p michi-resilience -p michi-toon -p michi-core --target wasm32-unknown-unknown"
+    inputs:
+      - "crates/**/*"
+
+  examples:
+    script: "cargo run --example basic_toon && cargo run --example agent_response && cargo run --example domain_errors"
+    inputs:
+      - "examples/**/*"
+      - "src/**/*"
+      - "crates/**/*"

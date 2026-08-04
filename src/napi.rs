@@ -67,23 +67,23 @@ pub struct JsToonOptions {
     pub type_name: String,
     /// Ordered field names for the header.
     pub fields: Vec<String>,
-    /// Rows, each a Vec of values parallel to `fields`. Capped at [`MAX_ROWS`]
-    /// rows and [`MAX_FIELDS`] values per row.
+    /// Rows, each a Vec of values parallel to `fields`. Capped at `MAX_ROWS`
+    /// rows and `MAX_FIELDS` values per row.
     pub rows: Vec<Vec<JsToonValue>>,
     /// Total available count (may exceed `rows.len()` when paginated).
     #[napi(js_name = "totalCount")]
     pub total_count: Option<i32>,
-    /// Agent-facing usage hints. Capped at [`MAX_HINTS`] entries.
+    /// Agent-facing usage hints. Capped at `MAX_HINTS` entries.
     pub hints: Vec<String>,
 }
 
-fn js_value_to_rust(v: JsToonValue) -> crate::toon::Value {
+fn js_value_to_rust(v: JsToonValue) -> michi_toon::Value {
     match v.r#type.as_str() {
-        "str" => crate::toon::Value::Str(v.str_val.unwrap_or_default()),
-        "int" => crate::toon::Value::Int(i64::from(v.int_val.unwrap_or(0))),
-        "float" => crate::toon::Value::Float(v.float_val.unwrap_or(0.0)),
-        "bool" => crate::toon::Value::Bool(v.bool_val.unwrap_or(false)),
-        _ => crate::toon::Value::Null,
+        "str" => michi_toon::Value::Str(v.str_val.unwrap_or_default().into()),
+        "int" => michi_toon::Value::Int(i64::from(v.int_val.unwrap_or(0))),
+        "float" => michi_toon::Value::Float(v.float_val.unwrap_or(0.0)),
+        "bool" => michi_toon::Value::Bool(v.bool_val.unwrap_or(false)),
+        _ => michi_toon::Value::Null,
     }
 }
 
@@ -92,8 +92,8 @@ fn js_value_to_rust(v: JsToonValue) -> crate::toon::Value {
 /// # Errors
 ///
 /// Returns an error if `rows`, `fields`, `hints`, or any row's value count
-/// exceeds this module's hard size limits ([`MAX_ROWS`], [`MAX_FIELDS`],
-/// [`MAX_HINTS`]) — an unbounded caller-supplied collection here would let a
+/// exceeds this module's hard size limits (`MAX_ROWS`, `MAX_FIELDS`,
+/// `MAX_HINTS`) — an unbounded caller-supplied collection here would let a
 /// single JS call force unbounded synchronous allocation on Node's event
 /// loop, which `#[napi(catch_unwind)]` alone does not guard against.
 #[napi(catch_unwind)]
@@ -113,38 +113,36 @@ pub fn render_toon(opts: JsToonOptions) -> napi::Result<String> {
             opts.hints.len()
         )));
     }
-    for row in &opts.rows {
+
+    let mut rows: Vec<Vec<michi_toon::Value>> = Vec::with_capacity(opts.rows.len());
+    for row in opts.rows {
         if row.len() > MAX_FIELDS {
-            return Err(napi::Error::from_reason(format!("row length {} exceeds maximum of {MAX_FIELDS}", row.len())));
+            return Err(napi::Error::from_reason(format!(
+                "row length {} exceeds maximum fields per row of {MAX_FIELDS}",
+                row.len()
+            )));
         }
+        rows.push(row.into_iter().map(js_value_to_rust).collect());
     }
 
-    // Casts are safe: total_count/max_chars are clamped non-negative first,
-    // and usize is at least as wide as i32 on every platform this crate targets.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let rust_opts = crate::toon::ToonOptions {
-        type_name: opts.type_name,
-        fields: opts.fields,
-        rows: opts.rows.into_iter().map(|row| row.into_iter().map(js_value_to_rust).collect()).collect(),
-        total_count: opts.total_count.map(|n| n.max(0) as usize),
-        hints: opts.hints.into_iter().map(Into::into).collect(),
-        max_cell_len: 200,
-    };
-    Ok(crate::toon::render_toon(&rust_opts))
+    let toon_opts = michi_toon::ToonOptions::new(opts.type_name, opts.fields, rows)
+        .total_count(opts.total_count.map(usize::try_from).and_then(Result::ok))
+        .hints(opts.hints);
+
+    Ok(michi_toon::render_toon(&toon_opts))
 }
 
-/// Render a definitive empty state block: `type_name[0]{}:\ntotalCount: 0\n`.
+/// Render an explicit empty-state response.
 #[napi(catch_unwind)]
-#[allow(clippy::needless_pass_by_value)] // napi-derive requires owned String for JS string params
 pub fn empty_state(type_name: String) -> String {
-    crate::empty::empty_state(&type_name)
+    michi_core::empty::empty_state(&type_name)
 }
 
 /// Render a `help[N]:` hint block.
 ///
 /// # Errors
 ///
-/// Returns an error if `hints` exceeds [`MAX_HINTS`] entries.
+/// Returns an error if `hints` exceeds `MAX_HINTS` entries.
 #[napi(catch_unwind)]
 pub fn render_hints(hints: Vec<String>) -> napi::Result<String> {
     if hints.len() > MAX_HINTS {
@@ -158,7 +156,7 @@ pub fn render_hints(hints: Vec<String>) -> napi::Result<String> {
 ///
 /// # Errors
 ///
-/// Returns an error if `hints` exceeds [`MAX_HINTS`] entries.
+/// Returns an error if `hints` exceeds `MAX_HINTS` entries.
 #[napi(catch_unwind)]
 #[allow(clippy::needless_pass_by_value)] // napi-derive requires owned String for JS string params
 pub fn append_hints(body: String, hints: Vec<String>) -> napi::Result<String> {
@@ -186,7 +184,7 @@ pub struct JsRecoveryHint {
 ///
 /// # Errors
 ///
-/// Returns an error if `hints` exceeds [`MAX_HINTS`] entries.
+/// Returns an error if `hints` exceeds `MAX_HINTS` entries.
 #[napi(catch_unwind)]
 pub fn render_recovery(hints: Vec<JsRecoveryHint>) -> napi::Result<String> {
     if hints.len() > MAX_HINTS {
@@ -232,6 +230,149 @@ fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
     }
 }
 
+/// Render key-value pairs with aligned columns.
+#[napi(catch_unwind)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub fn render_kv(items: Vec<JsKvItem>, total_count: Option<i32>, hints: Vec<String>) -> napi::Result<String> {
+    if items.len() > MAX_FIELDS {
+        return Err(napi::Error::from_reason(format!("items length {} exceeds maximum of {MAX_FIELDS}", items.len())));
+    }
+    if hints.len() > MAX_HINTS {
+        return Err(napi::Error::from_reason(format!("hints length {} exceeds maximum of {MAX_HINTS}", hints.len())));
+    }
+    let converted: Vec<crate::kv::KvItem> =
+        items.into_iter().map(|i| crate::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value) }).collect();
+    let hint_objs: Vec<crate::hints::Hint> = hints.into_iter().map(Into::into).collect();
+    Ok(crate::kv::render_kv(&converted, total_count.map(|n| n.max(0) as usize), &hint_objs))
+}
+
+/// Render an explicit `already_done` status block.
+#[napi(catch_unwind)]
+pub fn render_already_done(operation: String, summary: String, hints: Vec<String>) -> napi::Result<String> {
+    if hints.len() > MAX_HINTS {
+        return Err(napi::Error::from_reason(format!("hints length {} exceeds maximum of {MAX_HINTS}", hints.len())));
+    }
+    Ok(michi_resilience::render_already_done(&operation, &summary, &hints))
+}
+
+/// Parse an RFC 7231 `Retry-After` header value into seconds.
+#[napi(catch_unwind)]
+pub fn parse_retry_after(header_value: String) -> Option<f64> {
+    michi_resilience::parse_retry_after(&header_value).map(|d| d.as_secs_f64())
+}
+
+/// Calculate the next retry delay in milliseconds.
+#[napi(catch_unwind)]
+pub fn next_retry_delay(
+    max_retries: u32,
+    base_delay_ms: f64,
+    max_delay_ms: f64,
+    jitter_factor: f64,
+    attempt: u32,
+    retry_after_ms: Option<f64>,
+) -> Option<f64> {
+    let config = michi_resilience::RetryConfig::new(
+        max_retries,
+        std::time::Duration::from_secs_f64(base_delay_ms / 1000.0),
+        std::time::Duration::from_secs_f64(max_delay_ms / 1000.0),
+        jitter_factor,
+    );
+    let retry_after = retry_after_ms.map(|ms| std::time::Duration::from_secs_f64(ms / 1000.0));
+    michi_resilience::next_retry_delay(&config, attempt, 0.5, retry_after).map(|d| d.as_secs_f64() * 1000.0)
+}
+
+/// Return `true` if the HTTP status code is conventionally retryable (429, 502, 503, 504).
+#[napi(catch_unwind)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub fn is_retryable_status(status: u32) -> bool {
+    let code = u16::try_from(status).unwrap_or(0);
+    michi_resilience::is_retryable_status(code)
+}
+
+/// Render a classified `DomainError` card or GitHub annotation.
+#[napi(catch_unwind)]
+pub fn render_domain_error(
+    code: String,
+    message: String,
+    hints: Vec<String>,
+    github_annotation: Option<bool>,
+) -> napi::Result<String> {
+    if hints.len() > MAX_HINTS {
+        return Err(napi::Error::from_reason(format!("hints length {} exceeds maximum of {MAX_HINTS}", hints.len())));
+    }
+    let error_code = match code.as_str() {
+        "invalid_input" => crate::error::ErrorCode::InvalidInput,
+        "unauthorized" => crate::error::ErrorCode::Unauthorized,
+        "forbidden" => crate::error::ErrorCode::Forbidden,
+        "conflict" => crate::error::ErrorCode::Conflict,
+        "rate_limited" => crate::error::ErrorCode::RateLimited,
+        "unavailable" => crate::error::ErrorCode::Unavailable,
+        "timeout" => crate::error::ErrorCode::Timeout,
+        "external_failure" => crate::error::ErrorCode::ExternalFailure,
+        _ => crate::error::ErrorCode::NotFound,
+    };
+    let mut err = crate::error::DomainError::new(error_code, message);
+    for h in hints {
+        err = err.hint(h);
+    }
+    if github_annotation.unwrap_or(false) {
+        Ok(err.render_github_annotation())
+    } else {
+        Ok(err.render())
+    }
+}
+
+/// A component status item for [`render_status`].
+#[napi(object)]
+pub struct JsStatusItem {
+    /// Component key.
+    pub key: String,
+    /// Component value.
+    pub value: JsToonValue,
+    /// Health state: `"ok"`, `"degraded: <reason>"`, or `"error: <reason>"`.
+    pub health: Option<String>,
+}
+
+/// Render a P8 content-first orientation response.
+#[napi(catch_unwind)]
+pub fn render_status(
+    tool_name: String,
+    description: String,
+    items: Vec<JsStatusItem>,
+    hints: Option<Vec<String>>,
+) -> napi::Result<String> {
+    let hints_vec = hints.unwrap_or_default();
+    if items.len() > MAX_FIELDS {
+        return Err(napi::Error::from_reason(format!("items length {} exceeds maximum of {MAX_FIELDS}", items.len())));
+    }
+    if hints_vec.len() > MAX_HINTS {
+        return Err(napi::Error::from_reason(format!(
+            "hints length {} exceeds maximum of {MAX_HINTS}",
+            hints_vec.len()
+        )));
+    }
+    let status_items: Vec<crate::status::StatusItem> = items
+        .into_iter()
+        .map(|i| {
+            let health = match i.health.as_deref() {
+                Some("ok") | None => Some(crate::status::Health::Ok),
+                Some(h) if h.starts_with("degraded:") => {
+                    Some(crate::status::Health::Degraded(h.trim_start_matches("degraded:").trim().to_string()))
+                }
+                Some(h) if h.starts_with("error:") => {
+                    Some(crate::status::Health::Error(h.trim_start_matches("error:").trim().to_string()))
+                }
+                Some(_) => Some(crate::status::Health::Ok),
+            };
+            crate::status::StatusItem { key: i.key, value: js_kv_value_to_rust(i.value), health }
+        })
+        .collect();
+
+    let hint_objs: Vec<crate::hints::Hint> = hints_vec.into_iter().map(Into::into).collect();
+    let resp = crate::status::StatusResponse::new(tool_name, description, status_items).with_hints(hint_objs);
+    Ok(resp.render())
+}
+
 /// MCP content-block annotations (JavaScript-friendly). Currently carries
 /// only `audience` — michi has no concept of MCP's optional `priority`.
 #[napi(object)]
@@ -268,18 +409,11 @@ pub struct JsCallToolResult {
 }
 
 /// NAPI wrapper around [`crate::response::AgentResponse`].
-///
-/// `AgentResponse`'s Rust methods consume `self` and return `Self` — that
-/// idiom can't cross the NAPI boundary directly, since a `#[napi]` class
-/// instance is owned by the JS garbage collector and Rust only ever sees
-/// `&mut self`. Each mutating method here `take()`s the inner builder out of
-/// its `Option` slot, applies the consuming method, and puts the result back.
 #[napi(js_name = "AgentResponse")]
+#[derive(Debug)]
 pub struct JsAgentResponse {
-    inner: Option<crate::response::AgentResponse>,
-    /// Cumulative count of [`Self::hint`] calls, capped at [`MAX_HINTS`]. A
-    /// single call always appends just one hint, so a per-call bounds check
-    /// alone cannot stop unbounded growth across many calls.
+    inner: Option<michi_core::response::AgentResponse>,
+    /// Cumulative count of [`Self::hint`] calls, capped at [`MAX_HINTS`].
     hint_count: usize,
     /// Cumulative count of [`Self::recovery_hint`] calls, capped at [`MAX_HINTS`].
     recovery_count: usize,
@@ -291,20 +425,14 @@ impl JsAgentResponse {
     #[napi(constructor, catch_unwind)]
     #[must_use]
     pub fn new(type_name: String) -> Self {
-        Self { inner: Some(crate::response::AgentResponse::new(type_name)), hint_count: 0, recovery_count: 0 }
+        Self { inner: Some(michi_core::response::AgentResponse::new(type_name)), hint_count: 0, recovery_count: 0 }
     }
 
-    fn take(&mut self) -> napi::Result<crate::response::AgentResponse> {
+    fn take(&mut self) -> napi::Result<michi_core::response::AgentResponse> {
         self.inner.take().ok_or_else(|| napi::Error::from_reason("AgentResponse already consumed"))
     }
 
     /// Populate the TOON list path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error only if an internal invariant is violated (should not
-    /// happen in normal use), or if `rows`/`fields`/any row's value count
-    /// exceed this crate's NAPI-boundary size limits.
     #[napi(catch_unwind)]
     #[allow(clippy::needless_pass_by_value)] // napi-derive requires owned Vec<String> for JS array params
     pub fn items(&mut self, rows: Vec<Vec<JsToonValue>>, fields: Vec<String>) -> napi::Result<()> {
@@ -327,17 +455,13 @@ impl JsAgentResponse {
         }
         let b = self.take()?;
         let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
-        let converted: Vec<Vec<crate::toon::Value>> =
+        let converted: Vec<Vec<michi_toon::Value>> =
             rows.into_iter().map(|row| row.into_iter().map(js_value_to_rust).collect()).collect();
         self.inner = Some(b.items(converted, &field_refs));
         Ok(())
     }
 
     /// Set the total available count (TOON path only).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
     #[napi(catch_unwind)]
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // n clamped non-negative first
     pub fn total_count(&mut self, n: i32) -> napi::Result<()> {
@@ -347,11 +471,6 @@ impl JsAgentResponse {
     }
 
     /// Populate the KV single-item path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `items` exceeds [`MAX_FIELDS`] entries, or if an
-    /// internal invariant is violated (should not happen in normal use).
     #[napi(catch_unwind)]
     pub fn kv_items(&mut self, items: Vec<JsKvItem>) -> napi::Result<()> {
         if items.len() > MAX_FIELDS {
@@ -361,19 +480,15 @@ impl JsAgentResponse {
             )));
         }
         let b = self.take()?;
-        let converted =
-            items.into_iter().map(|i| crate::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value) }).collect();
+        let converted = items
+            .into_iter()
+            .map(|i| michi_core::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value) })
+            .collect();
         self.inner = Some(b.kv_items(converted));
         Ok(())
     }
 
     /// Append a contextual hint.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if this builder has already accumulated [`MAX_HINTS`]
-    /// hints across all calls, or if an internal invariant is violated
-    /// (should not happen in normal use).
     #[napi(catch_unwind)]
     pub fn hint(&mut self, hint: String) -> napi::Result<()> {
         if self.hint_count >= MAX_HINTS {
@@ -385,15 +500,7 @@ impl JsAgentResponse {
         Ok(())
     }
 
-    /// Append a recovery hint naming a tool (no structured params — use
-    /// `AgentResponse` from Rust directly for typed params; the NAPI surface
-    /// keeps this to the common case of "here's what to call next").
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if this builder has already accumulated [`MAX_HINTS`]
-    /// recovery hints across all calls, or if an internal invariant is
-    /// violated (should not happen in normal use).
+    /// Append a recovery hint naming a tool.
     #[napi(catch_unwind)]
     pub fn recovery_hint(&mut self, tool: String, reason: Option<String>) -> napi::Result<()> {
         if self.recovery_count >= MAX_HINTS {
@@ -402,7 +509,7 @@ impl JsAgentResponse {
             )));
         }
         let b = self.take()?;
-        let mut hint = crate::recovery::RecoveryHint::new(tool);
+        let mut hint = michi_core::recovery::RecoveryHint::new(tool);
         if let Some(reason) = reason {
             hint = hint.reason(reason);
         }
@@ -412,10 +519,6 @@ impl JsAgentResponse {
     }
 
     /// Mark this response as an error state.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
     #[napi(catch_unwind)]
     pub fn as_error(&mut self) -> napi::Result<()> {
         let b = self.take()?;
@@ -423,12 +526,7 @@ impl JsAgentResponse {
         Ok(())
     }
 
-    /// Attach a human-facing companion block (`audience: user`) for MCP
-    /// callers. Optional — most callers won't set this.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error only if an internal invariant is violated (should not happen in normal use).
+    /// Attach a human-facing companion block (`audience: user`) for MCP callers.
     #[napi(catch_unwind)]
     pub fn human_content(&mut self, text: String) -> napi::Result<()> {
         let b = self.take()?;
@@ -561,8 +659,9 @@ impl JsAgentResponse {
                             .audience
                             .into_iter()
                             .map(|a| match a {
-                                crate::audience::Audience::Assistant => "assistant".to_string(),
-                                crate::audience::Audience::User => "user".to_string(),
+                                michi_core::audience::Audience::Assistant => "assistant".to_string(),
+                                michi_core::audience::Audience::User => "user".to_string(),
+                                _ => "assistant".to_string(),
                             })
                             .collect(),
                     },

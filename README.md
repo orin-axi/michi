@@ -1,14 +1,14 @@
 # michi (道)
 
-AXI response primitives for agent-ergonomic tools — TOON lists, key-value blocks, truncation, structured errors, status, and `help[]` hints, in one small, pure-computation crate.
+AXI response primitives for agent-ergonomic tools — TOON lists, key-value blocks, truncation, structured errors, status, and `help[]` hints in a pure-computation workspace.
 
-`michi` is the primitive layer of the **orin-axi** suite. It doesn't know about your protocol, your CLI framework, or your async runtime — it takes structured data in and returns token-efficient, agent-readable strings out. Four tools in the suite (Monokl, Firkin, Lumen, Pulse) are designed to build on it instead of re-implementing this formatting themselves — none currently depend on it; see [`docs/spec/README.md`](docs/spec/README.md)'s "Known gaps."
+`michi` is the formatting and response layer for the **orin-axi** suite. It converts structured data into token-efficient, agent-readable text formats without requiring any specific CLI framework or async runtime.
 
-Available from Rust directly, or from TypeScript via the `@orin-axi/michi` npm package.
+Available as a Rust crate (`michi`) or as a Node.js package (`@orin-axi/michi`).
 
-## Why
+## Why TOON?
 
-Agents pay for every token they read. A JSON list of even modest size burns tokens on repeated field names and punctuation that a human reader would never notice and an LLM doesn't need restated per row. TOON (Token-Optimized Object Notation) states field names once, in the header:
+Agents pay for every token they read. Standard JSON lists repeat keys on every single object, burning context window capacity:
 
 ```json
 [
@@ -17,32 +17,38 @@ Agents pay for every token they read. A JSON list of even modest size burns toke
 ]
 ```
 
+TOON (Token-Optimized Object Notation) states field names once in a tabular header:
+
 ```text
 issues[2]{number,title,state}:
   51815,[Bug]: Telegram plugin,open
   51812,dark mode request,open
 ```
 
-Same information, fewer tokens. Values only get quoted when they actually contain a comma, quote, or newline — no wasted punctuation on the common case.
+Values are quoted only when they contain commas, quotes, or newlines. Small strings ($\le 24$ bytes) are stored on the stack via `compact_str`, eliminating heap allocations during row rendering.
 
 ## Quick start
 
+### Rust
+
 ```rust
-use michi::toon::{self, ToonOptions, Value};
+use michi::toon::{render_toon, ToonOptions, Value};
 
-let opts = ToonOptions {
-    type_name: "issues".to_string(),
-    fields: vec!["number".to_string(), "title".to_string(), "state".to_string()],
-    rows: vec![
-        vec![Value::Int(51815), Value::Str("[Bug]: Telegram plugin".to_string()), Value::Str("open".to_string())],
-        vec![Value::Int(51812), Value::Str("dark mode request".to_string()), Value::Str("open".to_string())],
+let opts = ToonOptions::new(
+    "issues",
+    vec!["number".to_string(), "title".to_string(), "state".to_string()],
+    vec![
+        vec![Value::Int(51815), Value::from("[Bug]: Telegram plugin"), Value::from("open")],
+        vec![Value::Int(51812), Value::from("dark mode request"), Value::from("open")],
     ],
-    total_count: Some(8771),
-    hints: vec!["Run `gh-axi issue view <number>` to view an issue".to_string()],
-};
+)
+.total_count(Some(8771))
+.hints(vec!["Run `gh-axi issue view <number>` to view an issue".to_string()]);
 
-print!("{}", toon::render_toon(&opts));
+print!("{}", render_toon(&opts));
 ```
+
+### TypeScript / Node.js
 
 ```typescript
 import { renderToon } from "@orin-axi/michi";
@@ -69,7 +75,7 @@ const out = renderToon({
 process.stdout.write(out);
 ```
 
-Both produce (verbatim, checked against the actual renderer):
+### Output
 
 ```text
 issues[2]{number,title,state}:
@@ -80,69 +86,38 @@ help[1]:
   Run `gh-axi issue view <number>` to view an issue
 ```
 
-The Rust struct-literal shape is deliberately explicit rather than a fluent builder — `ToonOptions` is one struct, easy to construct from whatever data you already have. A higher-level `toon::list(type_name, items)` convenience API is also available (behind the `serde` feature) for building `ToonOptions` directly from a slice of `Serialize`-able structs, inferring `fields` and `rows` from the serialized shape.
+## Workspace Architecture
 
-## Install
+`michi` is organized as a Cargo workspace with zero-dependency primitive crates and optional feature flags:
 
-**Not yet published to crates.io or npm.** Once published, installation will look like this — for now, see [`CONTRIBUTING.md`](CONTRIBUTING.md) for building from source (`git clone` + `just build`).
+| Crate / Module | Description |
+| --- | --- |
+| `michi-truncate` | UTF-8 char-boundary safe string truncation (`floor_char_boundary`). Zero runtime dependencies. |
+| `michi-resilience` | Exponential back-off math, RFC 7231 `Retry-After` header parser, and FNV-1a idempotency keys. |
+| `michi-toon` | TOON list renderer and parser powered by `compact_str::CompactString`. Includes direct `serde::Serializer`. |
+| `michi-core` | Core AXI response types (`AgentResponse`, `Audience`, `Hint`, `RecoveryHint`, `StatusResponse`, `DomainError`, `CallToolResult`). |
+| `michi` | Facade crate re-exporting all sub-crates for convenient top-level access. |
+| `@orin-axi/michi` | Node.js NAPI bindings built with `@napi-rs/cli`. |
 
-```toml
-[dependencies]
-michi = "0.1"
-```
+## Feature Flags
 
-```bash
-pnpm add @orin-axi/michi     # or npm install / yarn add
-```
-
-Default features add zero runtime dependencies — no tokio, no async runtime, nothing beyond `thiserror`. You opt into more as you need it (see below).
-
-## What's in the box
-
-| Module        | Purpose                                                                        |
-| ------------- | ------------------------------------------------------------------------------ |
-| `toon`        | TOON list rendering — the token-optimized agent list format                    |
-| `kv`          | Key-value single-item rendering                                                |
-| `hints`       | `help[]` contextual next-step blocks                                           |
-| `truncate`    | Token-safe content truncation, always on char boundaries                       |
-| `empty`       | Definitive empty-state responses (`count: 0`, never silent)                    |
-| `error`       | Unified `michi::Error` with agent-renderable output + retry classification     |
-| `idempotency` | Idempotency keys and already-done detection                                    |
-| `resilience`  | Retry config, backoff delay calculation, `Retry-After` parsing                 |
-| `status`      | Health/status response rendering                                               |
-| `recovery`    | Structured recovery hints for error responses                                  |
-| `response`    | `AgentResponse` builder — composes all of the above                            |
-| `mcp`         | MCP `CallToolResult` assembly — always compiled, no feature gate               |
-| `audience`    | `Audience` (assistant/user) — shared by `mcp` and `response::render_for()`     |
-| `pipeline`    | Pipeline data model + rendering (execution lands in a later release)           |
-| `telemetry`   | No-op telemetry provider (`NoopProvider`) — zero-cost default, always compiled |
-
-## Feature flags
-
-| Feature | Adds | Why you'd enable it |
+| Feature | Adds | Purpose |
 | --- | --- | --- |
-| `napi` | napi, napi-derive, serde_json | building the NAPI/npm boundary |
-| `serde` | serde, serde_json | `Serialize`/`Deserialize` on the core value types, `toon::list()` |
+| `serde` | `serde`, `serde_json` | Enables `Serialize`/`Deserialize` on types and direct `toon::list()` generation. |
+| `schemars` | `schemars` | Derives `JsonSchema` on DTO types for automatic MCP `outputSchema` generation. |
+| `miette` | `miette` | Implements `miette::Diagnostic` for `DomainError` to render colorized CLI diagnostic cards. |
+| `napi` | `napi`, `napi-derive`, `serde_json` | Enables Node.js native addon compilation. |
 
-The default build (no features) is the one most consumers want: pure rendering, no runtime, no surprises in your dependency tree.
+The default build (`default = []`) has zero runtime dependencies beyond `thiserror`.
 
-## Docs
-
-- [`docs/00-overview.md`](docs/00-overview.md) — what this is and where it fits in the suite
-- [`docs/spec/`](docs/spec/README.md) — full API reference and the TOON grammar
-- [`PRINCIPLES.md`](PRINCIPLES.md) — what belongs in this crate and why, and how work here gets done
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — how it fits together today
-- [`docs/superpowers/specs/2026-07-03-michi-design.md`](docs/superpowers/specs/2026-07-03-michi-design.md) — the original design decisions
-
-## Development
+## Local Development
 
 ```bash
-just test    # rust + node tests
-just check   # fmt + clippy + deny + typos + markdown format check
-just bench   # divan benchmarks
+just check-all   # Run formatting, clippy, WASM check, rustdoc, and test suites
+just test        # Run Rust tests and Node.js NAPI tests
+just check-wasm  # Verify compilation on wasm32-unknown-unknown
+just bench       # Run Divan performance benchmarks
 ```
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full contributor guide, or [`CLAUDE.md`](CLAUDE.md) if you're an agent working in this repo.
 
 ## License
 

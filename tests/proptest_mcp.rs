@@ -10,12 +10,12 @@ fn audience_strategy() -> impl Strategy<Value = Audience> {
 
 fn content_block_strategy() -> impl Strategy<Value = ContentBlock> {
     ("[a-zA-Z0-9 ]{0,40}", proptest::collection::vec(audience_strategy(), 1..3))
-        .prop_map(|(text, audience)| ContentBlock { text, audience })
+        .prop_map(|(text, audience)| ContentBlock::new(text, audience))
 }
 
 fn call_tool_result_strategy() -> impl Strategy<Value = CallToolResult> {
     (proptest::collection::vec(content_block_strategy(), 1..3), any::<bool>())
-        .prop_map(|(content, is_error)| CallToolResult { content, is_error, structured_content: "{}".to_string() })
+        .prop_map(|(content, is_error)| CallToolResult::new(content, is_error, "{}"))
 }
 
 proptest! {
