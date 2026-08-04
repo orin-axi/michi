@@ -15,8 +15,10 @@ pub struct Truncated {
     pub original_len: usize,
     /// Whether truncation actually occurred.
     pub was_truncated: bool,
-    /// The truncation signal text alone (e.g. `"(N chars truncated — use
-    /// full=true)"`), separate from `content`. `None` when not truncated.
+    /// The truncation signal text that was actually embedded in `content`,
+    /// starting immediately after the kept characters (leading space stripped).
+    /// `None` when not truncated or when `max_chars` was so small that no
+    /// signal text fit.
     pub signal: Option<String>,
 }
 
@@ -67,12 +69,20 @@ pub fn truncate(content: &str, max_chars: usize, hint: &str) -> Truncated {
         result.truncate(cap_byte);
     }
 
-    Truncated {
-        content: result,
-        original_len: content.len(),
-        was_truncated: true,
-        signal: Some(suffix.trim_start().to_string()),
-    }
+    // Recompute signal based on what's actually in content after hard-cap
+    let signal = if result.len() > byte_end {
+        let signal_text = &result[byte_end..];
+        let trimmed = signal_text.trim_start();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    } else {
+        None
+    };
+
+    Truncated { content: result, original_len: content.len(), was_truncated: true, signal }
 }
 
 /// Truncate content for inline use (e.g. inside a TOON field).
@@ -162,6 +172,40 @@ mod tests {
         let t = truncate("hello", 100, "full=true");
         assert!(!t.was_truncated);
         assert_eq!(t.signal, None);
+    }
+
+    #[test]
+    fn signal_reflects_what_is_actually_in_content() {
+        // When max_chars is very small, the suffix (signal text) may not fit in content.
+        // signal must either be None (no room) or actually appear in content.
+        let long_content = "hello world this is some fairly long content for testing";
+        // Use a small max_chars — smaller than any reasonable suffix text
+        let result = truncate(long_content, 5, "full=true");
+        match result {
+            Truncated { content, signal: Some(ref sig), .. } => {
+                assert!(
+                    content.contains(sig.as_str()),
+                    "signal must appear in content\ncontent: {:?}\nsignal: {:?}",
+                    content,
+                    sig
+                );
+                assert!(
+                    content.chars().count() <= 5,
+                    "content exceeded max_chars=5, got {} chars: {:?}",
+                    content.chars().count(),
+                    content
+                );
+            }
+            Truncated { content, signal: None, .. } => {
+                // signal is None means there was no room for any signal text
+                assert!(
+                    content.chars().count() <= 5,
+                    "content exceeded max_chars=5, got {} chars: {:?}",
+                    content.chars().count(),
+                    content
+                );
+            }
+        }
     }
 
     fn assert_send_sync_static<T: Send + Sync + 'static>() {}
