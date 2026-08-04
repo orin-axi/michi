@@ -128,11 +128,15 @@ impl ToonOptions {
     /// contains a structural character, or [`ToonError::RowLengthMismatch`] if
     /// any row's length differs from `fields.len()`.
     pub fn validate(&self) -> Result<(), ToonError> {
-        if self.type_name.contains(['[', ']', '{', '}', '\n', '\r']) {
+        // type_name: all STRUCTURAL chars are invalid (brackets/braces/comma/newlines)
+        if self.type_name.chars().any(|c| escape::STRUCTURAL.contains(&c)) {
             return Err(ToonError::InvalidTypeName { name: self.type_name.clone() });
         }
         for field in &self.fields {
-            if field.contains([',', '{', '}', '\n', '\r']) {
+            // field names: comma and braces break the `{a,b,c}` header grammar;
+            // brackets (`[`, `]`) are also replaced by sanitize_header_token so
+            // we reject them here too for consistency with the sanitizer.
+            if field.chars().any(|c| escape::STRUCTURAL.contains(&c)) {
                 return Err(ToonError::InvalidFieldName { name: field.clone() });
             }
         }
@@ -197,8 +201,11 @@ fn json_value_to_toon_value(v: Option<&serde_json::Value>) -> Value {
 ///
 /// # Errors
 ///
-/// Returns [`ToonError::InvalidTypeName`] if an item fails to serialize or
-/// does not produce a JSON object.
+/// Returns [`ToonError::InvalidItem`] if an item fails to serialize or does
+/// not produce a JSON object (struct or map required). Returns
+/// [`ToonError::InvalidTypeName`] or [`ToonError::InvalidFieldName`] if
+/// `type_name` or a serialized field name contains a structural character
+/// (`[`, `]`, `{`, `}`, `,`, `\n`, `\r`).
 #[cfg(feature = "serde")]
 pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T]) -> Result<String, ToonError> {
     let type_name = type_name.into();
@@ -223,6 +230,7 @@ pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T]) -> R
         rows.push(fields.iter().map(|f| json_value_to_toon_value(obj.get(f))).collect());
     }
     let opts = ToonOptions { type_name, fields, rows, total_count: None, hints: Vec::new(), max_cell_len: 200 };
+    opts.validate()?;
     Ok(render_toon(&opts))
 }
 

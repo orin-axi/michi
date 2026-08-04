@@ -62,6 +62,12 @@ pub fn escape_value_quoted(v: &str) -> String {
     out
 }
 
+/// Characters that are structurally significant in TOON header positions and
+/// must not appear verbatim in type names, field names, or hints.
+///
+/// Shared with [`ToonOptions::validate()`] to keep the two in sync.
+pub(crate) const STRUCTURAL: &[char] = &['[', ']', '{', '}', ',', '\n', '\r'];
+
 /// Sanitize a TOON header token (type_name or field name) for safe embedding.
 ///
 /// Replaces `\n`, `\r`, and structural characters (`[`, `]`, `{`, `}`, `,`)
@@ -69,7 +75,6 @@ pub fn escape_value_quoted(v: &str) -> String {
 /// replacement is the only safe option that keeps output parseable.
 #[must_use]
 pub(crate) fn sanitize_header_token(s: &str) -> std::borrow::Cow<'_, str> {
-    const STRUCTURAL: &[char] = &['[', ']', '{', '}', ',', '\n', '\r'];
     if s.chars().any(|c| STRUCTURAL.contains(&c)) {
         std::borrow::Cow::Owned(s.chars().map(|c| if STRUCTURAL.contains(&c) { '_' } else { c }).collect())
     } else {
