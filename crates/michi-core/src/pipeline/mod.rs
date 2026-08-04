@@ -32,7 +32,11 @@ impl StepStatus {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PipelineStep {
-    /// Unique step identifier.
+    /// Step identifier.
+    ///
+    /// michi does not validate uniqueness — callers are responsible for ensuring
+    /// step IDs are distinct within a pipeline if they intend to reference steps
+    /// by ID. Duplicate IDs render without error but produce ambiguous output.
     pub id: String,
     /// Human-readable name.
     pub name: String,

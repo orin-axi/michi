@@ -71,6 +71,9 @@ impl From<i64> for Value {
 
 impl From<u64> for Value {
     fn from(n: u64) -> Self {
+        // Values > i64::MAX are clamped to i64::MAX — u64 cannot be represented
+        // losslessly in TOON's Int type. Callers with hashes or large counters
+        // that exceed i64::MAX should convert to a string value instead.
         #[allow(clippy::cast_possible_wrap)]
         Self::Int(n.try_into().unwrap_or(i64::MAX))
     }

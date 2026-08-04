@@ -180,6 +180,13 @@ impl From<&str> for IdempotencyKey {
 }
 
 /// Result of an idempotency check.
+///
+/// # Caller responsibility
+///
+/// Use [`AlreadyDone`] when an operation fully completed in a prior call.
+/// For operations that only partially completed (some steps succeeded, some
+/// failed), use `michi_core::idempotency::PartialSuccess` instead. michi
+/// does not enforce this distinction — the choice is the caller's responsibility.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum AlreadyDone {
