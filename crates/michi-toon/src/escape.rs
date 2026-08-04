@@ -62,6 +62,58 @@ pub fn escape_value_quoted(v: &str) -> String {
     out
 }
 
+/// Sanitize a TOON header token (type_name or field name) for safe embedding.
+///
+/// Replaces `\n`, `\r`, and structural characters (`[`, `]`, `{`, `}`, `,`)
+/// with `_`. Header positions have no escaping syntax in the TOON grammar —
+/// replacement is the only safe option that keeps output parseable.
+pub(crate) fn sanitize_header_token(s: &str) -> std::borrow::Cow<'_, str> {
+    const STRUCTURAL: &[char] = &['[', ']', '{', '}', ',', '\n', '\r'];
+    if s.chars().any(|c| STRUCTURAL.contains(&c)) {
+        std::borrow::Cow::Owned(s.chars().map(|c| if STRUCTURAL.contains(&c) { '_' } else { c }).collect())
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    }
+}
+
+/// Sanitize a TOON hint string. Hint positions have the same structural
+/// constraint as header tokens.
+pub(crate) use sanitize_header_token as sanitize_hint;
+
+#[cfg(test)]
+mod sanitize_tests {
+    use super::*;
+
+    #[test]
+    fn plain_token_is_borrowed() {
+        let result = sanitize_header_token("file_path");
+        assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(result, "file_path");
+    }
+
+    #[test]
+    fn newline_in_type_name_is_replaced() {
+        assert_eq!(sanitize_header_token("foo\nbar"), "foo_bar");
+    }
+
+    #[test]
+    fn carriage_return_is_replaced() {
+        assert_eq!(sanitize_header_token("foo\rbar"), "foo_bar");
+    }
+
+    #[test]
+    fn structural_chars_are_replaced() {
+        assert_eq!(sanitize_header_token("a[b]c"), "a_b_c");
+        assert_eq!(sanitize_header_token("a{b}c"), "a_b_c");
+        assert_eq!(sanitize_header_token("a,b"), "a_b");
+    }
+
+    #[test]
+    fn multiple_structural_chars() {
+        assert_eq!(sanitize_header_token("foo{bar},baz\n"), "foo_bar__baz_");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

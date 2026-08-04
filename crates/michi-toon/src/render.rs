@@ -1,7 +1,7 @@
 use compact_str::CompactString;
 use std::fmt::Write as _;
 
-use super::escape::escape_value;
+use super::escape::{escape_value, sanitize_header_token, sanitize_hint};
 
 /// A single cell value in a TOON row.
 #[derive(Debug, Clone, PartialEq)]
@@ -147,7 +147,7 @@ pub(crate) fn render(
     let mut out = String::with_capacity(capacity);
 
     // type_name[count]{field,field,...}:
-    out.push_str(type_name);
+    out.push_str(&sanitize_header_token(type_name));
     out.push('[');
     out.push_str(&row_count.to_string());
     out.push_str("]{");
@@ -155,7 +155,7 @@ pub(crate) fn render(
         if i > 0 {
             out.push(',');
         }
-        out.push_str(field);
+        out.push_str(&sanitize_header_token(field));
     }
     out.push_str("}:\n");
 
@@ -202,7 +202,7 @@ pub(crate) fn render(
         out.push_str("]:\n");
         for hint in hints {
             out.push_str("  ");
-            out.push_str(hint);
+            out.push_str(&sanitize_hint(hint));
             out.push('\n');
         }
     }
@@ -225,5 +225,30 @@ mod tests {
     fn from_i64() {
         let v: Value = 42i64.into();
         assert_eq!(v, Value::Int(42));
+    }
+
+    #[test]
+    fn type_name_with_newline_is_sanitized() {
+        let out = super::render("foo\nbar", &[], &[], None, &[], 200);
+        assert!(out.starts_with("foo_bar[0]{}:"), "got: {out}");
+    }
+
+    #[test]
+    fn field_with_comma_is_sanitized() {
+        let out = super::render("t", &["a,b".to_string()], &[vec![Value::from("v")]], None, &[], 200);
+        assert!(out.contains("{a_b}"), "got: {out}");
+    }
+
+    #[test]
+    fn hint_with_newline_is_sanitized() {
+        let out = super::render("t", &[], &[], None, &["line1\nline2".to_string()], 200);
+        // hint must not inject a raw newline into the output
+        let hint_section: String =
+            out.lines().skip_while(|l| !l.starts_with("help[")).skip(1).collect::<Vec<_>>().join("\n");
+        assert!(
+            !hint_section.contains('\n') || hint_section.lines().count() <= 1,
+            "hint newline must be replaced, hint section: {hint_section:?}"
+        );
+        assert!(out.contains("line1_line2"), "got: {out}");
     }
 }
