@@ -10,7 +10,12 @@ use crate::recovery::RecoveryHint;
 pub enum ErrorClass {
     /// The caller provided invalid input. Do not retry.
     User,
-    /// An internal or infrastructure failure. May be retryable.
+    /// A downstream or infrastructure failure that is not the caller's direct
+    /// error and is not expected to self-resolve without intervention. Note:
+    /// `RateLimited` falls here when `retryable: false` — the caller may have
+    /// contributed to the rate-limit condition, but at classification time the
+    /// error is not self-resolving. michi does not recommend automatic retry
+    /// for `Internal` errors.
     Internal,
     /// A transient failure expected to resolve without intervention.
     Transient,
@@ -78,6 +83,21 @@ impl ErrorCode {
     #[must_use]
     pub fn is_retryable_by_default(&self) -> bool {
         matches!(self, Self::RateLimited | Self::Unavailable | Self::Timeout | Self::ExternalFailure)
+    }
+
+    /// The default [`ErrorClass`] for this code, independent of `DomainError.retryable`.
+    ///
+    /// Infrastructure codes (`RateLimited`, `Unavailable`, `Timeout`,
+    /// `ExternalFailure`) return `Internal`; caller-fault codes return `User`.
+    /// Used by [`Error::class()`].
+    #[must_use]
+    pub fn default_class(&self) -> ErrorClass {
+        match self {
+            Self::InvalidInput | Self::NotFound | Self::Unauthorized | Self::Forbidden | Self::Conflict => {
+                ErrorClass::User
+            }
+            Self::RateLimited | Self::Unavailable | Self::Timeout | Self::ExternalFailure => ErrorClass::Internal,
+        }
     }
 }
 
@@ -231,7 +251,8 @@ impl Error {
     pub fn class(&self) -> ErrorClass {
         match self {
             Self::Domain(d) if d.retryable => ErrorClass::Transient,
-            Self::InvalidInput(_) | Self::NotFound(_) | Self::Domain(_) => ErrorClass::User,
+            Self::Domain(d) => d.code.default_class(),
+            Self::InvalidInput(_) | Self::NotFound(_) => ErrorClass::User,
         }
     }
 
@@ -267,5 +288,45 @@ mod tests {
     fn domain_error_renders_github_annotation() {
         let e = DomainError::new(ErrorCode::InvalidInput, "field 'name' is required");
         assert_eq!(e.render_github_annotation(), "::error title=invalid_input::field 'name' is required");
+    }
+
+    #[test]
+    fn unavailable_with_retryable_false_is_internal_not_user() {
+        let err = Error::Domain(DomainError::new(ErrorCode::Unavailable, "down").retryable(false));
+        assert_eq!(err.class(), ErrorClass::Internal, "infra error with retryable=false must be Internal, not User");
+    }
+
+    #[test]
+    fn invalid_input_is_user() {
+        let err = Error::Domain(DomainError::new(ErrorCode::InvalidInput, "bad input"));
+        assert_eq!(err.class(), ErrorClass::User);
+    }
+
+    #[test]
+    fn rate_limited_retryable_true_is_transient() {
+        // Default: RateLimited is retryable by default
+        let err = Error::Domain(DomainError::new(ErrorCode::RateLimited, "429"));
+        assert_eq!(err.class(), ErrorClass::Transient);
+    }
+
+    #[test]
+    fn default_class_for_all_codes() {
+        use ErrorCode::*;
+        assert_eq!(InvalidInput.default_class(), ErrorClass::User);
+        assert_eq!(NotFound.default_class(), ErrorClass::User);
+        assert_eq!(Unauthorized.default_class(), ErrorClass::User);
+        assert_eq!(Forbidden.default_class(), ErrorClass::User);
+        assert_eq!(Conflict.default_class(), ErrorClass::User);
+        assert_eq!(RateLimited.default_class(), ErrorClass::Internal);
+        assert_eq!(Unavailable.default_class(), ErrorClass::Internal);
+        assert_eq!(Timeout.default_class(), ErrorClass::Internal);
+        assert_eq!(ExternalFailure.default_class(), ErrorClass::Internal);
+    }
+
+    #[test]
+    fn internal_class_is_not_retryable() {
+        // Internal is not Transient, so is_retryable() must return false
+        let err = Error::Domain(DomainError::new(ErrorCode::Unavailable, "down").retryable(false));
+        assert!(!err.is_retryable(), "Internal-classified error must not be retryable");
     }
 }
