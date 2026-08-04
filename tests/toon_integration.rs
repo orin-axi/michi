@@ -156,8 +156,7 @@ fn list_builds_toon_options_from_serializable_struct_slice() {
     }
 
     let issues = vec![Issue { number: 51815, title: "[Bug]: Telegram plugin".to_string(), state: "open".to_string() }];
-    let opts = michi::toon::list("issues", &issues);
-    let out = michi::toon::render_toon(&opts);
+    let out = michi::toon::list("issues", &issues).expect("list failed");
     assert!(out.starts_with("issues[1]{number,title,state}:\n"), "got: {out}");
     assert!(out.contains("51815,[Bug]: Telegram plugin,open"), "got: {out}");
 }
@@ -170,9 +169,10 @@ fn list_handles_empty_slice() {
         x: i32,
     }
     let items: Vec<Empty> = vec![];
-    let opts = michi::toon::list("nothing", &items);
-    assert_eq!(opts.fields.len(), 0);
-    assert_eq!(opts.rows.len(), 0);
+    let out = michi::toon::list("nothing", &items).expect("list failed");
+    // Empty slice: header with 0 rows, no data lines
+    assert!(out.starts_with("nothing[0]"), "got: {out}");
+    assert!(!out.contains('\n') || out.lines().count() <= 1, "got: {out}");
 }
 
 #[test]
@@ -184,6 +184,8 @@ fn list_stringifies_nested_values_losslessly() {
         tags: Vec<String>,
     }
     let items = vec![WithNested { id: 1, tags: vec!["a".to_string(), "b".to_string()] }];
-    let opts = michi::toon::list("t", &items);
-    assert_eq!(opts.rows[0][1], michi::toon::Value::Str(r#"["a","b"]"#.into()));
+    let out = michi::toon::list("t", &items).expect("list failed");
+    // Nested array is stringified then quoted (commas inside require quoting).
+    // Expected cell: "[\"a\",\"b\"]"
+    assert!(out.contains(r#""[\"a\",\"b\"]""#), "nested value must be stringified and quoted, got: {out}");
 }
