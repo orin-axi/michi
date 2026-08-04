@@ -13,6 +13,8 @@ pub mod empty;
 pub mod error;
 /// Contextual usage hints (`help[]`).
 pub mod hints;
+/// Idempotency: partial-success state for multi-step operations.
+pub mod idempotency;
 /// Key-value single-item rendering (`key: value`).
 pub mod kv;
 /// MCP `CallToolResult` mapping.
@@ -32,6 +34,7 @@ pub use audience::Audience;
 pub use empty::{empty_state, empty_state_with_hints};
 pub use error::{DomainError, Error, ErrorClass, ErrorCode, Sensitive};
 pub use hints::{append_hints, render_hints, Hint};
+pub use idempotency::{FailedOp, PartialSuccess};
 pub use kv::{render_kv, KvItem, KvValue};
 pub use mcp::{CallToolResult, ContentBlock};
 pub use recovery::{append_recovery, render_recovery, RecoveryHint};
