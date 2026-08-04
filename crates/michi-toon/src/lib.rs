@@ -37,6 +37,16 @@ pub enum ToonError {
         /// Actual number of values in the row.
         actual: usize,
     },
+    /// An item in [`list()`] could not be rendered as a TOON row.
+    ///
+    /// Items must serialize to a JSON object (`serde_json::Value::Object`).
+    /// Scalars, arrays, and `null` values cannot be represented as TOON rows.
+    InvalidItem {
+        /// Zero-based index of the invalid item.
+        row_index: usize,
+        /// Reason why the item is invalid.
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for ToonError {
@@ -50,6 +60,9 @@ impl std::fmt::Display for ToonError {
             }
             Self::RowLengthMismatch { row_index, expected, actual } => {
                 write!(f, "row {row_index} has {actual} values but {expected} fields declared")
+            }
+            Self::InvalidItem { row_index, reason } => {
+                write!(f, "item at index {row_index} cannot be rendered as a TOON row: {reason}")
             }
         }
     }
@@ -197,18 +210,14 @@ pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T]) -> R
     for (row_index, item) in items.iter().enumerate() {
         let obj = match serde_json::to_value(item) {
             Ok(serde_json::Value::Object(map)) => map,
-            Ok(other) => {
-                return Err(ToonError::InvalidTypeName {
-                    name: format!(
-                        "{type_name}: item at index {row_index} is not a JSON object (got {})",
-                        other.to_string()
-                    ),
+            Ok(_) => {
+                return Err(ToonError::InvalidItem {
+                    row_index,
+                    reason: "item is not a JSON object (struct or map required)".into(),
                 });
             }
             Err(e) => {
-                return Err(ToonError::InvalidTypeName {
-                    name: format!("{type_name}: item at index {row_index} failed to serialize: {e}"),
-                });
+                return Err(ToonError::InvalidItem { row_index, reason: e.to_string() });
             }
         };
         if fields.is_empty() && !obj.is_empty() {
@@ -297,6 +306,9 @@ mod list_tests {
     #[test]
     fn list_rejects_non_object_items() {
         let result = list("t", &[1u32, 2, 3]);
-        assert!(result.is_err(), "non-object items must return Err, got: {result:?}");
+        assert!(
+            matches!(result, Err(ToonError::InvalidItem { row_index: 0, .. })),
+            "non-object items must return Err(InvalidItem), got: {result:?}"
+        );
     }
 }
