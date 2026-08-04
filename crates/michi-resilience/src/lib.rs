@@ -323,8 +323,180 @@ mod tests {
     }
 
     #[test]
+    fn second_retry_doubles() {
+        let config = RetryConfig { jitter_factor: 0.0, ..Default::default() };
+        let delay = next_retry_delay(&config, 1, 0.0, None).unwrap();
+        assert_eq!(delay, config.base_delay * 2);
+    }
+
+    #[test]
+    fn delay_is_capped_at_max() {
+        let config = RetryConfig {
+            base_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(5),
+            jitter_factor: 0.0,
+            max_retries: 10,
+        };
+        let delay = next_retry_delay(&config, 5, 0.0, None).unwrap();
+        assert_eq!(delay, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn beyond_max_retries_returns_none() {
+        let config = RetryConfig::default();
+        assert!(next_retry_delay(&config, 3, 0.0, None).is_none());
+    }
+
+    #[test]
+    fn jitter_increases_delay() {
+        let config = RetryConfig {
+            jitter_factor: 1.0,
+            base_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(30),
+            max_retries: 3,
+        };
+        let no_jitter = next_retry_delay(&RetryConfig { jitter_factor: 0.0, ..config.clone() }, 0, 0.0, None).unwrap();
+        let with_jitter = next_retry_delay(&config, 0, 1.0, None).unwrap();
+        assert!(with_jitter > no_jitter, "jitter seed 1.0 should produce longer delay");
+    }
+
+    #[test]
+    fn jitter_never_exceeds_max_delay_when_base_already_capped() {
+        let config = RetryConfig {
+            base_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(5),
+            jitter_factor: 1.0,
+            max_retries: 10,
+        };
+        let delay = next_retry_delay(&config, 5, 1.0, None).unwrap();
+        assert!(delay <= config.max_delay, "delay {delay:?} exceeded max_delay {:?}", config.max_delay);
+    }
+
+    #[test]
+    fn extreme_duration_saturates_instead_of_wrapping() {
+        let huge = Duration::from_secs(18_446_744_073_709_552);
+        let config = RetryConfig { base_delay: huge, max_delay: huge, jitter_factor: 0.0, max_retries: 10 };
+        let delay = next_retry_delay(&config, 0, 0.0, None).unwrap();
+        assert!(delay.as_millis() > 1_000_000_000_000, "delay {delay:?} wrapped to a tiny value");
+    }
+
+    #[test]
+    fn retry_after_wins_when_larger_than_backoff() {
+        let config = RetryConfig { jitter_factor: 0.0, ..Default::default() };
+        let delay = next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(5))).unwrap();
+        assert_eq!(delay, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn backoff_wins_when_larger_than_retry_after() {
+        let config = RetryConfig { jitter_factor: 0.0, base_delay: Duration::from_secs(10), ..Default::default() };
+        let delay = next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(1))).unwrap();
+        assert_eq!(delay, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn retry_after_still_capped_at_max_delay() {
+        let config = RetryConfig { jitter_factor: 0.0, max_delay: Duration::from_secs(5), ..Default::default() };
+        let delay = next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(999))).unwrap();
+        assert_eq!(delay, Duration::from_secs(5), "retry_after must not bypass max_delay");
+    }
+
+    #[test]
+    fn retry_after_wins_over_backoff_with_jitter_applied() {
+        let config = RetryConfig { jitter_factor: 1.0, base_delay: Duration::from_secs(1), ..Default::default() };
+        let delay = next_retry_delay(&config, 0, 1.0, Some(Duration::from_secs(5))).unwrap();
+        assert_eq!(delay, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn jittered_backoff_wins_over_smaller_retry_after() {
+        let config = RetryConfig { jitter_factor: 1.0, base_delay: Duration::from_secs(1), ..Default::default() };
+        let delay = next_retry_delay(&config, 0, 1.0, Some(Duration::from_millis(500))).unwrap();
+        assert_eq!(delay, Duration::from_secs(2));
+    }
+
+    #[test]
     fn parse_retry_after_seconds() {
         assert_eq!(parse_retry_after("60"), Some(Duration::from_secs(60)));
+        assert_eq!(parse_retry_after("  120  "), Some(Duration::from_secs(120)));
+    }
+
+    #[test]
+    fn parse_retry_after_date_in_past_clamps_to_zero() {
+        assert_eq!(parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT"), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn http_date_in_future_parses_relative_to_now() {
+        // now = 2026-01-01T00:00:00Z, header = 2026-01-01T00:01:00Z -> 60s
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(1_767_225_600);
+        let delay = parse_retry_after_at("Thu, 01 Jan 2026 00:01:00 GMT", now);
+        assert_eq!(delay, Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn http_date_in_past_clamps_to_zero() {
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(1_767_225_600);
+        let delay = parse_retry_after_at("Wed, 31 Dec 2025 00:00:00 GMT", now);
+        assert_eq!(delay, Some(Duration::ZERO), "past dates clamp to zero, per spec's clock-skew note");
+    }
+
+    #[test]
+    fn malformed_http_date_returns_none() {
+        let now = std::time::SystemTime::UNIX_EPOCH;
+        assert_eq!(parse_retry_after_at("not a date", now), None);
+        assert_eq!(parse_retry_after_at("Wed, 32 Foo 2026 00:00:00 GMT", now), None);
+    }
+
+    #[test]
+    fn http_date_with_day_out_of_range_returns_none() {
+        let now = std::time::SystemTime::UNIX_EPOCH;
+        assert_eq!(parse_retry_after_at("Thu, 32 Jan 2026 00:00:00 GMT", now), None);
+        assert_eq!(parse_retry_after_at("Thu, 00 Jan 2026 00:00:00 GMT", now), None);
+    }
+
+    #[test]
+    fn http_date_with_time_out_of_range_returns_none() {
+        let now = std::time::SystemTime::UNIX_EPOCH;
+        assert_eq!(parse_retry_after_at("Thu, 01 Jan 2026 24:00:00 GMT", now), None);
+        assert_eq!(parse_retry_after_at("Thu, 01 Jan 2026 00:60:00 GMT", now), None);
+        assert_eq!(parse_retry_after_at("Thu, 01 Jan 2026 00:00:61 GMT", now), None);
+        assert_eq!(parse_retry_after_at("Thu, 01 Jan 2026 00:00:00:00 GMT", now), None);
+    }
+
+    #[test]
+    fn http_date_with_absurd_year_returns_none_instead_of_panicking() {
+        let now = std::time::SystemTime::UNIX_EPOCH;
+        assert_eq!(parse_retry_after_at("Wed, 21 Oct 999999999999999999 07:28:00 GMT", now), None);
+    }
+
+    #[test]
+    fn public_parse_retry_after_still_handles_seconds() {
+        assert_eq!(parse_retry_after("60"), Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn retryable_status_codes() {
+        assert!(is_retryable_status(429));
+        assert!(is_retryable_status(503));
+        assert!(!is_retryable_status(404));
+        assert!(!is_retryable_status(400));
+    }
+
+    #[test]
+    fn non_retryable_status_codes() {
+        assert!(!is_retryable_status(200));
+        assert!(!is_retryable_status(201));
+        assert!(!is_retryable_status(301));
+        assert!(!is_retryable_status(401));
+    }
+
+    #[test]
+    fn http_500_is_not_retryable() {
+        assert!(
+            !is_retryable_status(500),
+            "500 is a server bug — retrying reproduces it and risks duplicate side effects on writes"
+        );
     }
 
     #[test]
