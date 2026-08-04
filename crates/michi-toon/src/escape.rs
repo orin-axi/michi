@@ -67,6 +67,7 @@ pub fn escape_value_quoted(v: &str) -> String {
 /// Replaces `\n`, `\r`, and structural characters (`[`, `]`, `{`, `}`, `,`)
 /// with `_`. Header positions have no escaping syntax in the TOON grammar —
 /// replacement is the only safe option that keeps output parseable.
+#[must_use]
 pub(crate) fn sanitize_header_token(s: &str) -> std::borrow::Cow<'_, str> {
     const STRUCTURAL: &[char] = &['[', ']', '{', '}', ',', '\n', '\r'];
     if s.chars().any(|c| STRUCTURAL.contains(&c)) {
