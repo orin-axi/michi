@@ -1,0 +1,1 @@
+We should cleanup our docs, setup an ADR process similar to what we have for oxc-react-docgen and ensure we are thinking through our GH planning
