@@ -1,0 +1,1 @@
+How do we want to publish the crate names? what are the best practices for the GH org in crates vs NPM packages? How should we setup our API keys for safety?
