@@ -1,0 +1,15 @@
+<task-notification>
+<task-id>aa384dffbb360c717</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/aa384dffbb360c717.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix resilience module: add jitter test, note manual Default" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both edits applied cleanly:
+
+- Added the `// Manually implemented because...` comment above `impl Default for RetryConfig` at line 24.
+- Added the `jitter_increases_delay` test as the 9th test in the `#[cfg(test)]` block.
+
+All 64 tests pass, clippy is clean. Commit SHA: `2a663c3`.</result>
+<usage><subagent_tokens>16162</subagent_tokens><tool_uses>6</tool_uses><duration_ms>34868</duration_ms></usage>
+</task-notification>
