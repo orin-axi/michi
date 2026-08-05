@@ -1,0 +1,3 @@
+Let's consider that we want to be heavily focused on goal and outcome and continue to apply the patterns and learnings from the superpowers plugin along with guidance from anthropic and google on writing good agets, skills, workflows and references.
+
+We want to avoid being too prescriptice and lean on letting the agents think. We want to leverage the best tools for the job vs brute forcing things via the context window
