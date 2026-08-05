@@ -1,0 +1,1 @@
+Any improvements we can make to the readme and arch? make it prettier? use appropriate mermaid?
