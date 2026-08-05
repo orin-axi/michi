@@ -1,0 +1,1 @@
+Can you re-do an evaluation of https://axi.md and the MCP v2 spec. Investigate it thoroughly and check it against our goal of providing a high-performance set of tools that have inherit great DX and allow for us to build CLIs and MCPs to optimum agent performance
