@@ -1,0 +1,136 @@
+<task-notification>
+<task-id>a2516c1972bf029f8</task-id>
+<tool-use-id>toolu_017tt8W9VnmrMMrZBo6WYkfs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a2516c1972bf029f8.output</output-file>
+<status>completed</status>
+<summary>Agent "Research oxlint type-aware linting setup" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have sufficient data from all sources. Let me synthesize the final report.
+
+---
+
+## oxlint Type-Aware Linting: Current State (July 2026)
+
+### 1. Status: Alpha, powered by tsgolint (not tsserver)
+
+Type-aware linting in oxlint is **alpha** as of December 2025. The underlying technology is **tsgolint** — a Go binary that runs the TypeScript 7 Go port (`typescript-go` / tsgo) to build TypeScript programs and execute type-aware rules. It is NOT tsserver and NOT oxlint's own type inference.
+
+- oxlint v1.0 (stable, no type-aware) shipped June 2025
+- Technical preview: August 2025
+- Alpha (with rule config, inline disables, `--fix`): December 2025
+- Current rule coverage: **59 out of 61** typescript-eslint type-aware rules
+- Performance: ~10–20x faster than `eslint` + `typescript-eslint`
+- Known limitation: memory pressure on very large monorepos; not a problem for a single-package repo like `michi-node`
+
+**Required extra package:**
+```bash
+npm add -D oxlint-tsgolint@latest
+```
+
+Sources: [Type-Aware Alpha blog](https://oxc.rs/blog/2025-12-08-type-aware-alpha), [VoidZero announcement](https://voidzero.dev/posts/announcing-oxlint-type-aware-linting-alpha), [tsgolint GitHub](https://github.com/oxc-project/tsgolint)
+
+---
+
+### 2. CLI flags — what to use
+
+| Flag | Purpose |
+|---|---|
+| `--type-aware` | Enable type-aware lint rules (the main switch) |
+| `--type-check` | Emit TypeScript compiler diagnostics alongside lint (experimental — can replace `tsc --noEmit`) |
+| `--tsconfig &lt;path&gt;` | Override tsconfig for **import resolution only** — NOT for type-aware; tsgolint auto-discovers tsconfig |
+
+The docs explicitly warn: **do not rely on `--tsconfig` for type-aware linting** — tsgolint walks up the directory tree to find `tsconfig.json` automatically, and `--tsconfig` does not affect it.
+
+---
+
+### 3. .mjs file support — the critical question
+
+Oxlint lists `.mjs` as a lintable extension (for standard rules). For type-aware rules via tsgolint, the docs use TypeScript file examples exclusively and **do not explicitly document .mjs support**.
+
+The practical answer, based on how it works:
+
+- tsgolint builds a TypeScript program using `typescript-go`. That program's scope is determined by your `tsconfig.json`.
+- If your `tsconfig.json` has `"allowJs": true` and the `include` array covers `__test__/**/*.mjs`, then the `.mjs` file will be in the TypeScript program and tsgolint will apply type-aware rules to it.
+- Without `allowJs: true`, the `.mjs` file is **not part of the TypeScript program** and gets no type-aware rules.
+
+**You do not need to convert `index.test.mjs` to `.ts`** — but you do need `allowJs: true` in tsconfig.
+
+---
+
+### 4. Minimal `tsconfig.json` for `packages/michi-node/`
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "noEmit": true
+  },
+  "include": [
+    "__test__/**/*",
+    "index.d.ts"
+  ]
+}
+```
+
+Key decisions:
+- `allowJs: true` — lets tsgolint (and tsc) include the `.mjs` test file
+- `checkJs: true` — makes `tsc --noEmit` actually type-check the JS file (otherwise it's parse-only)
+- `module: "NodeNext"` + `moduleResolution: "NodeNext"` — correct for Node.js 18+ ESM
+- `include` covers only the test file and the generated `.d.ts`, not `index.js` (the binary loader, which is boilerplate)
+- No `baseUrl` — removed in TypeScript 7; tsgolint requires TypeScript 7+ compatibility
+- TypeScript 7 (tsgo) is what tsgolint uses internally; your installed `typescript` dev dep should be 7.x for consistency
+
+---
+
+### 5. Should you use `--type-check` or keep a separate `tsc --noEmit`?
+
+**Recommendation: keep both, with oxlint handling rules and tsc handling diagnostics.**
+
+`--type-check` (which makes oxlint emit tsc diagnostics) is still experimental. For a NAPI package where type correctness matters, use a separate `tsc --noEmit` until `--type-check` exits alpha. The two are complementary:
+
+- `oxlint --type-aware` catches semantic issues (unhandled promises, unsafe member access, deprecated APIs) fast
+- `tsc --noEmit` is the authoritative type-correctness check
+
+This is the current community consensus — oxlint for speed + tsc for correctness. Blog posts and the oxlint docs both frame `--type-check` as a future replacement, not a current one.
+
+---
+
+### 6. Recommended `package.json` scripts
+
+```json
+{
+  "scripts": {
+    "lint": "oxlint --type-aware .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck &amp;&amp; npm run lint"
+  }
+}
+```
+
+If you want to try the experimental combined mode:
+```json
+{
+  "lint": "oxlint --type-aware --type-check ."
+}
+```
+But `--type-check` is explicitly labeled experimental, so keep `tsc --noEmit` in CI until it stabilizes.
+
+---
+
+### Summary
+
+| Question | Answer |
+|---|---|
+| Type inference source | typescript-go (tsgo) via tsgolint binary — NOT tsserver, NOT oxlint's own |
+| Flag to enable | `--type-aware` (not `--tsconfig`) |
+| .mjs support | Yes, via `allowJs: true` in tsconfig — no need to convert to .ts |
+| tsconfig needed? | Yes, with `allowJs`, `checkJs`, `NodeNext` module, scoped `include` |
+| Production-ready? | Alpha (December 2025) — stable for small repos, known memory issues at scale |
+| Best practice combo | `oxlint --type-aware` + `tsc --noEmit` as separate scripts |</result>
+<usage><subagent_tokens>26319</subagent_tokens><tool_uses>20</tool_uses><duration_ms>157351</duration_ms></usage>
+</task-notification>
