@@ -1,0 +1,26 @@
+<task-notification>
+<task-id>a3deef819e65eb8f5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/3bb5bd40-bcf1-44f3-afc5-3b8ba770a7d6/tasks/a3deef819e65eb8f5.output</output-file>
+<status>completed</status>
+<summary>Agent "Assess rtk for michi-benefit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>No hits — confirms those aren't tree/graph-shaped either.
+
+**Answer: rtk does no tree/graph-aware truncation anywhere. Truncation is uniformly flat (count or byte cutting), never depth/importance-based, and in the one place a real tree exists, rtk avoids truncating it at all.**
+
+Evidence:
+
+- `src/cmds/system/tree.rs:65-94` (`filter_tree_output`) — the only real hierarchical renderer. It applies **zero count/byte truncation**: it strips only the trailing summary line (`"N directories, M files"`) and blank lines, and passes every `├──`/`│`/`└──` line through unchanged (asserted directly by `test_filter_preserves_structure`, lines 110-119). Exclusion of `node_modules`/`.git`/`target`/etc. (line 30-33, via `NOISE_DIRS`) is a **name-based** filter delegated to the native `tree -I` flag — not rtk pruning by depth or importance.
+
+- `src/cmds/js/pnpm_cmd.rs:100-122` (`collect_dependencies`) — recurses into the real dependency tree (`pkg.dependencies`/`pkg.dev_dependencies`) but **flattens it into `Vec&lt;Dependency&gt;`**, discarding parent/child edges — only name/version/dev-flag survive, no depth field. `--depth=N` (line 370) is a raw pass-through of the user's flag to `pnpm` itself, not an rtk-side pruning strategy. Tier-2 text fallback (lines 145-152) explicitly **skips** box-drawing chars (`│├└`) rather than preserving them.
+
+- `src/cmds/system/find_cmd.rs:130-132,224-225,468-472` — `-maxdepth` is passed straight to `walkdir`'s builder; the separate `max_results` count cap is explicitly noted as "unchanged by -maxdepth" (line 472) — the flat cap is structure-blind.
+
+- `src/cmds/js/npm_cmd.rs:9-19` — `"list"`/`"ls"` appear only in a routing table (to skip injecting `"run"`); npm's own tree output isn't filtered at all.
+
+- `src/cmds/rust/cargo_cmd.rs` — no `tree` subcommand recognized in the Cargo sub-enum at all; `cargo tree` isn't handled.
+
+Plain answer: rtk has no depth-limiting-by-importance, no subtree collapsing, and no structure-aware node selection anywhere. The one genuinely hierarchical output (`tree`) is truncation-exempt by omission, not by design choice to preserve structure under a cap — there's simply no cap wired in.</result>
+<usage><subagent_tokens>80147</subagent_tokens><tool_uses>9</tool_uses><duration_ms>64897</duration_ms></usage>
+</task-notification>
