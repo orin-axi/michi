@@ -1,0 +1,1 @@
+I don't mean pre-scafolding, I mean on what to split into a crate. I agree, we create crates when we'll write the code
