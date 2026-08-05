@@ -1,0 +1,1 @@
+Do we adjust the shape of the repo? How do other JS/TS + Rust repos do this? We might want to use just and pnpm right? Just build can do both the rust and TS?
