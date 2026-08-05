@@ -1,0 +1,1 @@
+Check on impl-task4 subagent for the michi spec-parity plan Task 4 (ToonOptions.hints Vec<String> -> Vec<Hint>). If DONE, dispatch spec-compliance reviewer then code-quality reviewer for Task 4 in the worktree at /Users/gabe/Projects/michi/.worktrees/spec-parity, then continue through remaining tasks in docs/superpowers/plans/2026-07-08-spec-parity.md.
