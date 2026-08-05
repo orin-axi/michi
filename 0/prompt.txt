@@ -1,0 +1,1 @@
+If we take this learnings and generalize them for agents/skills in a plugin how should we do this? Is this a new workflow? Is it bug hunting? Both? How do we prevent errors in research, spec writing, planning and implementing? Not just catch issues after the fact?
