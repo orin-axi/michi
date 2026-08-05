@@ -1,0 +1,96 @@
+<task-notification>
+<task-id>a73c0108ce8790537</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a73c0108ce8790537.output</output-file>
+<status>completed</status>
+<summary>Agent "Code quality review Task 1: Repo scaffold" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have everything I need. Here is my review.
+
+---
+
+## Strengths
+
+- **Cargo.toml structure is correct.** Workspace + lib combined file pattern is idiomatic. Resolver 2 is set. `[workspace.package]` inheritance is used properly throughout the root `[package]` section.
+- **Feature flag taxonomy matches the spec exactly.** All seven features present (`pipeline`, `fuzzy`, `cache`, `cli`, `mcp`, `napi`, `full`). Dependency chains are correct: `fuzzy` implies `pipeline`, `cache` implies `pipeline`, `cli` implies `pipeline`. `full` correctly excludes `napi` (that is a cdylib concern, not a library feature).
+- **`dep:` prefix used correctly on every optional dependency.** No legacy implicit-activation footguns.
+- **napi@3 and divan (not criterion) match the plan.** Both `napi`/`napi-derive` at `version = "3"` and `divan = "0.1"` are correct.
+- **`rust-version = "1.96"` set in `[workspace.package]` and inherited by root crate.** `[profile.bench]` inherits release and enables debug info — correct for divan.
+- **Benchmarks have `harness = false`** — required for divan/criterion-style benches.
+- **Config files all present and coherent.** `.clippy.toml` sets MSRV, `.rustfmt.toml` uses `Max` heuristics at 120 columns, `.typos.toml` excludes snapshots and lock file.
+- **CLAUDE.md is agent-ready.** Commands, non-negotiables, architecture overview, and module guide are all present.
+- **Workspace compiles clean.** `cargo check --workspace` and `cargo check --workspace --all-features` both succeed.
+- **justfile is complete.** Covers build, test (rust + node separately), lint pipeline (`fmt-check clippy deny typos`), snapshots, bench, coverage, and a `ci` target.
+
+---
+
+## Issues
+
+### Critical (Must Fix)
+
+None. The workspace compiles and the feature graph is sound.
+
+---
+
+### Important (Should Fix)
+
+**1. `atty` 0.2 is unmaintained and has a known soundness advisory (RUSTSEC-2021-0145)**
+
+`atty` calls `libc::isatty()` with a potentially invalid (negative) fd on Windows, which is undefined behavior. The crate has been abandoned since 2021. At MSRV 1.96, `std::io::IsTerminal` (stabilized in 1.70) is available with zero dependencies — `atty` is fully replaceable:
+
+```toml
+# Remove from Cargo.toml
+atty = { version = "0.2", optional = true }
+
+# Replace in cli feature with nothing — use std::io::IsTerminal directly
+cli = ["dep:indicatif", "dep:inquire", "dep:crossterm", "dep:ctrlc", "pipeline"]
+```
+
+The plan spec includes `atty`, but this is a plan defect. `cargo deny` (Task 19) will flag this as a RUSTSEC advisory and fail CI.
+
+**2. `michi-node/Cargo.toml` missing `publish = false`**
+
+The placeholder has no publish guard. `cargo publish -p michi-node` (or an accidental workspace publish) would attempt to publish an empty stub. This needs a safety guard now, before anyone runs publish commands:
+
+```toml
+# packages/michi-node/Cargo.toml
+[package]
+name    = "michi-node"
+version = "0.1.0"
+publish = false            # ← add this
+edition.workspace = true
+```
+
+**3. `napi-build` optional build-dep in root is unreachable**
+
+`napi-build = { version = "2", optional = true }` sits in the root `[build-dependencies]`, but the `napi` feature only activates `dep:napi` and `dep:napi-derive` — it does **not** include `dep:napi-build`. This means `napi-build` has no activation path from any feature and will never be compiled. Additionally, `build.rs` is `fn main() {}`, so even if activated it would do nothing. The plan correctly notes that `napi-build` belongs in `packages/michi-node/build.rs` (Task 17). The root entry is dead weight that will confuse future maintainers. Remove it from the root Cargo.toml and add it in Task 17.
+
+---
+
+### Minor (Nice to Have)
+
+**4. `rust-toolchain.toml` doesn't pin a channel version**
+
+`channel = "stable"` floats to the current stable. The MSRV is 1.96 but the toolchain could be 1.99 or 2.0 on a different machine. Low risk (the `rust-version` guard catches genuine incompatibilities) but a pinned channel like `channel = "1.96"` or a specific recent stable gives reproducible CI toolchain installs. Per-spec but worth revisiting.
+
+**5. `michi-node/Cargo.toml` doesn't inherit workspace metadata**
+
+The placeholder omits `rust-version.workspace`, `license.workspace`, `repository.workspace`, `authors.workspace`. These are free to add now and prevent inconsistent metadata if someone runs `cargo metadata`. They'll be needed in Task 17 anyway.
+
+**6. CLAUDE.md omits `telemetry` from the module guide**
+
+The plan's file map (line 70) includes `src/telemetry/mod.rs` as a Task 14 target, but the module guide table in CLAUDE.md stops at `pipeline`. A future agent implementing Task 14 won't see `telemetry` in the guide.
+
+**7. `.typos.toml` lost the instructional comment**
+
+The plan's spec included `# Add known false-positives here` inside `extend-ignore-identifiers-re`. The empty array without comment is fine functionally but loses the intent for the first contributor who adds a false positive.
+
+---
+
+## Assessment
+
+**Ready to merge?** Yes, with fixes
+
+**Reasoning:** The scaffold is structurally correct and compiles cleanly — feature flags, dep prefixes, toolchain, and justfile are all per-spec. The two Important issues (`atty` and missing `publish = false` on michi-node) should be addressed before the next task starts because `atty` will cause `cargo deny` to fail in Task 19 and a missing publish guard is a one-liner safety risk that only gets harder to remember later. The dead `napi-build` root entry is low-risk but should be cleaned up to avoid confusion in Task 17.</result>
+<usage><subagent_tokens>27766</subagent_tokens><tool_uses>30</tool_uses><duration_ms>171756</duration_ms></usage>
+</task-notification>
