@@ -1,0 +1,1 @@
+For truncation we definitely want to support flexible truncation or different mechanisms/heuristics to allow implementing apps (cli/mcp/etc) to use whatever is best for the given use-case or leverage our best practices even if they have to implement something novel
