@@ -1,0 +1,50 @@
+<task-notification>
+<task-id>ad2bd6ebb8b7f781c</task-id>
+<tool-use-id>toolu_015BqqT7F81svXSsHgkED5B7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/ad2bd6ebb8b7f781c.output</output-file>
+<status>completed</status>
+<summary>Agent "Task 20: Final verification pass for michi v0.1.0" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here is the full report:
+
+---
+
+**Check 1 — Full test suite:** PASS (96 tests, 6 suites)
+
+**Check 2 — All features compile:** PASS (clean, no errors)
+
+**Check 3 — Clippy with default features:** PASS (no issues)
+
+**Check 4 — Rustfmt check:** FAIL: formatting diffs in two bench files:
+- `/Users/gabe/Projects/michi/benches/kv_render.rs` line 7 — `let items: Vec&lt;KvItem&gt;` chain needs to be broken across multiple lines
+- `/Users/gabe/Projects/michi/benches/toon_render.rs` lines 11 and 34 — `vec![...]` inside `.map()` closure needs to be broken across multiple lines
+
+**Check 5 — Snapshot tests:** PASS (4 tests)
+
+**Check 6 — Benchmarks compile:** PASS (3 executables built)
+
+**Check 7 — Node tests (NAPI):** PASS (7 tests, 0 failures)
+
+**Check 8 — Git status clean:** FAIL: `?? docs/` — the `docs/` directory is untracked (not staged/committed). This is not a dirty working tree in the traditional sense (no modified tracked files), but `docs/` exists and is untracked.
+
+**Check 9 — Git log (25 commits):**
+```
+2a908d8 chore: add Cargo.lock and *.snap.new to .gitignore
+39022b6 ci: GitHub Actions workflow, deny.toml license policy, .gitignore
+31b2fcf feat(napi): NAPI v3 wrapper — renderToon, emptyState, renderHints, tr...
+d3d3fab test: insta snapshots + divan benchmarks
+365163f feat: finalize public API surface in lib.rs
+... (19 more commits back to initial scaffold)
+```
+
+---
+
+**Ready to tag v0.1.0: NO**
+
+Two things need resolution before tagging:
+
+1. **Rustfmt (Check 4)** — Run `cargo fmt --all` to fix the bench file formatting, then commit. The diffs are in `benches/kv_render.rs` and `benches/toon_render.rs`.
+
+2. **Untracked `docs/` directory (Check 8)** — Decide whether to commit `docs/` (it's referenced in `CLAUDE.md` for spec and design docs), add it to `.gitignore`, or leave it. If `docs/` is intentionally untracked that's acceptable, but it means the "git status clean" check technically fails.</result>
+<usage><subagent_tokens>15836</subagent_tokens><tool_uses>9</tool_uses><duration_ms>47657</duration_ms></usage>
+</task-notification>
