@@ -1,0 +1,1 @@
+What do we have a TS package for? Should this just be a crate or do we want to provide more of a interface for TS/JS CLIs and MCPs?
