@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>ad31a3b0287deded0</task-id>
+<tool-use-id>toolu_01QTCHN4eeopt8h1mx7xdQhp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/ad31a3b0287deded0.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Tasks 18-19: CI workflow and deny.toml/.gitignore" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE_WITH_CONCERNS
+
+**Files created/modified:**
+- `/Users/gabe/Projects/michi/.github/workflows/ci.yml` — 6-job CI workflow (lint, test, deny, coverage, bench-build, napi matrix)
+- `/Users/gabe/Projects/michi/deny.toml` — license policy allowing MIT/Apache/BSD/etc., denying AGPL deps
+- `/Users/gabe/Projects/michi/.gitignore` — replaced with spec content
+
+**Git commit:** `39022b6`
+
+**Concerns:**
+
+1. **`Cargo.lock` now untracked.** The old `.gitignore` explicitly excluded `Cargo.lock`; the new spec does not. `Cargo.lock` is now showing as an untracked file. For a library crate this is the correct convention (cargo recommends not committing it), but if the project wants to keep ignoring it, add `Cargo.lock` back to `.gitignore`.
+
+2. **`*.snap.new` dropped.** The old `.gitignore` had `*.snap.new` to prevent insta snapshot diff files from being accidentally staged. The new spec omits it. If `cargo insta review` is part of the workflow, consider adding `*.snap.new` back.</result>
+<usage><subagent_tokens>19639</subagent_tokens><tool_uses>11</tool_uses><duration_ms>93916</duration_ms></usage>
+</task-notification>
