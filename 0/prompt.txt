@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a177aa8eab69156b6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a177aa8eab69156b6.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 3: toon public API + tests" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+
+**Test results:** 7/7 passed
+
+**Files changed:**
+- `/Users/gabe/Projects/michi/src/toon/render.rs` — changed `Value` and `render` from `pub(crate)` to `pub`
+- `/Users/gabe/Projects/michi/src/toon/mod.rs` — replaced stub with full public API: `pub use render::Value`, `ToonOptions` struct with doc comments, `render_toon` function with doc comment
+- `/Users/gabe/Projects/michi/tests/toon_integration.rs` — created with all 7 integration tests
+
+**Git commit SHA:** `bef867c`
+
+No concerns. Clippy is clean, all tests pass on first run.</result>
+<usage><subagent_tokens>19125</subagent_tokens><tool_uses>13</tool_uses><duration_ms>55297</duration_ms></usage>
+</task-notification>
