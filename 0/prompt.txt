@@ -1,0 +1,1 @@
+Do we support smarter trancation mechanisms? What if we're trancating a graph? TOON, etc? Is that even a thing we can support?
