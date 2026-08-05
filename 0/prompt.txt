@@ -1,0 +1,1 @@
+Our git remote will be: git@github.com:orin-axi/michi.git FYI
