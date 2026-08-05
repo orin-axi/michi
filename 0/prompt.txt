@@ -1,0 +1,1 @@
+delta could have create commit, create pr, review pr, receive review, etc right?
