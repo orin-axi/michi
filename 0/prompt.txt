@@ -1,0 +1,3 @@
+Make sure we update the readme, arch, contributing, each plugin has a readme.
+
+Then commit and push
