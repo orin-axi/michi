@@ -1,0 +1,1 @@
+We could establish a pattern for the plugins that is geeky and nerdy. I also need a name for my MCP framework that will build on top of michi + the ts mcp sdk
