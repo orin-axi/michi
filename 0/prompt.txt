@@ -1,0 +1,7 @@
+Let's also consider these codebases as things that could benefit from michi-axi:
+
+https://github.com/rtk-ai/rtk
+https://github.com/headroomlabs-ai/headroom
+https://github.com/colbymchenry/codegraph
+
+We should cleanup any references to quarters and prefer milestones
