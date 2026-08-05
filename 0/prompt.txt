@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>a58cc1c223262aad1</task-id>
+<tool-use-id>toolu_01RZjk68q4oct4gQEV2mcj8w</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a58cc1c223262aad1.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 17: NAPI v3 wrapper for michi-node" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>---
+
+**Status:** DONE
+
+**Node tests:** All 7 passed (4 suites: `renderToon`, `emptyState`, `renderHints`, `truncate`).
+
+**Binary generated:** `packages/michi-node/index.darwin-arm64.node` (1.8 MB, dev profile)
+
+**Git commit SHA:** `31b2fcf`
+
+**Deviations from spec:**
+- Added `packages/michi-node/.gitignore` (not in spec) to exclude `node_modules/`, `*.node`, `index.js`, `index.d.ts` — these are generated artifacts that shouldn't be committed.
+- The `Vec&lt;Vec&lt;JsToonValue&gt;&gt;` troubleshooting hint in the spec turned out to be a non-issue — napi-rs v3 handled nested vectors without any problems.
+- `pnpm` was installed via `npm install -g pnpm` as specified in the environment notes.</result>
+<usage><subagent_tokens>23987</subagent_tokens><tool_uses>25</tool_uses><duration_ms>118453</duration_ms></usage>
+</task-notification>
