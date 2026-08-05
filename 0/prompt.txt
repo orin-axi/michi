@@ -1,0 +1,707 @@
+<task-notification>
+<task-id>a7c5b44a4176aa699</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/a7803a0d-e581-4a20-b81d-2d3d26a5761a/tasks/a7c5b44a4176aa699.output</output-file>
+<status>completed</status>
+<summary>Agent "Deep research: VS Code extension system, OpenAI plugin patterns, and LLM agent plugin ecosystems" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have enough material across all three areas. Let me compile the full structured report.
+
+---
+
+# Plugin Ecosystem Research Report
+
+## Part 1: VS Code Extension / Contribution Point System
+
+### How Contribution Points Are Declared
+
+Every VS Code extension carries a `package.json` manifest. The entire plugin contract lives in two top-level fields: `activationEvents` and `contributes`. Neither requires any separate file — the host reads manifests at startup without loading extension code.
+
+```json
+{
+  "name": "my-formatter",
+  "publisher": "acme",
+  "version": "1.2.0",
+  "engines": { "vscode": "^1.74.0" },
+  "activationEvents": [
+    "onLanguage:rust",
+    "onCommand:acme.myFormatter.format"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "acme.myFormatter.format",
+        "title": "Format Document",
+        "category": "ACME"
+      }
+    ],
+    "languages": [
+      {
+        "id": "rust",
+        "extensions": [".rs"],
+        "aliases": ["Rust"]
+      }
+    ],
+    "configuration": {
+      "title": "ACME Formatter",
+      "properties": {
+        "acme.formatter.tabWidth": {
+          "type": "integer",
+          "default": 4,
+          "description": "Number of spaces per tab",
+          "scope": "resource"
+        }
+      }
+    }
+  },
+  "main": "./dist/extension.js",
+  "extensionDependencies": ["ms-vscode.vscode-typescript-next"]
+}
+```
+
+VS Code defines approximately 38 built-in contribution point types. The critical ones for a plugin-role system:
+
+| Contribution Point | What It Declares |
+|--------------------|-----------------|
+| `commands` | Callable actions with IDs |
+| `languages` | Language ID + file association |
+| `grammars` | TextMate grammar files |
+| `configuration` | JSON Schema-validated settings |
+| `taskDefinitions` | Task provider shape |
+| `authentication` | Auth provider identity |
+| `chatParticipants` | AI chat agent (recently added) |
+| `languageModelTools` | LLM-callable tools (AI era) |
+| `jsonValidation` | Schema for a file pattern |
+| `viewsContainers` + `views` | UI panel declarations |
+
+The `contributes` object is **static**: it is read before any code runs. This is the fundamental architectural choice — the host learns what a plugin offers without activating it.
+
+### Activation Events — Lazy Loading
+
+Extensions load lazily. Activation events are declared in the manifest and fire on specific conditions. As of VS Code 1.74+, many activation events are **implicit**: if you contribute a command, VS Code auto-activates you when that command fires, without needing a manual `"onCommand:..."` entry.
+
+Explicit events:
+
+```json
+"activationEvents": [
+  "onLanguage:python",           // file of this language opens
+  "onCommand:ext.doThing",       // command invoked
+  "workspaceContains:**/.eslintrc", // workspace has matching files
+  "onStartupFinished",           // non-blocking post-startup
+  "onAuthenticationRequest:github", // auth provider requested
+  "onChatParticipant:myAgent",   // AI chat agent triggered
+  "*"                            // always (discouraged, slows startup)
+]
+```
+
+The lazy model is central: an extension that provides a Rust formatter does not consume memory until a `.rs` file opens. This maps directly to your CSO trigger model — declare when you should activate, not just what you provide.
+
+### How Multiple Extensions Implement the Same Contribution Point
+
+VS Code handles coexistence differently by contribution type:
+
+**Additive (all win)**: Commands, menus, views, snippets, themes. All extensions that contribute a command get their command registered. The user picks via Command Palette. No conflict resolution needed.
+
+**Priority-based (fastest wins)**: Language providers (completion, hover, diagnostics). When two extensions both provide TypeScript completions, VS Code merges results for diagnostics but for inline completion typically uses the first responder. The recommended practice is: do not ship competing inline completers.
+
+**Last-writer-wins**: Configuration defaults (`configurationDefaults`). The last extension to contribute a default for a key wins.
+
+**Authenticated identity**: Authentication providers — only one provider per `providerId` can be registered at runtime; the second registration at the API level throws.
+
+The practical implication: additive contribution points scale naturally. Exclusive ones need explicit conflict resolution in the host.
+
+### Cross-Extension API Consumption
+
+Extensions can export typed APIs to each other using a `publisher.name` addressing scheme:
+
+**Producer** (in `activate()`):
+
+```typescript
+export function activate(context: vscode.ExtensionContext) {
+  const api = {
+    formatDocument(uri: vscode.Uri): Promise&lt;void&gt; { ... },
+    version: "1.0.0"
+  };
+  return api; // becomes .exports on the Extension object
+}
+```
+
+**Consumer**:
+
+```typescript
+const ext = vscode.extensions.getExtension&lt;MyApi&gt;('acme.my-formatter');
+if (!ext) throw new Error('acme.my-formatter not installed');
+if (!ext.isActive) await ext.activate();
+const api = ext.exports;
+await api.formatDocument(uri);
+```
+
+The consumer declares `"extensionDependencies": ["acme.my-formatter"]` in its `package.json` to ensure load order. This is a typed, synchronous-after-activation cross-plugin call — no message passing, direct function calls within the same Node.js process (the extension host).
+
+### Versioning and Compatibility Model
+
+VS Code's stability model has three tiers:
+
+1. **Stable API** — in `vscode.d.ts`, guaranteed backwards-compatible. Breaking changes require a deprecation cycle.
+
+2. **Proposed API** — gated behind `"enabledApiProposals": ["chatParticipants"]` in `package.json`. Can break between releases. Requires matching VS Code Insiders. Used to incubate AI features before promotion.
+
+3. **Extension-to-Extension API** — no guarantees. The consuming extension must handle `getExtension()` returning `undefined` and version-check `.exports.version` manually.
+
+The `engines.vscode` field declares the minimum VS Code version the extension requires. The Marketplace enforces this — users on older VS Code cannot install incompatible extensions.
+
+### Key Pattern: "Declare Your Role, Implement the Interface"
+
+VS Code's architecture gives us this pattern:
+
+1. **Static manifest** declares capabilities before code loads (contributes + activationEvents)
+2. **Host reads manifests at startup** — builds a registry of who provides what
+3. **Lazy activation** — extension code loads only when its declared trigger fires
+4. **Runtime API registration** — `activate()` calls `vscode.languages.registerCompletionItemProvider()` etc., which replaces the static declaration with a live handler
+5. **Cross-extension API** — typed `exports` from `activate()` for plugin-to-plugin calls
+6. **Proposed API** — incubate unstable contracts before promoting them
+
+The key insight: **contribution points are a pre-activation registry**. The host can answer "who handles Rust?" before loading any extension code.
+
+---
+
+## Part 2: OpenAI GPT Actions / Plugin System
+
+### Evolution: Plugins → Actions → MCP
+
+**Phase 1 — Plugins (March 2023 – April 2024)**
+
+Each plugin was identified by two files served from its domain:
+
+`/.well-known/ai-plugin.json`:
+```json
+{
+  "schema_version": "v1",
+  "name_for_human": "Wolfram Alpha",
+  "name_for_model": "Wolfram",
+  "description_for_human": "Access computation and math from Wolfram Alpha.",
+  "description_for_model": "Use Wolfram to answer mathematical, scientific, geographic, and other factual questions. Call when the user asks about calculations, data analysis, or factual queries that require real-time computation.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://www.wolframalpha.com/.well-known/openapi.yaml",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://www.wolframalpha.com/logo.png",
+  "contact_email": "support@wolfram.com",
+  "legal_info_url": "https://www.wolfram.com/legal/"
+}
+```
+
+The `description_for_model` was the routing surface — the model read this to decide whether to call the plugin.
+
+`/.well-known/openapi.yaml` (abridged):
+```yaml
+openapi: 3.0.1
+info:
+  title: Wolfram Alpha
+  description: &gt;
+    Use this tool to answer computational and mathematical questions.
+    Do not use for general knowledge questions.
+  version: 1.0.0
+servers:
+  - url: https://api.wolframalpha.com
+paths:
+  /v1/result:
+    get:
+      operationId: getResult
+      summary: Get a computed result for a query
+      parameters:
+        - name: input
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The natural language computation query (e.g., "integral of x^2")
+      responses:
+        "200":
+          description: Computed result as plain text
+          content:
+            text/plain:
+              schema:
+                type: string
+```
+
+The routing mechanism: the model received all installed plugin manifests in its context. It chose a plugin based on `description_for_model` + `operationId` descriptions. No structured classifier — pure LLM judgment from natural language descriptions.
+
+**Phase 2 — GPT Actions (late 2023 – early 2024)**
+
+Actions folded the manifest into the Custom GPT builder UI and used OpenAPI 3.1.0 directly. The routing signal shifted fully to schema descriptions:
+
+```yaml
+openapi: 3.1.0
+info:
+  title: Weather Service
+  description: &gt;
+    Retrieves current weather and forecasts. Use when the user asks about
+    weather conditions, temperature, rain probability, or atmospheric data.
+  version: 1.0.0
+servers:
+  - url: https://api.weather.gov
+paths:
+  /points/{lat},{lon}:
+    get:
+      operationId: getGridPoint
+      summary: Get grid point for coordinates
+      description: &gt;
+        Converts a latitude/longitude pair into a weather grid point identifier.
+        Call this FIRST when the user provides location coordinates.
+      parameters:
+        - name: lat
+          in: path
+          required: true
+          schema:
+            type: number
+            minimum: -90
+            maximum: 90
+          description: Latitude (decimal degrees, positive = north)
+        - name: lon
+          in: path
+          required: true
+          schema:
+            type: number
+            minimum: -180
+            maximum: 180
+          description: Longitude (decimal degrees, positive = east)
+```
+
+Authentication types supported:
+- `"none"` — public APIs
+- `"api_key"` — `Authorization: Bearer &lt;key&gt;` or custom header
+- `"oauth"` — OAuth 2.0 with callback URL, client credentials stored in GPT builder
+
+**Phase 3 — MCP (November 2024 – present)**
+
+OpenAI adopted MCP in March 2025. The Plugin/Action concept was absorbed into a universal tool standard (see Part 3).
+
+### What Worked and What Failed
+
+**What worked**:
+- OpenAPI as the contract format — reused existing tooling, schemas, and documentation
+- `description_for_model` as the routing signal — flexible, human-readable, no special classifier needed
+- Chaining via `operationId` — GPT instructions could sequence calls by name
+- No-auth public APIs — zero friction for consumers
+
+**What failed**:
+- **Trust and sandboxing**: The model had no capability to verify that a plugin was doing what it claimed. Prompt injection via plugin responses was a real attack vector.
+- **Ecosystem quality**: Plugin discovery was purely Marketplace-level. No structured capability declaration — two plugins claiming to "search the web" were indistinguishable to the routing logic except by description prose.
+- **Context window cost**: All plugin schemas were included in the system prompt, consuming tokens even for plugins not called.
+- **No versioning**: `description_for_model` had no schema version. A breaking change to an API silently broke the model's understanding.
+- **Walled garden**: Plugins required a ChatGPT Plus subscription, limiting third-party plugin developer audience.
+- **No cross-plugin calls**: Plugins could not call each other.
+
+### Schema-Based Contracts — Key Lesson
+
+The routing depended entirely on the quality of prose descriptions. This is simultaneously the system's greatest strength (flexible, no central registry needed) and its biggest weakness (ambiguous, non-machine-verifiable). The model's routing accuracy degraded when:
+- Two plugins had similar `description_for_model` text
+- Parameter names were generic (`input`, `query`) instead of semantic (`weatherStationId`, `isoDateString`)
+- `operationId` values were opaque (`doThing` vs. `getWeatherForecastForCity`)
+
+---
+
+## Part 3: Emerging LLM Agent Plugin Ecosystems
+
+### 3a. Model Context Protocol (MCP)
+
+MCP is now the dominant standard for LLM tool plugins. Published by Anthropic in November 2024, adopted by OpenAI in March 2025, and now supported by Cursor, Continue.dev, Claude Code, and most major coding agents.
+
+**Tool Definition Schema** (JSON-RPC `tools/list` response):
+
+```json
+{
+  "tools": [
+    {
+      "name": "get_github_issue",
+      "title": "Get GitHub Issue",
+      "description": "Fetches the full content of a GitHub issue by number. Use when the user references an issue by number or asks about a specific bug report.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Repository owner (username or org)"
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository name without the owner prefix"
+          },
+          "issue_number": {
+            "type": "integer",
+            "description": "The issue number (positive integer)"
+          }
+        },
+        "required": ["owner", "repo", "issue_number"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "body": { "type": "string" },
+          "state": { "type": "string", "enum": ["open", "closed"] }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}
+```
+
+**Protocol lifecycle**:
+
+```
+Client                          Server
+  |                               |
+  |-- initialize --&gt;              |
+  |   {protocolVersion,           |
+  |    clientInfo, capabilities}  |
+  |                               |
+  |&lt;-- initialize response --     |
+  |   {protocolVersion,           |
+  |    serverInfo, capabilities}  |
+  |                               |
+  |-- tools/list --&gt;              |
+  |&lt;-- {tools: [...]} --          |
+  |                               |
+  |-- tools/call --&gt;              |
+  |   {name, arguments}           |
+  |&lt;-- {content: [...]} --        |
+```
+
+**Versioning**: Date-string format (`2024-11-05`, `2025-03-26`, `2025-06-18`, `2025-11-25`). Negotiated during `initialize` handshake — client sends desired version, server responds with the version it will honor. The 2026-07-28 RC removes the handshake entirely in favor of per-request version metadata in HTTP headers and a `server/discover` RPC.
+
+**Transport options**: stdio (subprocess pipe) or Streamable HTTP. Stdio is the simplest for local tools; HTTP for remote services.
+
+**Tool annotations** (added 2025-06-18): `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — semantic flags that help the host decide when to confirm with the user before executing.
+
+**Discovery**: `tools/list` is the standard discovery call. No central registry — each server self-describes. The 2026-07-28 RC adds `server/discover` for capability pre-flight before full initialization.
+
+**Failure handling**: Tools return structured errors in the `content` array with `isError: true`. The protocol does not define retry semantics — that's the host's responsibility.
+
+### 3b. Continue.dev — Context Providers and Slash Commands
+
+Continue.dev takes a config-file-first approach. All extensions are declared in `~/.continue/config.yaml`.
+
+**Context Providers**
+
+The `IContextProvider` TypeScript interface (from core source):
+
+```typescript
+interface ContextItem {
+  name: string;
+  description: string;
+  content: string;
+  uri?: {
+    type: "file" | "url";
+    value: string;
+  };
+}
+
+interface ContextProviderExtras {
+  fullInput: string;
+  embeddingsProvider?: EmbeddingsProvider;
+  reranker?: Reranker;
+  llm: ILLM;
+  ide: IDE;
+  selectedCode: RangeInFile[];
+}
+
+interface IContextProvider {
+  description: ContextProviderDescription; // {title, displayTitle, description, type}
+  getContextItems(
+    query: string,
+    extras: ContextProviderExtras,
+  ): Promise&lt;ContextItem[]&gt;;
+  loadSubmenuItems?(args: LoadSubmenuItemsArgs): Promise&lt;ContextSubmenuItem[]&gt;;
+}
+```
+
+**Registration — three mechanisms**:
+
+1. **Built-in** — declared by type name in `config.yaml`:
+```yaml
+context:
+  - provider: codebase
+  - provider: docs
+    params:
+      startUrl: "https://myproject.dev/docs"
+  - provider: http
+    params:
+      url: "http://localhost:8080/context"
+      title: "My DB Context"
+```
+
+2. **HTTP server** — implement a POST endpoint, register as `provider: http`. Request body: `{query, fullInput, options, workspacePath}`. Response: `ContextItem | ContextItem[]`.
+
+3. **MCP** — any MCP server's resources become context providers via `provider: mcp`.
+
+**Slash Commands**
+
+```typescript
+interface SlashCommand {
+  name: string;
+  description: string;
+  params?: { [key: string]: any };
+  run(sdk: ContinueSDK): AsyncGenerator&lt;string&gt;;
+}
+```
+
+In `config.yaml`:
+```yaml
+prompts:
+  - name: docstring
+    description: Write a docstring for the selected function
+    prompt: |
+      Write a comprehensive docstring for the following function.
+      Include parameter types, return value, and a usage example.
+      {{input}}
+```
+
+More powerful slash commands use TypeScript directly via the extension API:
+
+```typescript
+// In VS Code extension that extends Continue
+const continueExt = vscode.extensions.getExtension('Continue.continue');
+const api = continueExt.exports;
+api.registerCustomContextProvider({
+  description: { title: "jira", displayTitle: "Jira", description: "Jira tickets" },
+  async getContextItems(query, extras) {
+    const issues = await fetchJiraIssues(query);
+    return issues.map(i =&gt; ({
+      name: i.key,
+      description: i.summary,
+      content: i.description,
+    }));
+  }
+});
+```
+
+**Failure handling**: `getContextItems()` returning an empty array is treated as "no context." Exceptions bubble to the UI as error messages. No retry logic — the provider is responsible for its own resilience.
+
+**Versioning**: No formal versioning of the provider interface. Breaking changes come with Continue version bumps. The shift to recommending MCP as the primary extension mechanism (from custom TypeScript providers) is the main migration path.
+
+### 3c. Composio — Tool Platform Design
+
+Composio positions itself as a "tool catalog" layer between agents and integrations — solving the N×M problem where N agents × M tools = N×M integration points, collapsed to N+M with a shared abstraction.
+
+**Architecture**:
+
+```
+Agent (LangChain/CrewAI/raw API)
+       ↓
+Composio SDK (thin wrapper)
+       ↓
+Tool Catalog (1000+ pre-built tools)
+       ↓
+Auth Layer (OAuth, API keys, managed per-user)
+       ↓
+External APIs (GitHub, Slack, Linear, etc.)
+```
+
+Each tool in the catalog has a pre-optimized schema designed to minimize token count while preserving semantic clarity. The catalog is versioned by Composio centrally — third parties do not write schemas, they use pre-built ones.
+
+**Integration pattern**:
+```python
+from composio_langchain import ComposioToolSet, App
+
+toolset = ComposioToolSet()
+tools = toolset.get_tools(apps=[App.GITHUB, App.SLACK])
+# tools is a list of LangChain-compatible Tool objects
+# each with name, description, args_schema (Pydantic)
+
+agent = initialize_agent(tools, llm, agent=AgentType.OPENAI_FUNCTIONS)
+```
+
+**Key design decisions**:
+- **Centralized catalog** — Composio owns and maintains schemas, not third parties
+- **Auth abstraction** — `intent-driven auth`: the platform triggers OAuth flows when the agent first needs access, not at setup time
+- **Memory for large responses** — tool responses too large for context are stored in a navigable filesystem, not injected directly
+- **Framework-agnostic** — same tool works with LangChain, CrewAI, AutoGen, or raw function calling
+
+**What Composio solves that plugins don't**: auth lifecycle management across multiple users, centralized schema optimization, tool versioning without breaking agents.
+
+### 3d. Cursor Plugin Marketplace (2026)
+
+Cursor 2.5 (February 2026) introduced a marketplace where a single installable unit bundles:
+
+```yaml
+# cursor-plugin.yaml (inferred from community discussion)
+name: stripe-agent-kit
+version: 1.2.0
+publisher: stripe
+compatibleWith:
+  cursor: "&gt;=2.5.0"
+provides:
+  - kind: mcp-server
+    entrypoint: ./mcp/server.js
+  - kind: rules
+    path: .cursor/rules/stripe.md
+  - kind: agent
+    id: stripe-payments-agent
+    description: "Handles Stripe payment flows"
+  - kind: hooks
+    on: [pre-commit]
+    command: ./hooks/validate-api-keys.sh
+permissions:
+  - network: ["api.stripe.com"]
+  - filesystem: read
+```
+
+The innovation is **bundling**: a single marketplace install deploys an MCP server, cursor rules, a specialized subagent, and hooks simultaneously. This solves the configuration sprawl problem where previously a user would manually configure each component separately.
+
+---
+
+## Synthesis: Takeaways for a `fulfills/produces/consumes` Plugin System
+
+### 1. Two-Phase Registration (Static Manifest + Runtime Handler)
+
+VS Code's most important pattern: the host reads manifests without executing code. Apply this directly:
+
+```yaml
+# plugin.yaml — read at discovery time, no code execution
+name: my-linter
+version: 2.1.0
+fulfills: "lint-stage"
+produces: "lint-report-v2"
+consumes:
+  - schema: "source-file-set-v1"
+  - schema: "lint-config-v1"
+triggers:
+  - on: "file-save"
+    when: "$.file.extension == '.rs'"
+  - on: "pre-commit"
+entrypoint: ./plugin.js   # loaded only when triggered
+```
+
+The host builds a capability graph at startup from manifests alone. Extensions activate lazily.
+
+### 2. Schema-Based Routing Is More Reliable Than Description-Based Routing
+
+The GPT Plugin lesson: routing by prose description (`description_for_model`) is flexible but degrades when multiple plugins compete. Routing by structured schema (`fulfills: "lint-stage"`) is deterministic and composable.
+
+Place shared schemas in `shared/schemas/`:
+```
+shared/schemas/
+  lint-report-v1.json       # JSON Schema
+  lint-report-v2.json
+  source-file-set-v1.json
+  lint-config-v1.json
+```
+
+A plugin declares `produces: "lint-report-v2"`. The host knows exactly which plugins can feed which stages without reading prose.
+
+### 3. Versioning by Explicit Semver on Schemas, Date-String on Protocol
+
+MCP's date-string versioning is good for protocol evolution (unambiguous, no fake minor/patch distinction). For **data schemas**, use semver: `lint-report-v2` is a separate schema file, not a version field inside the schema. This allows:
+- Multiple versions to coexist in `shared/schemas/`
+- Plugins to declare exact compatibility (`produces: "lint-report-v2"`)
+- The host to negotiate: "I need `lint-report-v2`, do any installed plugins produce it?"
+
+### 4. Additive vs. Exclusive Stages
+
+Follow VS Code's pattern:
+- **Additive stages** (linting, analysis, suggestions): all plugins that `fulfills: "lint-stage"` run; results are merged
+- **Exclusive stages** (code generation, formatting): only one plugin runs; the host picks by priority or user config; conflict is surfaced explicitly, not silently resolved
+
+Declare in the plugin manifest:
+```yaml
+fulfills: "format-stage"
+exclusivity: "singleton"   # or "additive"
+priority: 50               # lower = higher priority when singleton
+```
+
+### 5. The `description` Field Is Still the Routing Surface for LLMs
+
+Even with structured `fulfills/produces/consumes`, when an LLM agent is deciding which plugin to invoke, it will read descriptions. The MCP lesson applies: make `operationId`/`name` semantic, not generic. `format_rust_document` beats `run`.
+
+### 6. Cross-Plugin API Pattern for Same-Process Calls
+
+For plugins that must call other plugins (not just the host):
+
+```typescript
+// Host exposes registry
+const registry = host.getRegistry();
+const formatter = await registry.resolve("format-stage", {
+  produces: "formatted-source-v1"
+});
+const result = await formatter.run(input);
+```
+
+Never let Plugin A import Plugin B directly — route through the host registry. This allows hot-swapping implementations.
+
+### 7. Failure Mode Matrix
+
+| Failure | VS Code Pattern | Recommendation |
+|---------|----------------|----------------|
+| Plugin not installed | `getExtension()` returns `undefined` | Host returns "no plugin fulfills this stage" error with install hint |
+| Plugin crashes | Extension host isolates; editor stays up | Each plugin runs in a worker; crash logs + fallback to next provider |
+| Schema mismatch | No formal handling; runtime error | Host validates `produces` output against JSON Schema before passing to next stage |
+| Two plugins claim same exclusive stage | Explicit conflict warning on install | Surface in `plugin status` command, require user resolution |
+| Plugin takes too long | No timeout in VS Code for sync providers | Per-stage configurable timeout; slow plugins log warnings |
+| Breaking schema change | No protocol; runtime breakage | Schema files are immutable; new version = new filename |
+
+### 8. Proposed/Incubating Schemas
+
+Follow VS Code's proposed API pattern. New schemas start in `shared/schemas/proposed/` with a `stability: "experimental"` marker. Plugins using them declare `requiresExperimental: true`. Schemas are promoted to stable after two release cycles without breaking changes.
+
+### 9. Discovery and Routing Summary
+
+The complete discovery flow for your system:
+
+```
+Host startup:
+  1. Scan plugin directories for plugin.yaml manifests
+  2. Build capability graph: {stage → [plugin]} and {schema → [plugin]}
+  3. For each plugin: validate that its `consumes` schemas exist in shared/schemas/
+  4. Validate that no two plugins both claim the same singleton stage without explicit priority
+
+Stage execution:
+  1. Host identifies the stage to run
+  2. Query capability graph for plugins fulfilling this stage
+  3. For singleton: pick highest-priority; for additive: run all
+  4. Activate plugin (load entrypoint) if not already active
+  5. Pass input, validated against the `consumes` schema
+  6. Collect output, validate against the `produces` schema
+  7. Pass validated output to the next stage's consumers
+```
+
+This combines VS Code's static manifest registry, MCP's tool/capability declaration pattern, and the GPT Plugin lesson that schema-based routing beats prose-based routing for deterministic workflows.
+
+---
+
+Sources:
+- [Contribution Points | Visual Studio Code Extension API](https://code.visualstudio.com/api/references/contribution-points)
+- [Activation Events | Visual Studio Code Extension API](https://code.visualstudio.com/api/references/activation-events)
+- [Extension Manifest | Visual Studio Code Extension API](https://code.visualstudio.com/api/references/extension-manifest)
+- [Our Approach to Extensibility - vscode-docs](https://vscode-docs.readthedocs.io/en/stable/extensions/our-approach/)
+- [Extensibility Principles and Patterns - vscode-docs1](https://vscode-docs1.readthedocs.io/en/latest/extensionAPI/patterns-and-principles/)
+- [Getting started with GPT Actions](https://developers.openai.com/api/docs/actions/getting-started)
+- [GPT Actions library](https://developers.openai.com/api/docs/actions/actions-library)
+- [ChatGPT plugins | AI Wiki](https://aiwiki.ai/wiki/chatgpt_plugins)
+- [Peeking under the hood with ChatGPT plugins - Scale Venture Partners](https://www.scalevp.com/insights/peeking-under-the-hood-with-chatgpt-plugins/)
+- [Context Providers - Continue - Docs](https://docs.continue.dev/customize/deep-dives/custom-providers)
+- [Slash commands | Continue](https://docs.continue.dev/customize/slash-commands)
+- [Configuration Architecture | continuedev/continue | DeepWiki](https://deepwiki.com/continuedev/continue/5.1-plugin-architecture)
+- [Context Providers | continuedev/continue | DeepWiki](https://deepwiki.com/continuedev/continue/3.3-context-providers)
+- [HttpContextProvider source | continuedev/continue](https://github.com/continuedev/continue/blob/main/core/context/providers/HttpContextProvider.ts)
+- [MCP Specification Version Timeline](https://hidekazu-konishi.com/entry/mcp_specification_version_timeline.html)
+- [MCP tool schema: what it is, how it works, and examples](https://www.merge.dev/blog/mcp-tool-schema)
+- [MCP Cheat Sheet (2026)](https://www.webfuse.com/mcp-cheat-sheet)
+- [Model Context Protocol (MCP) explained](https://codilime.com/blog/model-context-protocol-explained/)
+- [Best AI agent integration platforms (2026): comparison | Composio](https://composio.dev/content/ai-agent-integration-platforms)
+- [Agent Plugins: Isolated packaging + lifecycle management | Cursor Forum](https://forum.cursor.com/t/agent-plugins-isolated-packaging-lifecycle-management-for-sub-agents-skills-hooks-rules-incl-agent-md-across-cursor-ide-cli/151250)
+- [Cursor Now Lets You Extend Its AI Agent With One-Click Marketplace Plugins](https://www.adwaitx.com/cursor-marketplace-plugins/)
+- [Extension System | microsoft/vscode-wiki | DeepWiki](https://deepwiki.com/microsoft/vscode-wiki/4.2-extension-system)
+- [Using Proposed API | Visual Studio Code Extension API](https://code.visualstudio.com/api/advanced-topics/using-proposed-api)</result>
+<usage><subagent_tokens>38041</subagent_tokens><tool_uses>31</tool_uses><duration_ms>316815</duration_ms></usage>
+</task-notification>
