@@ -1,0 +1,36 @@
+<task-notification>
+<task-id>a49cc7b67e538587c</task-id>
+<tool-use-id>toolu_01Bp3yxguxxaTBBVwTusENiL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a49cc7b67e538587c.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec + quality review Task 17: NAPI wrapper" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 5 checklist items verified against the diff and git state. Here is the review:
+
+---
+
+**Spec:** Compliant
+
+Checking each item against the diff at `d3d3fab..31b2fcf`:
+
+1. **All 4 exported fns have `#[napi(catch_unwind)]`** — Yes. `render_toon`, `empty_state`, `render_hints`, and `truncate` all carry the attribute.
+
+2. **No `u64` across NAPI boundary** — Correct. `JsToonValue.int_val` is `Option&lt;i32&gt;`, `JsToonOptions.total_count` is `Option&lt;i32&gt;`, and `truncate`'s `max_chars` is `i32`. No `u64` anywhere on the public surface.
+
+3. **`crate-type = ["cdylib"]`** — Present in `[lib]` section of `Cargo.toml`.
+
+4. **`publish = false`** — Present.
+
+5. **`.gitignore` excludes generated artifacts** — `*.node`, `index.js`, `index.d.ts` are all listed. Confirmed via `git ls-files`: `index.darwin-arm64.node`, `index.js`, and `index.d.ts` are present on disk but untracked (correctly excluded).
+
+### Code Quality Issues
+
+One minor concern: in `render_toon`, `total_count` is converted via `.map(|n| n as usize)`. If a caller passes a negative `i32`, the cast wraps to a large `usize` (e.g., `-1 as usize` = `usize::MAX`). The truncate path guards this with `.max(0)`, but `total_count` has no such guard. This is a latent issue — JS callers won't typically send negative counts, but it's not enforced at the boundary. Worth a follow-up issue, not a blocker.
+
+Everything else is clean: the private `js_value_to_rust` helper is correctly not exported, `#[deny(clippy::all)]` is present, `pnpm-lock.yaml` is committed (correct for a node package), and the 7 tests cover all 4 exported functions including edge cases (null values, empty hints, truncation).
+
+### Assessment: Ready to merge — Yes
+
+The one `total_count` sign-safety nit is non-blocking and easily addressed in a follow-up.</result>
+<usage><subagent_tokens>19009</subagent_tokens><tool_uses>4</tool_uses><duration_ms>39750</duration_ms></usage>
+</task-notification>
