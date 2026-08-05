@@ -1,0 +1,3 @@
+If we think of our plugins in terms of superpowers improved and cooperating plugins how would we break up reserach, planning, spec, implementation, planning, bug hunting, etc? All our workflows?
+
+We probably want a plugin to help manage git, PRs, changesets
