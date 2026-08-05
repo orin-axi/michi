@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a2235133cb254261c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/3bb5bd40-bcf1-44f3-afc5-3b8ba770a7d6/tasks/a2235133cb254261c.output</output-file>
+<status>completed</status>
+<summary>Agent "Assess codegraph for michi-benefit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed with strong direct evidence. Answering the coordinator's question now.
+
+## Graph-structure-aware truncation in codegraph
+
+**`handleCallers`/`handleCallees` (tools.ts:1587-1617, 1660-1689): no.** Both call `cg.getCallers(node.id)` / `cg.getCallees(node.id)` with **no depth argument**, so they use the default `maxDepth=1` (`traversal.ts:261`, `319`) — single-hop only, never transitive. Results are pushed in raw edge-iteration order (`traversal.ts:303-309`) and truncated with plain `callers.slice(0, limit)` (tools.ts:1616) — first-N by discovery order, no ranking by connection count/centrality.
+
+**`handleImpact` (tools.ts:1730-1756): transitive, but not importance-ranked.** `cg.getImpactRadius(node.id, depth)` (depth clamped 1-10, default 2) *does* traverse transitively via `getImpactRecursive` (`traversal.ts:543-594`), following incoming dependency edges hop-by-hop. But there's **no cap or ranking on breadth** — every reachable node within the depth bound is kept (only a `visited` set for cycles), and `formatImpact` (tools.ts:4618-4644) lists all of them, grouped by file. The eventual `truncateOutput` cut (tools.ts:4559-4565) is a flat char-count/last-newline slice with zero graph awareness.
+
+**`codegraph_explore` (tools.ts:3682-3728): yes, genuinely graph-structure-aware — the real answer to your question.** Before any truncation happens, `computeGraphRelevance` (tools.ts:2436-2454) runs a **Random-Walk-with-Restart / personalized PageRank** over the call/reference graph from query-matched seed nodes (documented explicitly at tools.ts:2420-2434: "relevance by STRUCTURE, not words"). The relevance gate at tools.ts:2932-2941 keeps a file only if its RWR mass is within a fraction of the max, or it's graph-central, or it defines a named symbol, or matches ≥2 query terms — then sorts "graph-central first" (tools.ts:2945). So the file-section-boundary cut you found earlier is applied to an **already graph-score-ordered** list, not alphabetical/discovery order — structurally important (high walk-mass) files survive the budget; loosely-connected text-only matches get dropped first.
+
+**Bottom line**: `codegraph_explore` uses real graph-centrality-based pruning (RWR/PageRank); `codegraph_impact` traverses transitively but truncates by flat depth+char-count with no importance ranking; `codegraph_callers`/`codegraph_callees` are single-hop, first-N cutoff, no graph awareness at all.</result>
+<usage><subagent_tokens>90584</subagent_tokens><tool_uses>10</tool_uses><duration_ms>68719</duration_ms></usage>
+</task-notification>
