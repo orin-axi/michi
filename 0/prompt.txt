@@ -1,0 +1,3 @@
+where does plan, plan build research-coordinator, composition analysis, code generation, test generation, spec generation, doc writter go?
+
+Do we have something to help manage GH projects and issues? agents to parse specs, spec integrity auditor, spec writer, pattern researchers, code pattern analyzer, architecture optimizer, test strategist, dx researcher, dx auditor, plan challenger, document generator?
