@@ -1,0 +1,58 @@
+<task-notification>
+<task-id>aeeca0f67886d7e60</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/3bb5bd40-bcf1-44f3-afc5-3b8ba770a7d6/tasks/aeeca0f67886d7e60.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify restructured spec docs for accuracy" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All referenced companion files exist. I now have a complete picture. Let me compile the final verification report.
+
+## Verification Report: docs/spec/ rewrite vs. actual source
+
+**Method:** Read all 7 new files; cross-checked every signature against `src/**/*.rs`, `Cargo.toml`, `packages/michi-node/{package.json,index.d.ts}`, and `src/napi.rs`; diffed the old monolithic spec (`git show d46f5b1:docs/01-spec.md`, 2075 lines — the last commit with real content before it became a redirect stub) against the new 7 files at the code-block level (39/41 blocks match ≥95%, mostly verbatim) and paragraph level, to confirm no fact was dropped during the tone rewrite.
+
+### Per-file result
+
+| File | Result |
+|---|---|
+| README.md | **Pass** — reading-order table and Known Gaps both accurate against the other 6 files. One minor precision nit (see below). |
+| 01-overview-and-setup.md | **Pass** — Cargo.toml block, crate layout, non-goals, consumer map all match source. One stale sub-item (test file listing) inherited from old spec. |
+| 02-toon-format.md | **Pass** — grammar, escaping rules, examples all verified against `escape.rs`/`render.rs`. |
+| 03-rust-api.md | **Pass**, with one factual error (mcp-as-feature) and one incomplete struct listing. |
+| 04-mcp-and-napi.md | **Pass** on the Rust-side `mcp` module and NAPI builder-boundary mechanics. **Fail** on the "what index.d.ts actually generates" TypeScript block — it doesn't match the real generated file. |
+| 05-scope-and-quality.md | **Pass**, with one numeric error (MSRV). |
+| 06-decisions.md | **Pass**, with one numeric error (capacity heuristic constant). |
+
+All cross-references between the 6 files (`03-rust-api.md`, `04-mcp-and-napi.md`, `06-decisions.md`, etc.) point to sections that actually exist and correctly describe what's being referenced — verified every occurrence via grep.
+
+### Concrete discrepancies found
+
+All were checked against `git show d46f5b1:docs/01-spec.md` to determine whether they're new drift from this rewrite or pre-existing. **None are new** — every one is carried over near-verbatim from the old spec. I'm still flagging them since they don't match current source.
+
+1. **`docs/spec/03-rust-api.md:34`** — "plus a `pipeline`/`fuzzy`/`cache`/`cli`/`mcp`/`full` feature set" incorrectly lists `mcp` as a Cargo feature. Actual `Cargo.toml` `[features]` has no `mcp` entry — `mcp` is an always-compiled module (confirmed: `pub mod mcp;` in `src/lib.rs` has no `#[cfg]`). This contradicts `04-mcp-and-napi.md:5` ("Always compiled — no feature gate") and `01-overview-and-setup.md`'s own Cargo.toml section, which correctly lists only `pipeline`/`fuzzy`/`cache`/`cli`/`full`. Old spec had this exact error too, but also had an explicit corrective note in its Cargo.toml section ("The `mcp` Cargo feature ... was retired ... not a feature flag") that the new spec dropped — so the contradiction is now more exposed across the split files than it was in the single old file.
+
+2. **`docs/spec/03-rust-api.md:632-642`** — the `AgentResponse` struct listing omits two real private fields present in `src/response.rs`: `target: RenderTarget` and `human_content: Option&lt;String&gt;`. `human_content` is otherwise correctly documented via its builder method (line 676), so this is incompleteness, not a wrong claim.
+
+3. **`docs/spec/05-scope-and-quality.md:93`** — "`rust-version = "1.93"` is the declared minimum" — actual `Cargo.toml` has `rust-version = "1.96"` (also shown correctly in `01-overview-and-setup.md:99`). Internal inconsistency between the two new files, both against current source.
+
+4. **`docs/spec/06-decisions.md:222-230`** — the `render_toon()` capacity formula `header_len + items.len() × (fields.len() × AVG_CELL_BYTES)` with `AVG_CELL_BYTES = 16` doesn't match the real formula in `src/toon/render.rs:83`: `60 + row_count * (field_count * 12 + 10) + hints.len() * 60` — no constant is actually named `AVG_CELL_BYTES`, and the real per-field multiplier is 12, not 16 (there's also a hints term and a per-row `+10` the doc's formula omits).
+
+5. **`docs/spec/04-mcp-and-napi.md:243-344`** ("What `@napi-rs/cli` actually generates today") — the largest real discrepancy found. The actual `packages/michi-node/index.d.ts` (which exists, pre-built) differs systematically:
+   - Every type is `Js`-prefixed in reality (`JsToonValue`, `JsToonOptions`, `JsAnnotations`, `JsContentBlock`, `JsCallToolResult`, `JsKvItem`, `JsRecoveryHint`), matching the `#[napi(object)]` struct names in `src/napi.rs`. The doc shows unprefixed names (`ToonValue`, `RenderToonOptions`, `Annotations`, `ContentBlock`, `CallToolResult`, `RecoveryHintInput`) that appear nowhere in the real file.
+   - Doc's `kvItems(items: { key: string; value: ToonValue }[])` uses an anonymous inline type; the real generated signature is `kvItems(items: Array&lt;JsKvItem&gt;): void` — a named interface.
+   - Doc's `hints?: string[]` (optional) on the toon-options interface; real `JsToonOptions.hints` is `Array&lt;string&gt;` (required, no `?`), matching `pub hints: Vec&lt;String&gt;` in `src/napi.rs` (not `Option`).
+   - Real file has `reason?: string | undefined | null` (napi-rs's actual `Option&lt;String&gt;` mapping) where the doc simplifies to `reason?: string`.
+   - Real file also exports `export type JsAgentResponse = AgentResponse` — not mentioned in the doc at all.
+   This block is &gt;99% textually identical to the old spec's equivalent section, so it's inherited, not introduced by this rewrite — but the task explicitly asked to check `index.d.ts` "if it exists," and it does exist and doesn't match.
+
+6. **`docs/spec/01-overview-and-setup.md:193-198`** — crate-layout `tests/` listing (`toon_integration.rs`, `kv_integration.rs`, `resilience_integration.rs`, `idempotency_integration.rs`, `snapshot_tests.rs`) doesn't match the real `tests/` directory, which has `toon_integration.rs`, `kv_integration.rs`, `snapshot_tests.rs`, `proptest_mcp.rs`, `proptest_resilience.rs`, `proptest_toon.rs`, `proptest_truncate.rs`, `toon_parser.rs`, plus `support/` and `snapshots/`. No `resilience_integration.rs` or `idempotency_integration.rs` exist (idempotency is tested via in-module `#[cfg(test)]` in `src/idempotency.rs`). Verbatim carryover from old spec.
+
+7. **README.md Known Gaps** ("Plan 2 ... doesn't exist") — minor precision gap, not really an error: `src/pipeline/mod.rs` already has real, always-compiled, tested code (`Pipeline`, `PipelineStep`, `StepStatus`, with `.render()`), and `src/telemetry/mod.rs` has a real `NoopProvider`. Only the execution layer proper (`pipeline/executor.rs`, `resilience/circuit.rs`, `resilience/policy.rs`) is a literal one-line stub comment. `CLAUDE.md` itself is more precise here ("Pipeline pure data type + render (execution in Plan 2)"). Same imprecise framing existed in the old spec's "Crate root" section, carried forward unchanged.
+
+8. **`docs/spec/02-toon-format.md:33`** — "Values containing newlines **must** be truncated before rendering" — actual `escape.rs` behavior is that newlines/CRs are silently *stripped*, not that truncation is required/enforced. Pre-existing wording from old spec, unchanged.
+
+### Nothing load-bearing was dropped
+
+The code-block diff (old spec's 41 fenced blocks vs. the new files' 39) matched 39 pairs at ≥95% similarity, almost all byte-identical modulo doc-comment tone tightening and cross-reference updates (`"see the mcp module section"` → `"see 04-mcp-and-napi.md"`, etc.). The two blocks with no good match were: a small illustrative `AgentResponse` usage snippet (superseded by the fuller doctest-style example already in the `response` section) and a stale/buggy `next_retry_delay(attempt, &amp;config, retry_after)` call (wrong arg order/arity vs. the real 4-parameter signature) that the rewrite actually **fixed** rather than dropped. Paragraph-level comparison of all prose (155 old paragraphs vs. 142 new) found the low-similarity outliers were exclusively section headers that moved into consolidated `06-decisions.md` prose (e.g. "`is_retryable_status()` — why 500 is excluded" → "**Why `is_retryable_status()` excludes 500.**"), not lost content — I verified each of the ~20 lowest-similarity paragraphs individually and confirmed the underlying fact survives somewhere in the new structure.</result>
+<usage><subagent_tokens>210610</subagent_tokens><tool_uses>60</tool_uses><duration_ms>527077</duration_ms></usage>
+</task-notification>
