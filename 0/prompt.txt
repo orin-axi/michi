@@ -1,0 +1,46 @@
+<task-notification>
+<task-id>a9e106f741cf62152</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a9e106f741cf62152.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec + quality review Tasks 5-7: hints, truncate, empty" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here is the full compliance and quality assessment.
+
+---
+
+**Spec: ✅ Compliant**
+
+All seven checklist items verify clean:
+
+1. **`Hint` inner field pub** — `pub struct Hint(pub String)` at line 6 of `hints.rs`. ✅
+2. **`render_hints` format** — pushes `"help["`, `hints.len()`, `"]:\n"`, then per hint `"  "` + text + `'\n'`. Matches `help[N]:\n  hint\n` exactly. ✅
+3. **`truncate` char boundaries** — all slicing goes through `char_indices().nth(n).map(|(i, _)| i)`, never raw byte arithmetic. ✅
+4. **Hard-cap guard correctness** — When `suffix_chars &lt;= max_chars`: `keep_chars = max_chars - suffix_chars`, result lands at exactly `max_chars` chars and the cap branch is never entered. When `suffix_chars &gt; max_chars`: `keep_chars` saturates to 0, result is the suffix alone (longer than `max_chars`), and the cap branch fires, slicing to `max_chars` via `char_indices` — correct and safe. Output never exceeds `max_chars`. ✅
+5. **`empty_state` format** — pushes `type_name` then `"[0]{}:\ntotalCount: 0\n"`, confirmed by the pinning test `assert_eq!(empty_state("issue"), "issue[0]{}:\ntotalCount: 0\n")`. ✅
+6. **`empty_state_with_hints` delegation** — calls `empty_state(type_name)` then `crate::hints::append_hints(&amp;mut out, hints)`. ✅
+7. **`#[must_use]` and `String::with_capacity`** — `render_hints`, `truncate`, `truncate_inline`, `empty_state`, `empty_state_with_hints` all carry `#[must_use]`. `render_hints` uses `with_capacity(12 + hints.len() * 50)`, `truncate` uses `with_capacity(byte_end + suffix.len())`, `empty_state` uses `with_capacity(type_name.len() + 20)`. ✅
+
+Test counts: hints.rs = 7, truncate.rs = 6 (including Unicode boundary and suffix-char-count tests), empty.rs = 4. All match spec.
+
+---
+
+### Code Quality Issues
+
+**Low — cosmetic**
+
+`render_hints` does `out.push_str(&amp;hints.len().to_string())` which allocates a temporary `String` for the count. `write!(out, "{}", hints.len())` or splitting into a `format!` for the whole header line would avoid the allocation. Not a correctness issue; the heuristic `with_capacity` estimate already over-allocates anyway.
+
+**Low — semantic ambiguity in doc comment**
+
+`Truncated::original_len` is documented as "Original **byte** length of the input" and stores `content.len()` (bytes). The entire API is char-count-based (`max_chars`, suffix counts, cap guard). A caller who wants to know "how many chars were in the original" has to call `.chars().count()` separately. The field isn't wrong, but naming it `original_len` while the rest of the API thinks in chars is a mild mismatch. No spec violation — the spec only names the field, not its semantics — but worth flagging for future readers.
+
+**None — hard-cap guard** is a sound addition, not a quality concern.
+
+---
+
+### Assessment: Ready to merge — Yes
+
+No spec deviations. The two low-severity items are polish, not blockers. The hard-cap guard is correctly implemented and the Unicode handling is solid throughout.</result>
+<usage><subagent_tokens>19795</subagent_tokens><tool_uses>5</tool_uses><duration_ms>56796</duration_ms></usage>
+</task-notification>
