@@ -1,0 +1,89 @@
+<task-notification>
+<task-id>a706af6dbd0867eb3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a706af6dbd0867eb3.output</output-file>
+<status>completed</status>
+<summary>Agent "Code quality review Task 3: toon public API" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>---
+
+### Strengths
+
+- **Clean public surface.** `ToonOptions` is a plain, fieldful struct — easy to construct without a builder and straightforward to understand. The re-export `pub use render::Value` keeps the module path ergonomic (`michi::toon::Value`).
+- **`#[derive(Debug, Clone)]` on `ToonOptions`** and `#[derive(Debug, Clone, PartialEq)]` on `Value` — both non-negotiables satisfied.
+- **No `unwrap()`/`expect()` anywhere in library code.** Clean.
+- **Pre-allocated `String::with_capacity`** in render.rs with a reasonable estimate.
+- **Integration test quality** — `renders_basic_list` uses `assert_eq!` against a full golden string, which is the strongest possible assertion for a formatter. Six of seven tests do meaningful behavioral verification.
+- **Architectural separation**: `render::render()` takes flattened args (`type_name, fields, rows, ...`) rather than `&amp;ToonOptions`. This decouples the render engine from the public type, making it independently testable and reusable by future callers who might not own a `ToonOptions`. Intentional deviation from the plan and a good one.
+- **escape.rs capacity** was improved from the plan's `v.len() + 2` to `v.len() * 2 + 2`, correctly bounding pathological all-quotes inputs.
+- Clippy clean, all 7 tests green.
+
+---
+
+### Issues
+
+#### Critical (Must Fix)
+
+**1. `Value` enum variants have no doc comments — violates the "every `pub` item has a doc comment" non-negotiable.**
+
+`Value` is defined in `render.rs` and re-exported as a public type. All five variants (`Str`, `Int`, `Float`, `Bool`, `Null`) are public items with zero documentation. The plan's own Task 3 spec included variant-level comments:
+
+```rust
+/// UTF-8 string. Escaped if it contains commas, quotes, or newlines.
+Str(String),
+/// Signed integer.
+Int(i64),
+/// Floating-point number.
+Float(f64),
+/// Boolean renders as `true` or `false`.
+Bool(bool),
+/// Null renders as empty (delimiter still emitted).
+Null,
+```
+
+These need to be added to `/Users/gabe/Projects/michi/src/toon/render.rs`.
+
+---
+
+#### Important (Should Fix)
+
+**2. `# Panics` section on `render_toon` is semantically wrong.**
+
+```rust
+/// # Panics
+///
+/// Does not panic. Row lengths differing from `fields.len()` produce
+/// misaligned output — caller's responsibility to match lengths.
+```
+
+The `# Panics` heading in Rust rustdoc convention means the function **can** panic under described conditions. A section that opens with "Does not panic" is misleading — a reader scanning docs for panic conditions will hit this and be confused. The misalignment note belongs either in the main description or under a custom `# Preconditions` heading. Remove the `# Panics` section entirely and fold the note into the description.
+
+**3. No integration test for `Value::Float`.**
+
+Every other `Value` variant is exercised at the integration level. `Float` is only reachable through the render path defined in `render.rs`, but there is no test that constructs a `ToonOptions` with a `Value::Float` and asserts the output. A floating-point rendering edge (e.g., `1.0` vs `1` vs `1.0000000000000002`) is worth a concrete assertion.
+
+**4. Quote and newline escaping have no integration-level test.**
+
+`escape_value` is unit-tested in `escape.rs`, but the integration suite tests only comma escaping (`escapes_comma_in_value`). There's no integration test that verifies a `Value::Str` containing `"` or `\n` produces correctly escaped TOON output. The risk is that a future refactor to `render.rs` breaks the `escape_value` call and the integration tests don't catch it.
+
+---
+
+#### Minor (Nice to Have)
+
+**5. `render_toon` should carry `#[must_use]`.**
+
+It returns a `String`. Silently discarding it is almost certainly a bug. `#[must_use = "discarding the rendered string has no effect"]` would make that a compile warning.
+
+**6. `pub(crate) mod render` leaks a non-obvious API surface decision.**
+
+`Value` is defined `pub` inside a `pub(crate)` module, then re-exported at the parent. This works correctly, but it means `render.rs`'s internal `pub fn render(...)` is callable from anywhere in the crate. Consider making `render` explicitly `pub(super)` if it's only intended for use by `mod.rs`. Low priority — but the current visibility is broader than necessary.
+
+---
+
+### Assessment
+
+**Ready to merge?** No — with fixes.
+
+**Reasoning:** One non-negotiable is broken (missing doc comments on `pub Value` variants), and the `# Panics` section actively misinforms API consumers. Both are quick fixes. The core implementation — architecture, test quality, performance choices, and correctness — is solid.</result>
+<usage><subagent_tokens>48921</subagent_tokens><tool_uses>10</tool_uses><duration_ms>88576</duration_ms></usage>
+</task-notification>
