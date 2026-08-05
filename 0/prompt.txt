@@ -1,0 +1,25 @@
+──────
+  ### Why Removing torii References Right Now Is the Right Decision
+  
+  1. Clean Separation of Concerns:
+      • agent-plugins (This Repo): Declarative, host-agnostic context engineering — YAML manifests (plugin.json), Markdown skills (SKILL.md), subagent prompts      
+      (subagents/*.md), and versioned JSON schemas (shared/schemas/). These execute natively inside host runners (Claude Code, Antigravity/AGY) today without any   
+      runtime SDK.
+      • torii (Future MCP SDK): A developer SDK for building standalone MCP servers in TypeScript/Rust. It belongs in its own project when you want to wrap these   
+      tools/plugins for external consumers over the Model Context Protocol.
+  2. Eliminates Premature Abstraction:
+      • Referencing torii in the plugin spec created confusion by making it sound like plugins require a custom host framework or server runtime to function.       
+      • In reality, the host agent (AGY / Claude Code) is the orchestrator. Plugins are just structured prompts, skills, subagents, and schemas.
+  3. Maximized Portability:
+      • Keeping the specs focused purely on host-native primitives ensures that any AGY CLI, Claude Code session, or agent runner can consume shared/schemas/ and   
+      plugins/ without needing an MCP server process running.
+  
+  ──────
+  ### The Clean Mental Model
+  
+    Plugins (Prompts + Schemas + Subagents) xrightarrow Native Loading Host Agents (AGY / Claude Code)
+  
+    Torii SDK (Future) xrightarrow Wraps Plugins Standalone MCP Server
+  
+  In short: agent-plugins stays 100% focused on skills, subagents, context engineering, and schemas. torii can be developed independently later strictly as an MCP  
+  server SDK when needed.
