@@ -1,0 +1,21 @@
+<task-notification>
+<task-id>a2c219729c3e81bc8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a2c219729c3e81bc8.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Tasks 11–12: status and recovery modules" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status:** DONE
+
+**Test count and results:** 75 tests passed (all suites, 0 failures). The two new modules add 6 tests (`status`) and 4 tests (`recovery`) on top of the existing 65.
+
+**Files created/modified:**
+- `/Users/gabe/Projects/michi/src/status.rs` — created (`Health`, `StatusItem`, `StatusResponse`, 6 tests)
+- `/Users/gabe/Projects/michi/src/recovery.rs` — created (`RecoveryHint`, `render_recovery`, 4 tests)
+- `/Users/gabe/Projects/michi/src/lib.rs` — added `pub mod recovery;` and `pub mod status;`
+
+**Git commit SHA:** `b346c02`
+
+**Clippy:** clean, no warnings.</result>
+<usage><subagent_tokens>20748</subagent_tokens><tool_uses>8</tool_uses><duration_ms>57129</duration_ms></usage>
+</task-notification>
