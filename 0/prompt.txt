@@ -1,0 +1,1 @@
+Check on spec-review-task8 result. If passed, dispatch code-quality reviewer for Task 8 (base 81eb17f, head fb4c447) in worktree /Users/gabe/Projects/michi/.worktrees/spec-parity. If a calendar-math bug is found (CRITICAL), dispatch fix subagent then re-review. Continue subagent-driven-development loop through remaining tasks in docs/superpowers/plans/2026-07-08-spec-parity.md.
