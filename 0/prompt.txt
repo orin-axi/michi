@@ -1,0 +1,5 @@
+I think the top one right? Can we make sure we prepare Claude.md and maybe some local agents to assist superpowers in this process. Let yourself be inspired by our best practices chats and the code in oxc-react-codegen locally.
+
+How do we want to lint, test, coverage? Performance benchmarks? Which crates should we use? Rayon, mielle, taikio?? Think through all of this first.
+
+The architecture, parallelization, output, CLI usage, MCP usage, napi
