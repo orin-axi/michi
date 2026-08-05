@@ -1,0 +1,1 @@
+We should not be using prettier. We should use rsfmt and oxfmt please
