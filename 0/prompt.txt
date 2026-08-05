@@ -1,0 +1,42 @@
+<task-notification>
+<task-id>af71f025ab43b11e4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/af71f025ab43b11e4.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec + quality review Tasks 8-10: error, idempotency, resilience" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here is the full review:
+
+---
+
+**Spec:** ✅ Compliant with two minor gaps (see below)
+
+### Verification Results
+
+1. **`Sensitive&lt;T&gt;` redaction** ✅ — Both `Debug` and `Display` impls write `&lt;redacted&gt;` via `f.write_str("&lt;redacted&gt;")`. Two tests confirm it.
+
+2. **`Error::class()` exhaustiveness without `pipeline`** ✅ — Without the feature, only `InvalidInput` and `NotFound` exist and both are matched unconditionally. `cargo check` passes clean.
+
+3. **All `Error` variants have `#[error(...)]`** ✅ — Every variant (always-compiled and pipeline-gated) has an `#[error(...)]` attribute. `Io` correctly uses `#[error(transparent)]`.
+
+4. **`next_retry_delay` returns `None` beyond max_retries** ✅ — Line 44 guards `if attempt &gt;= config.max_retries { return None; }`. Test at line 103 exercises this with attempt=3 on a config with max_retries=3.
+
+5. **`parse_retry_after` returns `None` for non-integers** ✅ — Uses `.parse::&lt;u64&gt;().ok()`, which converts any parse error (including HTTP-date strings) to `None`. Test at line 115 confirms with a real date string.
+
+6. **`#[must_use]` on all value-returning functions** ✅ — Present on `render()`, `exit_code()`, `class()`, `is_retryable()` in error.rs; `already_done()`, `PartialSuccess::render()` in idempotency.rs; `next_retry_delay()`, `parse_retry_after()`, `is_retryable_status()` in resilience/mod.rs.
+
+7. **Plan 2 stubs** ✅ — `circuit.rs` contains only `// Plan 2: CircuitBreaker, CircuitState — requires pipeline feature.` and `policy.rs` only `// Plan 2: with_resilience() async retry wrapper — requires pipeline feature.` Both are gated with `#[cfg(feature = "pipeline")]` in mod.rs.
+
+### Code Quality Issues
+
+**Minor spec gap — test count in resilience/mod.rs:** The spec requires 9 inline tests; 8 are present. The 8 that exist cover the important paths (first/second retry, cap, beyond-max, parse seconds, parse date, retryable/non-retryable status codes). A jitter test (verifying that `jitter_seed &gt; 0` produces a delay larger than the un-jittered cap) would be the natural 9th.
+
+**Minor spec gap — `RetryConfig` derive list:** Spec says `#[derive(Debug, Clone, Default)]` but the implementation uses `#[derive(Debug, Clone)]` with a manual `impl Default`. The manual impl is actually the correct approach here (the defaults are meaningful non-zero values that can't be expressed with `#[derive(Default)]`), but it does not match the literal spec. Both `cargo check` and `cargo clippy` pass clean, so this is cosmetic.
+
+No logic bugs, no missing error attributes, no unsafe match arms, no clippy warnings.
+
+### Assessment: Ready to merge? **Yes, with minor fixes**
+
+The two gaps are cosmetic/count-only: a missing 9th test and a derive-vs-manual-impl difference. Neither affects correctness, safety, or API surface. The fix is additive (add one jitter test; optionally note why `Default` is manual). Everything else is exactly as specified and compiles cleanly both with and without the `pipeline` feature.</result>
+<usage><subagent_tokens>24581</subagent_tokens><tool_uses>16</tool_uses><duration_ms>101053</duration_ms></usage>
+</task-notification>
