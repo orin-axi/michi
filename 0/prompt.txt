@@ -1,0 +1,1 @@
+Shall we push and research how we want to publish? Best practices, etc? I already have a crates.io account
