@@ -1,0 +1,1 @@
+Pedantic is genearlly a good start, we can turn off some rules that don't add as much value and get in the way of writing well structure and maintainable code. The goal is to lint consistently but not make it hard to write the best possible code.
