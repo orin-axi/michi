@@ -1,0 +1,85 @@
+<task-notification>
+<task-id>ad5841d2cc4b21830</task-id>
+<tool-use-id>toolu_01M535bKN37jqnSXdPp7uaap</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/ad5841d2cc4b21830.output</output-file>
+<status>completed</status>
+<summary>Agent "Code quality review Task 2: toon internals" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good. I now have all the concrete data I need. Here is the review.
+
+---
+
+### Strengths
+
+1. **Cow fast-path is correct.** `escape_value` returns `Cow::Borrowed(v)` for plain strings — no heap allocation. The `push_str(&amp;s)` call in `render` dereferences through `Deref&lt;Target=str&gt;`, so the zero-copy path is end-to-end correct.
+
+2. **Bool and Null arm use Borrowed.** `Value::Bool` uses `Cow::Borrowed("true"/"false")` and `Value::Null` uses `Cow::Borrowed("")` — both avoid allocation in the common case. Correctly consistent with the fast-path intent.
+
+3. **All 5 required tests present and correct.** `plain_value_is_not_escaped`, `value_with_comma_is_quoted`, `value_with_quote_escapes_it`, `empty_value_is_unchanged`, `value_with_newline_is_quoted` all cover the right behaviors.
+
+4. **Clippy clean, 5/5 tests pass.** `cargo clippy -- -D warnings` exits 0. All inline tests pass.
+
+5. **Non-negotiables respected.** No `unwrap()`/`expect()` in library code. `Debug + Clone + PartialEq` derived on `Value`. All items have doc comments. `String::with_capacity` used in both files.
+
+6. **Backslash-quote escaping is self-consistent.** Verified with concrete execution: input `a\"b` (4 chars) produces `"a\\"b"` (7 chars), which a left-to-right `\"` scanner round-trips correctly to the original. The scheme is valid for a parser that treats `\"` as the only escape sequence.
+
+---
+
+### Issues
+
+#### Important (Should Fix)
+
+**1. `render()` signature diverges from the plan — Task 3 friction**
+
+The plan specifies:
+```rust
+pub(crate) fn render(opts: &amp;ToonOptions) -&gt; String
+```
+The implementation uses:
+```rust
+pub(crate) fn render(type_name: &amp;str, fields: &amp;[String], rows: &amp;[Vec&lt;Value&gt;], total_count: Option&lt;usize&gt;, hints: &amp;[String]) -&gt; String
+```
+Task 3 plans to call `render::render(opts)`. With the current flat signature, Task 3 cannot follow its plan verbatim and must either modify this function's signature or adapt its call site. Both files are internal, so this is recoverable — but it is avoidable churn that will need a conscious decision at the start of Task 3.
+
+**2. `\r` (carriage return) not handled — live data risk**
+
+Verified with concrete execution: `"line\rend"` passes through `escape_value` unquoted. The `\r` is not caught by `contains('\n')`. If TOON field values originate from HTTP responses, file uploads, or Windows-style text (where `\r\n` is the line terminator), a trailing `\r` in a field will be emitted before the newline the render function appends — producing a `\r\n` line ending in TOON output that may cause parsing failures downstream.
+
+Fix: add `|| v.contains('\r')` to the condition on line 10 of `escape.rs`, plus a corresponding test `value_with_cr_is_quoted`.
+
+**3. `with_capacity` underestimates for quote-heavy strings**
+
+Verified with concrete execution: a 6-char string of all double-quotes gets `capacity = 8` but produces 14-char output, requiring reallocation. The `+2` only accounts for the surrounding quotes; each embedded `"` needs an extra `\` escape byte that isn't budgeted.
+
+The simplest fix without a second scan pass is to use `v.len() * 2 + 2` as the worst-case estimate (every char is a `"`). The more precise fix — `v.len() + 2 + v.bytes().filter(|&amp;b| b == b'"').count()` — is exact at the cost of one pre-scan. Either is preferable to silent reallocation in the slow path.
+
+---
+
+#### Minor (Nice to Have)
+
+**4. Developer note embedded in a `///` doc comment on `Value`**
+
+```rust
+/// Cell value variants for a TOON row.
+/// Defined here for use by render; re-exported from mod.rs in Task 3.
+```
+
+The second line is a task-tracking note that will appear verbatim in `cargo doc` output. Move it to an inline `//` comment or remove it when Task 3 re-exports the type.
+
+**5. Empty string early-return in `escape_value` is redundant**
+
+The `if v.is_empty() { return Borrowed(v); }` on lines 7–9 is not wrong, but an empty string contains no `,`, `"`, or `\n`, so the second branch would return `Borrowed(v)` anyway. If kept, add an inline comment noting it's a performance shortcut (avoids 3 `contains` calls), not a correctness guard.
+
+**6. `fields` and `hints` parameters typed as `&amp;[String]` instead of `&amp;[&amp;str]`**
+
+For a `pub(crate)` function this is low-stakes, and the signature will change in Task 3 when `ToonOptions` is introduced. Noting it for Task 3's signature design: `&amp;[&amp;str]` or `AsRef&lt;str&gt;` slices are more flexible at the call site.
+
+---
+
+### Assessment
+
+**Ready to merge?** With fixes
+
+**Reasoning:** The Cow fast-path, capacity pre-allocation, and all five unit tests are correct and requirements-compliant. The two issues that warrant fixing before merge are the `\r` carriage-return gap in `escape_value` (a real correctness risk for external data) and the `with_capacity` underestimate in the slow path. The render signature mismatch is internal and will need a deliberate adaptation note at the start of Task 3 to avoid confusion.</result>
+<usage><subagent_tokens>53796</subagent_tokens><tool_uses>14</tool_uses><duration_ms>236903</duration_ms></usage>
+</task-notification>
