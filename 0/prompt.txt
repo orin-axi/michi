@@ -1,0 +1,223 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+**Primary session request:** "Let's build and commit without pushing until we're ready" — build the full 9-plugin ecosystem (graph, trace, canon, vector, lambda, proof, axiom, delta, basis) with all shared schemas and references, committing as we go but not pushing.
+
+**Secondary audit request:** "Are all of these following our best practices?" — verify all created files conform to Section 9 principles from `shared/agent-best-practices.md`.
+
+**Mid-work requests:**
+- "Do they account for running in agy too?" — check cross-platform AGY compatibility
+- "Can we make sure our files are devoid of AI slop, word salad and filler words. We should be succinct but direct" — quality rewrite beyond just word count trimming
+- "Is that removing too much?" — question whether the trimming approach is over-aggressive
+
+**Earlier session context (pre-compaction):** Prior sessions designed the full ecosystem, named plugins with math/logic primitives, wrote research synthesis and design docs, added Section 9 to `shared/agent-best-practices.md`, and updated `marketplace.json` to v2.0.0.
+
+---
+
+2. Key Technical Concepts:
+
+- **9-plugin development lifecycle ecosystem:** graph (need) → trace (research) → canon (spec) → vector (plan) → lambda (code) → axiom (gate) → delta (ship), with proof (bug hunting) and basis (meta/plugin-builder) as cross-cutting
+- **Section 9 authoring principles:** pull over inject, goal over procedure, minimum viable prompt (<200 words body), self-contained cross-platform prompts, model/effort tiering (haiku=mechanical/low, sonnet=analysis/medium, opus=judgment/high), schema as inter-agent contract, authoring-time vs runtime resources, tool count limit (8-15 per agent)
+- **Shared schemas as public API:** JSON Schema draft-2020-12 files in `shared/schemas/`, versioned by filename suffix (e.g., `requirement@1.json`), immutable — new version = new file
+- **Authoring-time vs runtime resources:** `shared/agent-best-practices.md` = authoring-time only; `shared/references/*.md` = runtime-pullable; `shared/schemas/*.json` = wiring-time validation
+- **`reasoning` scratchpad field:** every inter-agent handoff schema includes `reasoning: str` — unconstrained agent chain-of-thought, not forwarded downstream
+- **Symlink architecture:** each plugin has `shared -> ../../shared` symlink for local dev
+- **Cross-platform (Claude + AGY):** abstract tool language ("use your file reading tool"), `model`/`effort` frontmatter fields are Claude Code-specific — AGY ignores them and uses its own model routing
+- **CSO trigger descriptions:** 100-200 words in YAML frontmatter `description` field, written for LLM routing evaluators
+- **5-section Superpowers subagent framework:** context, role, goal, execution_strategy, success_criteria (but Section 9 now prefers goal + output shape + minimal heuristics)
+- **Verdict@1 protocol:** axiom gate produces pass/fail with specific blockers; on fail, blockers returned to producing agent for retry (max 3 before escalation)
+- **Dead code exclusion:** proof-recon must build live/dead file manifest; scanners only operate on live files reachable from entry points
+
+---
+
+3. Files and Code Sections:
+
+**Committed in this session:**
+
+- **`docs/superpowers/specs/2026-08-04-ecosystem-research-synthesis.md`**
+  - 11 sections synthesizing findings from 12+ agent frameworks (CrewAI, LangGraph, SK, Haystack, DSPy, Autogen, ADK, Anthropic, VS Code, OpenAI, MCP)
+  - Key decisions table at end mapping each question to a concrete answer + source
+
+- **`docs/superpowers/specs/2026-08-04-plugin-ecosystem-design.md`**
+  - Full spec for all 9 plugins: goal, outcome, success criteria, skills, agents with tiers, handoff schemas
+  - Axiom protocol schema, stage interface system, build order, torii framework description
+
+- **`shared/agent-best-practices.md`** — Section 9 added (8 new authoring principles)
+
+- **`marketplace.json`** — bumped to v2.0.0, all 9 new plugins registered with `supersedes` fields
+
+- **`shared/schemas/requirement@1.json`** — JSON Schema for structured requirement capture
+  - Required: id, statement, stakeholder, why, done_when; optional: out_of_scope, priority, linked_issues; always: reasoning
+  
+- **`shared/schemas/research-report@1.json`** — findings with confirmed/likely/assumed confidence levels
+
+- **`shared/schemas/spec@1.json`** — acceptance_criteria array, each a testable proposition; is_error_case and judgment_call flags
+
+- **`shared/schemas/plan@1.json`** — tasks array with files, ordered steps, commit_message; no TBDs
+
+- **`shared/schemas/changeset@1.json`** — summary ≤200 chars, files_changed, acceptance_criteria_met, breaking_changes
+
+- **`shared/schemas/finding-report@1.json`** — confirmed bugs with trigger_condition (exact reproducible input), root_cause, verdict (confirmed/plausible); dead_files_excluded field
+
+- **`shared/schemas/verdict@1.json`** — pass/fail, confidence, blockers array (criterion + finding + location), verdict_summary ≤300 chars, retry_count
+
+- **`shared/schemas/release-artifact@1.json`** — version, date, changesets with type enum (feat/fix/breaking/docs/chore)
+
+- **`shared/references/rust.md`** — 6 hazard taxonomies with search regexes, dead code detection, NAPI boundary rules, non-negotiables (no unwrap in lib, no unsafe outside NAPI, BTreeMap for output)
+
+- **`shared/references/typescript.md`** — 6 TS hazard taxonomies (type assertion bypass, unhandled promise rejection, any propagation, non-null assertion, prototype pollution, missing async error boundary)
+
+- **`shared/references/conventional-commits.md`** — type/scope conventions, scope table for repo, body guidance
+
+- **`shared/references/github.md`** — PR template, gh CLI commands, labels convention, GitHub Actions annotation format
+
+- **`shared/references/changesets.md`** — changeset vs commit distinction, semver decision guide, when to write a changeset
+
+- **`shared/references/mcp-protocol.md`** — MCP server lifecycle, tool definition format, CallToolResult shape, A2A AgentCard, trust boundaries, Claude vs ADK comparison table
+
+**All 9 plugin directories (committed):**
+
+Each plugin: `plugin.json`, `skills/<id>/SKILL.md`, `subagents/*.md` (3-5 files), `shared -> ../../shared` symlink
+
+- `plugins/axiom/` — 3 subagents: recon (haiku/low), verifier (sonnet/medium), exit-gate (opus/high)
+- `plugins/proof/` — 4 subagents: recon (haiku/low), scanner (sonnet/medium), adversary (opus/high), exit-gate (opus/high)
+- `plugins/delta/` — 5 subagents: commit-analyzer (haiku/low), pr-narrator (sonnet/medium), changeset-analyzer (sonnet/medium), review-preprocessor (sonnet/medium), release-summarizer (sonnet/medium)
+- `plugins/graph/` — 3 subagents: intake (haiku/low), clarifier (sonnet/medium), auditor (sonnet/medium)
+- `plugins/canon/` — 4 subagents: drafter (sonnet/medium), auditor (sonnet/medium), verifier (sonnet/medium), exit-gate (opus/high)
+- `plugins/trace/` — 4 subagents: recon (haiku/low), reader (sonnet/medium), synthesizer (sonnet/medium), risk-assessor (opus/high)
+- `plugins/vector/` — 3 subagents: planner (sonnet/medium), estimator (sonnet/low), challenger (opus/high)
+- `plugins/lambda/` — 4 subagents: recon (haiku/low), implementer (sonnet/medium), reviewer (sonnet/medium), exit-gate (opus/high)
+- `plugins/basis/` — 3 subagents: scaffolder (sonnet/medium), auditor (sonnet/medium), schema-designer (sonnet/medium)
+
+**Exemplar subagent (what "good" looks like):**
+
+`plugins/proof/subagents/proof-recon.md` — 161 words, the gold standard:
+```markdown
+---
+name: proof-recon
+role: Workspace Recon & Module Manifest Builder
+model: haiku
+effort: low
+description: >-
+  Delegate to this subagent before any scanning begins...
+---
+
+# proof-recon
+
+Build a verified module manifest for the workspace before any scanning begins.
+
+Detect the primary language: look for `Cargo.toml` → rust; `package.json` → typescript or javascript. Identify entry points. Trace imports from each entry point to build the live file set. Any file not reachable from any entry point is dead.
+
+Use your file reading and search tools to inspect the workspace root and source directories. Do not assume files are live without tracing the import or module graph.
+
+Return exactly this JSON: { ... }
+
+`confidence` reflects how complete the reachability trace is...
+```
+
+**Uncommitted edits (partial fixes applied in the current work):**
+- `plugins/basis/subagents/basis-auditor.md` — removed runtime `shared/agent-best-practices.md` reference, replaced with direct inline rules
+- `plugins/basis/subagents/basis-scaffolder.md` — removed duplicate `<success_criteria>` checklist
+- `plugins/basis/subagents/basis-schema-designer.md` — removed duplicate `<success_criteria>` checklist
+- `plugins/graph/subagents/graph-auditor.md` — simplified `<process>` from 4 numbered steps to 2 prose sentences
+- `plugins/delta/subagents/delta-release-summarizer.md` — removed `<context>` and `<role>` sections
+
+---
+
+4. Errors and Fixes:
+
+- **Stray `shared/shared` symlink:** One agent ran the `ln -s ../../shared shared` command from inside the `shared/` directory instead of from inside the plugin directory, creating `shared/shared`. Fixed with `rm /Users/gabe/projects/agent-plugins/shared/shared`.
+
+- **`basis` plugin missing subagents in initial ls check:** Initial ls showed only `basis-scaffolder.md` but the basis agent had actually created all 3. The agent was still running when we checked — all 3 subagents were present by the time the agent confirmed completion.
+
+- **Edit tool string mismatch (5 failed edits):** Attempted to trim heuristics sections from axiom-exit-gate, axiom-verifier, graph-clarifier, vector-challenger, and vector-planner — all failed with "String to replace not found." Likely caused by em-dash encoding differences (the files use `—` which could be stored differently). These 5 files still need fixing. The correct approach is to Write new versions rather than using Edit with the exact strings.
+
+- **`basis-auditor.md` runtime shared/ reference:** Was referencing `shared/agent-best-practices.md` in the `<context>` section — this is an authoring-time resource per Section 9. Fixed by removing the runtime reference in the `<context>` section.
+
+- **Word count violations:** 10 of 33 subagents were over 200 words. Causes: redundant `<success_criteria>` checklists, `<disposition>` sections that restated the goal, `<heuristics>` sections with too many obvious items, `<context>` sections that added unnecessary framing. After the partial fixes, 5 files remain over 200.
+
+---
+
+5. Problem Solving:
+
+**Solved:**
+- All 8 inter-agent schemas created with correct JSON Schema draft-2020-12 format, all required fields, `reasoning` scratchpad, `additionalProperties: false`
+- All 9 plugin directories scaffolded with correct structure via parallel agents (3 batches of 3 concurrent agents)
+- Stray symlink removed
+- 5 of 10 over-200 subagents trimmed via successful edits
+
+**Ongoing:**
+- 5 subagents still over 200 words: axiom-exit-gate (243), axiom-verifier (203), graph-clarifier (204), vector-challenger (222), vector-planner (215)
+- AGY model routing: `model`/`effort` YAML fields are Claude Code-specific. AGY ignores them. No AGY-equivalent model routing guidance exists in the subagent files or agent-best-practices.md. This is a documentation gap, not a runtime bug.
+- User requested "devoid of AI slop" — needs comprehensive quality pass beyond just word count, replacing AI-generated filler phrases with direct imperative writing. The user also questioned whether we're removing too much ("Is that removing too much?"), suggesting the approach should be to rewrite for directness rather than mechanically trim.
+- Uncommitted edits need to be committed once the remaining fixes are applied.
+- `AGENTS.md` and `README.md` are modified (unstaged) and need updating to reflect the new ecosystem.
+
+---
+
+6. All User Messages:
+
+1. "Show me what you learned and what the plan is"
+2. "Let's build and commit without pushing until we're ready"
+3. (Mid-turn system notification, not a user message — ignored)
+4. "Are all of these following our best practices?"
+5. "Do they account for running in agy too?" (sent mid-turn while fixes were running)
+6. "Can we make sure our files are devoid of AI slop, word salad and filler words. We should be succinct but direct" (sent mid-turn during word count fixes)
+7. "Is that removing too much?" (sent mid-turn as word count results came back)
+
+---
+
+7. Pending Tasks:
+
+- **Fix 5 remaining over-200-word subagents** using full Write (not Edit, since Edit is failing on string matching): axiom-exit-gate.md, axiom-verifier.md, graph-clarifier.md, vector-challenger.md, vector-planner.md
+- **Quality rewrite pass** — remove AI slop, filler words, redundant XML sections across ALL subagents. Model after `proof-recon.md`: direct imperative sentences, no `<context>` preambles, no `<disposition>` restatements, no `<success_criteria>` duplicating the output shape. Target: under 150 words as a tighter guideline.
+- **Address user's "Is that removing too much?" concern** — confirm the approach (rewrite for directness, not mechanical trimming of content)
+- **AGY model routing documentation** — add a note in `shared/agent-best-practices.md` or the plugin design doc explaining that `model`/`effort` are Claude Code-specific hints; on AGY, model routing is handled by the AGY orchestrator
+- **Commit all fixes** once complete
+- **Update `AGENTS.md` and `README.md`** to reflect the new ecosystem (both are modified/unstaged)
+- **michi deferred work** (from prior session): `push_kv_value` Float NaN/Inf guard, `is_retryable_status` tests, S3 tests, doc gaps, property-based tests for `render_json()`
+
+---
+
+8. Current Work:
+
+Immediately before this summary, the work was:
+
+1. Running a word count audit across all 33 subagents with bash
+2. Finding 10 over-200-word violations
+3. Finding `basis-auditor.md` references an authoring-time resource at runtime
+4. Attempting Edit fixes — 5 succeeded, 5 failed due to exact string mismatch
+5. Re-running word count to confirm 5 still over: axiom-exit-gate (243), axiom-verifier (203), graph-clarifier (204), vector-challenger (222), vector-planner (215)
+
+The user then sent two messages mid-turn:
+- "Can we make sure our files are devoid of AI slop, word salad and filler words. We should be succinct but direct"
+- "Is that removing too much?"
+
+The conversation was interrupted for this summary at the point where the word count results confirmed 5 files still over, and before any response to the user's slop/succinctness request was given.
+
+**Content of the 5 files still needing fixes (from earlier reads):**
+
+`axiom-exit-gate.md` (243 words) — has a 6-item `<heuristics>` block that can be trimmed to 3 key items: unverifiable criteria = fail, increment retry_count, surface low-confidence passes.
+
+`axiom-verifier.md` (203 words) — has a 5-item `<heuristics>` block; 2 items are non-obvious and should stay (unverifiable definition, positive evidence required), 3 are obvious.
+
+`graph-clarifier.md` (204 words) — has a `<disposition>` section at the end that restates the goal. Removing it brings it under 200.
+
+`vector-challenger.md` (222 words) — the closing sentence in `<output>` is long and can be tightened.
+
+`vector-planner.md` (215 words) — has a `<disposition>` section at the end that restates the goal. Removing it brings it under 200.
+
+---
+
+9. Optional Next Step:
+
+The most recent user requests were:
+- "Can we make sure our files are devoid of AI slop, word salad and filler words. We should be succinct but direct"
+- "Is that removing too much?"
+
+The next step is to address both: respond to the "is that removing too much?" question (no — the approach is to rewrite for directness, not arbitrary removal; the content that's being cut is filler that duplicates what's already in the goal/output sections), then do a comprehensive quality rewrite of all subagents — not just the over-200 ones — replacing AI-generated filler phrases with direct imperative writing, using `proof-recon.md` as the exemplar. The 5 files that still need word count fixes should be rewritten using full Write (not Edit) since Edit is failing on exact string matching.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
