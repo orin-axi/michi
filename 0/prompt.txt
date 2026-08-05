@@ -1,0 +1,16 @@
+FYI...
+
+
+What's real vs. stubbed. michi's own lib.rs doc comment is explicit: pipeline, fuzzy, cache, and cli are marked "Plan 2, not yet implemented." Only the default (zero-dep) surface plus the always-compiled mcp module are real today. So monokl should depend on default features (+ serde, for the toon::list convenience API), nothing more — reaching for pipeline/cache/cli now would depend on code that doesn't exist yet.
+
+What monokl concretely needs, mapped to its own spec'd surfaces:
+
+- toon::{render_toon, ToonOptions, Value} — the actual renderer for search/symbols/refs/dependents/patterns list output.
+- kv::render_kv — for single-item output (definition, a single inspect entry).
+- hints::{Hint, render_hints, append_hints} — help[] next-step suggestions (e.g., "run refs <symbol> to see usages").
+- truncate::{truncate, truncate_inline, Truncated} — char-boundary-safe truncation with an agent-readable suffix. Monokl's spec already has its own budget/tokens modules built on tiktoken-rs — those should stay for precise token counting, with michi's truncate handling the actual string-cutting mechanics once a budget decides how much to keep. Complementary, not overlapping.
+- empty::empty_state — definitive zero-result output instead of an empty array that reads as "maybe broken."
+- error::{Error, ErrorClass, ErrorCode, DomainError, Sensitive} + recovery::RecoveryHint — at the CLI/output boundary only. Monokl's internal error type stays MonoklError (thiserror + io-errors, already verbatim in Part 1); the CLI layer converts MonoklError → michi::Error for rendering, rather than michi replacing the internal error type.
+- response::{AgentResponse, OutputFormat} — this is the real gap. Part 3's "Human presentation layer" describes hand-rolled text renderers plus "JSON remains the canonical agent contract," with no mention of michi or TOON at all. That needs reconciling: does monokl's canonical agent format become TOON via AgentResponse (with JSON as one --format option among others), or does JSON stay canonical and TOON become an additional --format toon? CLAUDE.md's directive ("depend on michi... don't hand-roll formatting") reads like the former was intended, but Part 3 was written before that got reconciled. This is a real spec decision, not mechanical — worth a short brainstorming pass before touching 03-multi-language-platform.md's presentation-layer section.
+- mcp::{CallToolResult, ContentBlock} — not needed for v0.1.0's CLI, but AgentResponse::to_call_tool_result() means an MCP server surface for monokl is close to free later. Worth keeping in mind, not building now.
+- idempotency/resilience/status — skip for v0.1.0. resilience (retry/backoff) becomes relevant once Part 6's daemon tier talks to subprocess backends (rust-analyzer, jdtls, gopls) over IPC; status matters once there's a daemon health-check command. Neither applies to a stateless, read-only analysis CLI today.
