@@ -1,0 +1,843 @@
+<task-notification>
+<task-id>ac29d0c4dcf8ad421</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/a7803a0d-e581-4a20-b81d-2d3d26a5761a/tasks/ac29d0c4dcf8ad421.output</output-file>
+<status>completed</status>
+<summary>Agent "Deep research: CrewAI and LangGraph cooperative agent architectures" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have deep research on both frameworks. Let me compose the final structured report.
+
+---
+
+# CrewAI and LangGraph: Deep Research for a Stage-Based Plugin Ecosystem
+
+---
+
+## CREWAI
+
+### 1. Architecture
+
+CrewAI has two tiers:
+
+**Orchestration layer** — `Flow`: an event-driven workflow class that wraps one or more Crews, holds persistent state, handles conditional routing, and coordinates multi-crew pipelines. The top-level unit for production systems.
+
+**Execution layer** — the execution primitives used within a single Crew run:
+- `Crew` — a named group of Agents that runs to completion once `kickoff()` is called
+- `Agent` — an LLM persona with role, goal, backstory, and tools
+- `Task` — a discrete work unit assigned to an Agent, with typed input/output contracts
+- `Tool` — a callable an Agent can invoke; the extension point for external capabilities
+
+Dependency direction: `Flow → Crew → Agent + Task → Tool`
+
+The execution model is purely sequential by default. No underlying dataflow engine — the Crew runner iterates the task list, calls `task.execute()`, and passes outputs forward.
+
+---
+
+### 2. Agent and Task Definitions
+
+**Agent** key fields:
+
+```python
+Agent(
+    role: str,          # "Senior Data Scientist" — becomes part of system prompt
+    goal: str,          # "Analyze datasets" — becomes part of system prompt
+    backstory: str,     # Narrative shaping LLM behavior — becomes part of system prompt
+    llm: str | LLM,
+    tools: list[BaseTool] = [],
+    allow_delegation: bool = False,  # Can hand off sub-tasks to peers
+    memory: bool = False,
+    max_iter: int = 20,
+    max_retry_limit: int = 2,
+    reasoning: bool = False,
+)
+```
+
+`role`, `goal`, and `backstory` are not metadata — they are concatenated verbatim into the system prompt. This is the primary mechanism for steering LLM behavior.
+
+**Task** key fields:
+
+```python
+Task(
+    description: str,                      # Required: what to do
+    expected_output: str,                  # Required: what "done" looks like
+    agent: Agent | None,                   # Which agent executes this
+    context: list[Task] | None,            # Tasks whose output this task depends on
+    output_pydantic: type[BaseModel],      # Typed structured output contract
+    output_json: type[BaseModel],          # JSON output via Pydantic schema
+    guardrail: Callable,                   # Validation function (retry on failure)
+    guardrails: list[Callable],
+    guardrail_max_retries: int = 3,
+    tools: list[BaseTool] = [],            # Override agent's tools for this task
+    human_input: bool = False,
+    async_execution: bool = False,
+)
+```
+
+---
+
+### 3. Cooperation Model
+
+**Sequential**: Task outputs flow forward via the `context` parameter. You explicitly declare which prior tasks a given task depends on:
+
+```python
+analysis_task = Task(
+    description="Analyze the research findings",
+    agent=analyst,
+    context=[research_task],   # analyst receives research_task.output.raw as context
+)
+```
+
+In plain sequential (no `context`), tasks also automatically receive the immediately preceding task's output. The `context` parameter handles non-adjacent dependencies.
+
+What triggers the next stage: completion of the current task (or synchronization of all async tasks listed in `context`). The runner calls tasks in list order.
+
+**Hierarchical**: A manager agent (not in the worker pool) dynamically decides which worker agent handles each task, reviews outputs, and re-delegates on failure. Individual workers with `allow_delegation=True` can further sub-delegate.
+
+---
+
+### 4. Contract System
+
+**Typed output via Pydantic:**
+
+```python
+class ResearchFindings(BaseModel):
+    topics: list[str]
+    key_insight: str
+    confidence: float
+
+research_task = Task(
+    description="Research AI trends",
+    expected_output="Structured findings",
+    agent=researcher,
+    output_pydantic=ResearchFindings,
+)
+
+result = crew.kickoff()
+findings: ResearchFindings = result.tasks_output[0].pydantic
+```
+
+When `output_pydantic` is set, CrewAI injects the JSON schema into the task prompt, instructs the LLM to return valid JSON, validates and parses the result, and retries on validation failure.
+
+**Guardrail validation** (validation-as-feedback, not filtering):
+
+```python
+def validate_has_citations(result: TaskOutput) -&gt; tuple[bool, Any]:
+    if "http" not in result.raw:
+        return (False, "Output must contain citations")
+    return (True, result.raw)
+
+task = Task(
+    agent=researcher,
+    guardrails=[validate_has_citations],
+    guardrail_max_retries=3,  # Agent re-attempts with failure message each time
+)
+```
+
+Guardrails run inside the task execution loop — the agent sees why it failed and adjusts. This is retry-with-feedback, not post-hoc filtering.
+
+**TaskOutput shape:**
+
+```python
+class TaskOutput:
+    raw: str                        # Plain text (always present)
+    pydantic: BaseModel | None      # Only if output_pydantic set
+    json_dict: dict | None          # Only if output_json set
+    agent: str                      # Role that produced this
+    messages: list[LLMMessage]      # Full LLM conversation for this task
+```
+
+---
+
+### 5. Process Model
+
+```python
+Process.sequential    # List order; context flows forward
+Process.hierarchical  # Manager LLM dispatches dynamically
+```
+
+Sequential configuration:
+
+```python
+crew = Crew(
+    agents=[agent1, agent2, agent3],
+    tasks=[task1, task2, task3],     # Execution order = list order
+    process=Process.sequential,
+)
+```
+
+Hierarchical configuration:
+
+```python
+crew = Crew(
+    agents=[researcher, analyst, writer],  # Worker pool
+    tasks=[task1, task2, task3],
+    process=Process.hierarchical,
+    manager_llm="gpt-4o",                  # Auto-created manager
+)
+```
+
+Planning mode (pre-flight task reordering):
+
+```python
+crew = Crew(
+    agents=[...], tasks=[...],
+    planning=True,
+    planning_llm="gpt-4o",   # Rewrites/reorders tasks before execution
+)
+```
+
+A third "consensual" mode is referenced in docs but not implemented in the stable API.
+
+---
+
+### 6. Extensibility
+
+**Tool registration** — two approaches:
+
+```python
+# Decorator approach (functional)
+from crewai.tools import tool
+
+@tool("Web Search")
+def web_search(query: str) -&gt; str:
+    """Search the web. Returns top 5 results."""
+    return results_text
+
+# Class approach (full control, typed I/O)
+from crewai.tools import BaseTool
+
+class WebSearchTool(BaseTool):
+    name: str = "Web Search"
+    description: str = "Searches the web..."
+    args_schema: type[BaseModel] = SearchInput
+    on_failure: Literal["ignore", "warn", "raise"] = "warn"
+    
+    def _run(self, query: str) -&gt; str:
+        return results
+```
+
+Tools are attached to agents (or tasks) at construction time — there is no global registry. Routing to tools is via the LLM's function-calling behavior, not a framework router.
+
+CrewAI maintains an official `crewai-tools` package. Third parties publish compatible tools as PyPI packages implementing `BaseTool`.
+
+---
+
+### 7. YAML-Based Crew Definitions
+
+The recommended authoring pattern uses YAML for data, Python for wiring:
+
+**`config/agents.yaml`:**
+
+```yaml
+researcher:
+  role: &gt;
+    {topic} Senior Data Researcher
+  goal: &gt;
+    Uncover cutting-edge developments in {topic}
+  backstory: &gt;
+    You're a seasoned researcher known for finding the most
+    relevant information and presenting it clearly.
+  allow_delegation: false
+```
+
+**`config/tasks.yaml`:**
+
+```yaml
+research_task:
+  description: &gt;
+    Conduct thorough research about {topic}.
+  expected_output: &gt;
+    A list with 10 bullet points of the most relevant information.
+
+reporting_task:
+  description: &gt;
+    Review the context and expand each topic into a full report section.
+  expected_output: &gt;
+    A fully fledged report formatted as markdown.
+  output_file: report.md
+```
+
+**`crew.py` with `@CrewBase` decorators:**
+
+```python
+from crewai.project import CrewBase, agent, task, crew
+
+@CrewBase
+class ResearchCrew:
+    agents_config = "config/agents.yaml"
+    tasks_config = "config/tasks.yaml"
+    
+    @agent
+    def researcher(self) -&gt; Agent:
+        return Agent(
+            config=self.agents_config["researcher"],
+            tools=[SerperDevTool()],   # Add tools not expressible in YAML
+        )
+
+    @task
+    def research_task(self) -&gt; Task:
+        return Task(
+            config=self.tasks_config["research_task"],
+            agent=self.researcher(),
+        )
+
+    @task
+    def reporting_task(self) -&gt; Task:
+        return Task(
+            config=self.tasks_config["reporting_task"],
+            agent=self.reporting_analyst(),
+            context=[self.research_task()],   # DAG edges declared in Python
+        )
+
+    @crew
+    def crew(self) -&gt; Crew:
+        return Crew(
+            agents=self.agents,   # Auto-populated by @CrewBase from @agent methods
+            tasks=self.tasks,     # Auto-populated by @CrewBase from @task methods
+            process=Process.sequential,
+        )
+```
+
+`@CrewBase` introspects the class, collects `@agent`-decorated methods into `self.agents` and `@task`-decorated methods into `self.tasks`, in definition order. YAML provides the data; Python provides the wiring (tools, context, callbacks).
+
+`{topic}` placeholders are replaced at `crew.kickoff(inputs={"topic": "AI"})` time.
+
+---
+
+### 8. Memory / Context System
+
+**Two distinct systems:**
+
+1. **Task-level context** (ephemeral, run-scoped): The `context` parameter is a list of Task objects. After each task completes, its `TaskOutput.raw` is appended to downstream tasks' LLM prompts. Purely in-memory for the duration of one `kickoff()` call.
+
+2. **Crew-level memory** (persistent, cross-run): `Memory(...)` on the Crew, backed by LanceDB vector store by default:
+
+```python
+crew = Crew(
+    agents=[...], tasks=[...],
+    memory=Memory(
+        llm="gpt-4o-mini",
+        recency_weight=0.3,
+        semantic_weight=0.5,
+        importance_weight=0.2,
+        recency_half_life_days=30,
+        storage="lancedb",
+    ),
+)
+```
+
+Retrieval scoring: `score = (semantic × cosine_similarity) + (recency × 0.5^(age_days/half_life)) + (importance × llm_score)`
+
+Memory uses a hierarchical scope tree (`/project/alpha/decisions`, `/agent/researcher`) for organization. Flows add cross-Crew state via `self.state` dict on the `Flow` class.
+
+---
+
+### 9. Key Patterns Worth Studying
+
+**YAML-data / Python-wiring separation**: Human-readable persona text in YAML; structural wiring (tools, context edges, callbacks) in Python. Non-engineers can edit personas without touching code.
+
+**Role/goal/backstory as LLM API**: Three named fields become the system prompt. The backstory shapes problem-solving style through narrative. Opinionated bet: role-playing prompts produce more consistent behavior than raw instruction prompts.
+
+**Task context as explicit DAG edges**: Dependencies are declared, not inferred. `context=[task_a, task_b]` is the edge declaration.
+
+**Guardrails as retry-with-feedback**: Validation runs inside the execution loop. The agent sees failure reasons and adjusts on retry — not a post-hoc filter.
+
+**Flows as state machines over Crews**: `@start`, `@listen`, `@router` decorators form a stateful event DAG. Each method can invoke a full `Crew.kickoff()`. Enables conditional branching and multi-crew pipelines:
+
+```python
+class PipelineFlow(Flow[PipelineState]):
+    @start()
+    def ingest(self): ...
+
+    @router(ingest)
+    def route(self):
+        return "needs_research" if self.state.incomplete else "ready"
+
+    @listen("needs_research")
+    def do_research(self):
+        result = ResearchCrew().crew().kickoff(inputs={"topic": self.state.topic})
+        self.state.research = result.raw
+```
+
+---
+
+---
+
+## LANGGRAPH
+
+### 1. Architecture
+
+LangGraph's execution engine implements **Google Pregel / Bulk Synchronous Parallel (BSP)**. Computation divides into discrete supersteps:
+
+1. **Plan** — examines which channels changed; builds `PregelExecutableTask` for nodes whose trigger conditions are met
+2. **Execute** — runs selected nodes concurrently (thread pool / asyncio)
+3. **Update** — commits writes to channels, invoking reducer functions where declared
+
+Within a superstep, no node can see another's writes — all outputs from step N become visible only at step N+1.
+
+Two APIs, one runtime:
+
+```python
+# StateGraph API (declarative builder)
+builder = StateGraph(State)
+builder.add_node("my_node", my_function)
+builder.add_edge(START, "my_node")
+graph = builder.compile()   # → CompiledStateGraph (subclass of Pregel)
+
+# Functional API (decorator-based)
+from langgraph.func import entrypoint, task
+
+@task
+def step_a(input: str) -&gt; str:
+    return input.upper()
+
+@entrypoint()
+def my_workflow(state: dict):
+    result = step_a(state["input"]).result()
+    return {"output": result}
+```
+
+Package structure:
+- `langgraph` — core graph construction and Pregel execution
+- `langgraph-checkpoint` — `BaseCheckpointSaver` interface and implementations
+- `langgraph-prebuilt` — high-level patterns (`create_react_agent`, `ToolNode`)
+- `langgraph-sdk` — client for LangGraph Server
+
+---
+
+### 2. Node Definitions
+
+A node is **any Python callable** with signature `(state: State) -&gt; dict`:
+
+```python
+# Minimal — receives full state, returns only changed keys
+def my_node(state: State) -&gt; dict:
+    return {"key": updated_value}
+
+# With runtime config
+def my_node(state: State, config: RunnableConfig) -&gt; dict:
+    step = config["metadata"]["langgraph_step"]
+    return {"key": updated_value}
+
+# Returning a Command (combined update + routing)
+def my_node(state: State) -&gt; Command[Literal["next_a", "next_b"]]:
+    return Command(update={"key": value}, goto="next_a")
+```
+
+No base class required. Nodes receive full state; they return only the keys they changed.
+
+**`add_node` full signature:**
+
+```python
+StateGraph.add_node(
+    node: str | callable,
+    action: callable | None = None,
+    *,
+    metadata: dict[str, Any] | None = None,       # Plugin manifest slot
+    input_schema: type[TypedDict] | None = None,  # Scope isolation — what the node sees
+    retry_policy: RetryPolicy | None = None,
+    cache_policy: CachePolicy | None = None,
+    error_handler: callable | None = None,
+    destinations: dict[str, str] | None = None,   # Valid next nodes (for validation)
+    timeout: float | timedelta | None = None,
+    defer: bool = False,
+)
+```
+
+What can be a node: plain functions, LangChain `Runnable` objects, or **compiled subgraphs** — an entire `CompiledStateGraph` functions as a single node.
+
+---
+
+### 3. Cooperation Model
+
+Nodes do not call each other directly. They read shared state and write partial updates back. The runtime merges updates and routes based on edges.
+
+```
+Node A reads state → does work → returns {"field": new_value}
+                                          ↓
+                              Runtime applies update to channels
+                                          ↓
+                              Next node(s) triggered, read updated state
+```
+
+**Superstep isolation**: Two nodes writing to the same field in the same superstep conflict unless a reducer is defined. A reducer combines both writes; without one, `InvalidUpdateError` is raised.
+
+**Edge types:**
+
+```python
+# Unconditional
+builder.add_edge("A", "B")
+
+# Parallel fan-out (B and C run concurrently in same superstep)
+builder.add_edge("A", "B")
+builder.add_edge("A", "C")
+
+# Conditional
+builder.add_conditional_edges("A", routing_fn)
+builder.add_conditional_edges("A", routing_fn, {"x": "B", "y": "C"})  # path_map
+
+# Entry/exit
+builder.add_edge(START, "first_node")
+builder.add_edge("last_node", END)
+```
+
+This is a **state update model**, not message passing. The `messages` field (using `add_messages` reducer) is a convention for accumulating a conversation log, not an architectural necessity.
+
+---
+
+### 4. Contract System — TypedDict State with Reducers
+
+**State schema definition:**
+
+```python
+from typing import TypedDict, Annotated
+import operator
+
+class GraphState(TypedDict):
+    query: str                                         # Plain: last-write-wins
+    results: Annotated[list[str], operator.add]        # Annotated: append semantics
+    metadata: Annotated[dict[str, float], merge_dicts] # Custom reducer
+    messages: Annotated[list[AnyMessage], add_messages] # LangChain messages (dedup by ID)
+```
+
+**Reducer contract**: any function `(current: T, new: T) -&gt; T`:
+
+```python
+def keep_unique(current: list[str], new: list[str]) -&gt; list[str]:
+    seen = set(current)
+    return current + [x for x in new if x not in seen]
+
+class TagState(TypedDict):
+    tags: Annotated[list[str], keep_unique]
+    metadata: Annotated[dict, merge_dicts]
+```
+
+**Graph-level input/output schema filtering:**
+
+```python
+class InputState(TypedDict):
+    user_input: str          # Only this is accepted externally
+
+class OutputState(TypedDict):
+    final_answer: str        # Only this is returned externally
+
+class InternalState(TypedDict):
+    user_input: str
+    intermediate_data: list  # Private — never exposed
+    final_answer: str
+
+builder = StateGraph(
+    InternalState,
+    input_schema=InputState,
+    output_schema=OutputState,
+)
+```
+
+**Node-level input schema (scope isolation):**
+
+```python
+class NodeView(TypedDict):
+    intermediate_data: list  # This node only sees these keys
+
+builder.add_node("my_node", my_function, input_schema=NodeView)
+```
+
+**Context schema (immutable runtime config, formerly `config_schema`):**
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class RunContext:
+    llm_provider: str = "anthropic"
+    user_id: str = ""
+
+builder = StateGraph(State, context_schema=RunContext)
+graph = builder.compile()
+result = graph.invoke(state, context={"llm_provider": "openai"})
+```
+
+Context is immutable during execution — it's for runtime configuration, not data passing.
+
+---
+
+### 5. Process Model
+
+**Sequential:**
+
+```python
+builder.add_edge(START, "fetch")
+builder.add_edge("fetch", "process")
+builder.add_edge("process", "output")
+builder.add_edge("output", END)
+```
+
+**Branching with conditional edges:**
+
+```python
+def route_by_type(state: State) -&gt; str:
+    return "pdf_handler" if state["doc_type"] == "pdf" else "text_handler"
+
+builder.add_conditional_edges("classifier", route_by_type)
+```
+
+**Cycles (loops) — native, since the graph can have cycles:**
+
+```python
+def should_retry(state: State) -&gt; str:
+    if state["attempts"] &lt; 3 and not state["success"]:
+        return "try_again"
+    return "done"
+
+builder.add_conditional_edges("validator", should_retry, {
+    "try_again": "executor",
+    "done": END
+})
+builder.add_edge("executor", "validator")
+```
+
+Recursion limit defaults to 25; override via `config={"recursion_limit": 50}`.
+
+**Subgraphs** — a compiled subgraph is a node in the parent:
+
+```python
+# Direct add (requires matching state keys)
+parent_builder.add_node("sub_pipeline", sub_graph)
+
+# Wrapped (for schema translation)
+def sub_pipeline_wrapper(state: ParentState) -&gt; dict:
+    result = sub_graph.invoke({"sub_key": state["parent_key"]})
+    return {"parent_key": result["sub_output"]}
+
+parent_builder.add_node("sub_pipeline", sub_pipeline_wrapper)
+```
+
+State key sharing rule: if parent and subgraph share identical keys (same name + type + reducer), add the compiled subgraph directly. Otherwise, wrap for translation.
+
+---
+
+### 6. Extensibility
+
+**Node interface is just a function** — no base class, no registry, no decorator. Any callable `(state) -&gt; dict` is a valid node.
+
+**Command — node-controlled routing (edgeless graphs):**
+
+```python
+from langgraph.types import Command
+from typing import Literal
+
+def classifier_node(state: State) -&gt; Command[Literal["handler_a", "handler_b"]]:
+    category = classify(state["input"])
+    return Command(
+        update={"category": category},
+        goto="handler_a" if category == "X" else "handler_b"
+    )
+```
+
+`Command` fields:
+
+```python
+Command(
+    goto="next_node",        # str | Send | Sequence[str | Send]
+    update={"key": value},   # partial state update
+    resume=some_value,       # value to resume after interrupt()
+    graph=Command.PARENT     # target parent graph (from within subgraph)
+)
+```
+
+Type annotation `Command[Literal["a", "b"]]` documents valid destinations and enables graph validation.
+
+**Send API — dynamic parallelism (count unknown at compile time):**
+
+```python
+from langgraph.types import Send
+
+def fan_out(state: State) -&gt; list[Send]:
+    return [Send("process_item", {"item": x, "index": i})
+            for i, x in enumerate(state["items"])]
+
+builder.add_conditional_edges("splitter", fan_out, ["process_item"])
+```
+
+Each `Send` carries its own isolated state payload — the receiving node only sees the keys provided in `Send`, not the full parent state.
+
+**Third-party node registration**: LangGraph has no formal plugin registry. Third-party nodes are composed at graph-construction time:
+
+```python
+def make_plugin(config: PluginConfig) -&gt; CompiledGraph:
+    builder = StateGraph(PluginState)
+    # ... define nodes, edges
+    return builder.compile()
+
+plugin = make_plugin(config)
+parent_builder.add_node("plugin_stage", plugin)
+```
+
+The `metadata` parameter on `add_node` is the natural plugin manifest slot.
+
+---
+
+### 7. Checkpoint / Persistence System
+
+When a `checkpointer` is attached at `compile()`, the runtime saves full state after each superstep:
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres import AsyncPostgresSaver
+
+# Development
+graph = builder.compile(checkpointer=MemorySaver())
+
+# Production
+async with AsyncPostgresSaver.from_conn_string(DB_URI) as saver:
+    await saver.setup()
+    graph = builder.compile(checkpointer=saver)
+```
+
+**Thread model** — `thread_id` isolates independent execution histories:
+
+```python
+config = {"configurable": {"thread_id": "user_123_session_456"}}
+result = graph.invoke({"input": "hello"}, config)         # starts fresh
+result = graph.invoke({"input": "continue"}, config)      # loads prior state
+```
+
+**Time travel:**
+
+```python
+state = graph.get_state(config)                           # current state
+for snapshot in graph.get_state_history(config): ...      # full history
+graph.update_state(config, {"field": "corrected"})        # manual injection
+```
+
+A `StateSnapshot` contains: `values`, `next` (pending nodes), `config` (checkpoint id), `metadata` (step, source), `tasks`, `interrupts`.
+
+**Human-in-the-loop via `interrupt()`:**
+
+```python
+from langgraph.types import interrupt, Command
+
+def approval_gate(state: State) -&gt; dict:
+    decision = interrupt({"question": "Approve?", "payload": state["draft"]})
+    return {"approved": decision["approved"]}
+
+# First call — runs until interrupt, pauses
+for event in graph.stream(initial, config, stream_mode="updates"):
+    if "__interrupt__" in event:
+        print("Waiting:", event["__interrupt__"])
+
+# Second call — resume with human decision
+for event in graph.stream(Command(resume={"approved": True}), config, ...): ...
+```
+
+**Breakpoints** (pause before/after named nodes without modifying node code):
+
+```python
+graph = builder.compile(
+    checkpointer=MemorySaver(),
+    interrupt_before=["dangerous_action"],
+    interrupt_after=["data_fetch"],
+)
+```
+
+---
+
+### 8. LangGraph Platform
+
+LangGraph Platform (renamed LangSmith Deployment in October 2025) wraps compiled graphs in an ASGI server exposing 30+ REST endpoints. Graph definition declared in `langgraph.json`:
+
+```json
+{
+  "dependencies": ["./requirements.txt"],
+  "graphs": {
+    "my_agent": "./src/agent.py:graph_instance"
+  },
+  "env": ".env"
+}
+```
+
+Core API resources: **Assistants** (named versioned graph instances), **Threads** (state containers), **Runs** (invocations), **Crons** (scheduled runs), **Store** (cross-thread long-term memory).
+
+Production infrastructure: API containers + PostgreSQL (state/checkpoints) + Redis (streaming pub-sub) + background workers (async run queue).
+
+---
+
+### 9. Key Patterns
+
+**Reducer Pattern (state accumulation)**: Allows multiple independent nodes to contribute to the same state field without clobbering. `Annotated[list[str], operator.add]` is the fan-in primitive for cooperative output.
+
+**Command Primitive (edgeless routing)**: Nodes declare their own routing. Eliminates `add_conditional_edges` when routing logic is complex or depends on node output. The type annotation documents valid destinations.
+
+**Send API (dynamic fan-out / map-reduce)**:
+
+```python
+# Map phase
+def distribute(state: OverallState) -&gt; list[Send]:
+    return [Send("worker", {"item": x}) for x in state["items"]]
+
+# Reduce phase — accumulate via reducer
+class OverallState(TypedDict):
+    items: list[str]
+    results: Annotated[list[str], operator.add]   # all workers merge here
+```
+
+**Subgraph composition**: Each stage is a fully self-contained compiled graph with its own internal state. A pipeline assembles stages as nodes, with the subgraph's `input_schema`/`output_schema` forming the public contract.
+
+**BSP superstep as stage model**: Each pipeline stage is a superstep. Within a stage, plugins that don't depend on each other run concurrently (static fan-out or dynamic via `Send`). Reducers merge their outputs. Then the next stage begins.
+
+**Transient per-node state via Send**: `Send` payloads are not required to match the graph state schema. Plugin-specific configuration can be passed as private keys:
+
+```python
+return [Send("plugin_node", {
+    "shared_data": state["data"],
+    "plugin_config": config_for_plugin   # private to this plugin
+})]
+```
+
+---
+
+---
+
+## SYNTHESIS: TAKEAWAYS FOR A STAGE-BASED PLUGIN ECOSYSTEM
+
+Drawing on both frameworks for a system where plugins declare `fulfills: "stage-name"` and produce schema-constrained artifacts:
+
+### Contract design
+
+**LangGraph's approach is stronger here.** Use `TypedDict` + `Annotated` reducers as the inter-stage contract format. Each stage has an explicit `InputState` and `OutputState` (LangGraph's `input_schema`/`output_schema` on `StateGraph`). The node-level `input_schema` (what a plugin sees) is narrower than the full pipeline state — plugins declare exactly what they consume.
+
+From CrewAI: `output_pydantic` is the right model for artifact validation — the schema is injected into the prompt, parsed on receipt, and validated before the artifact is accepted. Apply the same pattern to stage artifacts.
+
+### Plugin registration
+
+LangGraph's `metadata` on `add_node` is the correct slot for plugin manifests (`fulfills`, `version`, `capabilities`, `author`). No global registry needed — plugins are composed at graph-construction time. A plugin is a compiled subgraph with a clean `input_schema`/`output_schema` pair, added as a node via `add_node("stage-name", plugin_subgraph, metadata={...})`.
+
+### Cooperation within a stage
+
+If multiple plugins fulfill the same stage, use **LangGraph's Send API + reducer pattern**: fan out to each plugin via `Send("stage-name", {"item": artifact, "plugin_config": per_plugin_cfg})`, accumulate results via `Annotated[list[StageArtifact], operator.add]`, then run a merge node that selects or combines outputs.
+
+### Routing between stages
+
+Use **LangGraph's Command primitive** for plugin-driven routing — plugins can return `Command(update={...}, goto="next_stage")` to advance the pipeline. For fixed sequential flows, static edges are simpler and more auditable.
+
+### Validation and retry
+
+**CrewAI's guardrails-as-feedback-loop** is the right model: validation runs inside the stage, the plugin sees why it failed, and re-attempts (up to `N` times). This is superior to post-hoc filtering because the plugin can correct its output based on the specific failure.
+
+### Human-in-the-loop gates
+
+Use **LangGraph's `interrupt()`** at stage boundaries: execution pauses (state is checkpointed), a human approves the artifact, and the pipeline resumes via `Command(resume=...)`. This is structurally equivalent to CrewAI's `human_input=True` on Task but with full state persistence and resumability.
+
+### Persistence
+
+LangGraph's checkpoint system (thread model, time travel, state injection) provides production-grade persistence essentially for free given a Postgres checkpointer. CrewAI's Memory system adds semantic retrieval across runs — useful if plugins need to recall past decisions rather than just replay prior state.
+
+### Process model
+
+For a stage-based dev workflow (need → research → spec → plan → code → validate → ship), **LangGraph's static sequential edges** are clearer and more auditable than CrewAI's task list. Each stage transition is a declared edge; conditional advancement (e.g., "skip research if spec already exists") is a `conditional_edge` or `Command.goto`. CrewAI's `Flow` with `@router` is a good alternative if you want the stage-machine expressed as a Python class rather than a graph builder.
+
+### Config format
+
+**CrewAI's YAML-data / Python-wiring separation** is the right authoring pattern for a plugin ecosystem: plugins declare their identity in YAML (`fulfills`, `description`, `author`, `schema`); the runtime wires them together in Python. Non-plugin authors can read and configure plugins without understanding the execution model.</result>
+<usage><subagent_tokens>33514</subagent_tokens><tool_uses>2</tool_uses><duration_ms>918313</duration_ms></usage>
+</task-notification>
