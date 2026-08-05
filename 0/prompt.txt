@@ -1,0 +1,1 @@
+Which functionality is in which crate? Do we have that well documented? Do we link to the concepts in the README? Do we articulate the goals?
