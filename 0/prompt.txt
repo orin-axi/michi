@@ -1,0 +1,69 @@
+Slight tweak
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 220" width="100%" height="100%" fill="none">
+  <defs>
+    <!-- Primary Title Gradient (Callisto DNA) -->
+    <linearGradient id="callistoTitleGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="45%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+
+    <!-- Plugin Accent Gradient -->
+    <linearGradient id="cyanAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+
+    <!-- Glowing Node Gradient -->
+    <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </radialGradient>
+  </defs>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;900&amp;display=swap');
+    .title-text {
+      font-family: 'Outfit', -apple-system, sans-serif;
+      font-weight: 900;
+      font-size: 64px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      fill: url(#callistoTitleGradient);
+    }
+    .subtitle-text {
+      font-family: 'Outfit', -apple-system, sans-serif;
+      font-weight: 700;
+      font-size: 18px; /* ~28% ratio maintained */
+      letter-spacing: 0.45em;
+      text-transform: uppercase;
+      fill: #0284C7;
+    }
+  </style>
+
+  <!-- Modular Syntax & Socket Emblem -->
+  <g transform="translate(35, 30)">
+    <!-- Signal Bus Track -->
+    <line x1="15" y1="80" x2="145" y2="80" stroke="#1E293B" stroke-width="4" stroke-dasharray="4 6" opacity="0.6" />
+
+    <!-- Left Agent Bracket (Slate/Midnight) -->
+    <path d="M 30 35 L 75 80 L 30 125" 
+          stroke="url(#callistoTitleGradient)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Right Plugin Socket Prong (Electric Cyan) -->
+    <path d="M 95 35 L 140 80 L 95 125" 
+          stroke="url(#cyanAccent)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Connected Skill Node Points -->
+    <circle cx="75" cy="80" r="10" fill="url(#nodeGlow)" stroke="#0F172A" stroke-width="3" />
+    <circle cx="140" cy="80" r="7" fill="#38BDF8" />
+    <circle cx="20" cy="80" r="5" fill="#1E293B" />
+  </g>
+
+  <!-- Wordmark: Orin Agent Plugins -->
+  <g transform="translate(205, 96)">
+    <text x="0" y="0" class="title-text">ORIN AGENT</text>
+    <text x="4" y="38" class="subtitle-text">PLUGINS</text>
+  </g>
+</svg>
