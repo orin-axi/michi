@@ -1,0 +1,3 @@
+Look for the best practices for writing Rust code and the best practices for NAPI code. How can we raise the bar of quality in our codebase with our lint rules?
+
+Think readability, maintainability, performance, security
