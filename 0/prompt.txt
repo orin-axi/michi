@@ -1,0 +1,621 @@
+<task-notification>
+<task-id>a50ad676731580888</task-id>
+<tool-use-id>toolu_01NMBzGraTnRkroyUFG3FXG3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/a7803a0d-e581-4a20-b81d-2d3d26a5761a/tasks/a50ad676731580888.output</output-file>
+<status>completed</status>
+<summary>Agent "Deep research: DSPy and Microsoft Autogen agent constraint and conversation architectures" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have enough depth to write the full structured report. Let me compile it.
+
+---
+
+# DSPy and Microsoft Autogen: Deep Research Report for Cooperative Plugin Ecosystem Design
+
+---
+
+## Part 1: DSPy (Stanford NLP)
+
+### 1. Architecture — Core Primitives
+
+DSPy rests on four layered primitives:
+
+**Signature** — a declarative input/output contract. Signatures are pure declarations: they name fields, annotate their types, and optionally describe them. They do not contain execution logic.
+
+**Module** — a composable execution unit. Every module subclasses `dspy.Module` and implements a `forward()` method. Modules can nest other modules as instance attributes; DSPy introspects this graph at optimization time.
+
+**Predictor** (the adapter layer) — bridges Signature declarations to actual LM calls. The adapter reads `Signature.fields`, formats a prompt, calls the LM, and runs `pydantic.TypeAdapter` validation on the response. Multiple adapter strategies exist (JSON mode, XML tags, plain text) — the adapter choice is separate from the Signature.
+
+**Optimizer** — takes a compiled module, a trainset, and a metric function, then tunes the module's prompts and/or weights. Optimizers emit an optimized copy of the program without mutating the original.
+
+The design philosophy: treat LM programs like neural networks. Declare structure declaratively, then let a compiler find optimal parameters. This "compile-then-run" stance separates the author (who writes Signatures and Modules) from the optimizer (which finds the best prompts).
+
+---
+
+### 2. Signature/Contract System
+
+**Inline syntax:**
+```python
+sig = dspy.Signature("question, context -&gt; answer: str, confidence: float")
+```
+
+**Class-based syntax (recommended for production):**
+```python
+class ExtractEntities(dspy.Signature):
+    """Extract named entities from the text, preserving context."""
+    text: str = dspy.InputField(desc="Raw input document")
+    entity_type: Literal["person", "org", "location"] = dspy.InputField()
+    entities: list[str] = dspy.OutputField(desc="All matching entities")
+    rationale: str = dspy.OutputField(desc="Why these were selected")
+```
+
+**Field mechanics:**
+- `dspy.InputField()` and `dspy.OutputField()` are thin wrappers over `pydantic.Field`. They accept `desc` (natural language description included in the prompt), `prefix` (overrides the rendered label), and any Pydantic constraint (`gt`, `min_length`, etc.).
+- **Field names are load-bearing**: the LM reads them. Naming `a, b -&gt; c` produces worse outputs than `question, context -&gt; answer` because the LM infers task semantics from names.
+- **Docstring = task instructions**: the class `__doc__` is stored as `Signature.instructions` and rendered as the system-level task description. Optimizers can replace this via `Signature.with_instructions()`.
+
+**Type system and coercion:**
+- Python built-ins (`str`, `int`, `bool`, `float`, `list[str]`)
+- `typing.Literal` for enumerated constraints — coerces generation to the allowed set
+- Pydantic `BaseModel` subclasses for nested structured output
+- Custom `dspy.Type` subclasses with their own parsers
+- Special domain types: `dspy.Image`, `dspy.Audio`, `dspy.Code`, `dspy.ToolCalls`
+
+**What "coercion" means at runtime:** The adapter calls the LM, gets raw text, then runs `parse_value()` in `dspy/adapters/utils.py`. This tries `json_repair`, falls back to `ast.literal_eval`, then validates with `TypeAdapter(annotation)`. If validation fails and the type is a custom `dspy.Type`, the adapter passes the raw string to the type's own parser. If everything fails, DSPy surfaces a warning (not a hard exception by default) — unless you have asserted the output.
+
+**Runtime signature mutation (for backtracking):**
+Signatures are immutable value objects. Mutations return new instances:
+- `Signature.with_instructions(new_doc)` — replace the task docstring
+- `Signature.with_updated_fields(field_name, desc=..., prefix=...)` — modify field metadata
+- `Signature.prepend/append/insert/delete(...)` — add or remove fields
+
+This is how assertion backtracking works: DSPy creates a modified Signature that injects `Past Output` and `Instruction` fields, then retries with that new Signature.
+
+---
+
+### 3. Agent Definitions
+
+DSPy does not have a first-class "agent" type in the Autogen sense. Instead, agents are Modules that happen to use tool-using sub-modules like `dspy.ReAct`.
+
+**ReAct agent pattern:**
+```python
+class CustomerServiceAgent(dspy.Module):
+    def __init__(self, tools):
+        self.agent = dspy.ReAct(
+            CustomerServiceSignature,  # defines the task contract
+            tools=tools,
+            max_iters=10
+        )
+    
+    def forward(self, customer_query: str, history: list) -&gt; dspy.Prediction:
+        return self.agent(customer_query=customer_query, history=history)
+```
+
+`dspy.ReAct` takes any Signature as its task contract. The LM iteratively selects tools, observes results, and updates its reasoning. The special `finish` tool terminates the loop and triggers a synthesis pass to produce the declared output fields. The `trajectory` field on the returned `Prediction` records every thought/action/observation.
+
+Agent "role" lives in the Signature docstring and field descriptions. The Signature is the agent's declared contract with the world — not a system prompt written as prose, but a typed schema with human-readable descriptions embedded at field granularity.
+
+---
+
+### 4. Cooperation Model
+
+DSPy modules cooperate through **direct Python composition**. There is no message-passing protocol; one module calls another by passing typed Python objects:
+
+```python
+class ResearchPipeline(dspy.Module):
+    def __init__(self):
+        self.searcher = dspy.ReAct(SearchSignature, tools=[web_search])
+        self.synthesizer = dspy.ChainOfThought(SynthesisSignature)
+        self.reviewer = dspy.Predict(ReviewSignature)
+    
+    def forward(self, topic: str):
+        search_result = self.searcher(topic=topic)
+        synthesis = self.synthesizer(
+            findings=search_result.findings,
+            sources=search_result.sources
+        )
+        review = self.reviewer(
+            draft=synthesis.summary,
+            criteria="accuracy, completeness"
+        )
+        return review
+```
+
+Outputs from one module become typed inputs to the next. The DSPy framework traces this call graph during optimization. Composition is synchronous and stateless between calls (state must be explicitly passed through fields).
+
+For refinement loops, DSPy provides:
+- `dspy.Refine(module, N, reward_fn)` — runs module up to N times, generates feedback hints for retry
+- `dspy.BestOfN(module, N, metric_fn)` — generates N candidates, returns the best-scoring one
+
+These are first-class refinement patterns, not ad-hoc retry logic.
+
+---
+
+### 5. Constraint Mechanisms
+
+**Two-tier constraint system:**
+
+**Tier 1 — Soft (type coercion):** Signature type annotations instruct the adapter to coerce outputs. This handles well-formed LLM outputs that happen to use wrong formatting. Coercion is best-effort; warnings are emitted on failure.
+
+**Tier 2 — Hard (assertions):**
+```python
+class ValidatedModule(dspy.Module):
+    def __init__(self):
+        self.predict = dspy.ChainOfThought(MySignature)
+    
+    def forward(self, text: str):
+        result = self.predict(text=text)
+        
+        # Hard constraint — triggers backtracking on failure
+        dspy.Assert(
+            len(result.summary) &lt; 200,
+            "Summary must be under 200 characters. Be concise."
+        )
+        
+        # Soft constraint — logs warning, continues
+        dspy.Suggest(
+            result.sentiment in ["positive", "negative", "neutral"],
+            "Sentiment should be one of the three standard values."
+        )
+        
+        return result
+```
+
+**Backtracking mechanics:**
+1. Assertion fails → DSPy catches the violation
+2. Creates a new Signature variant with two injected fields: `Past Output` (the failed response) and `Instruction` (your feedback message)
+3. Retries the module call with this modified Signature
+4. Repeats up to `max_backtracks` (default: 2)
+5. Reported improvement: +164% constraint compliance vs. unconstrained chains
+
+The key insight: backtracking modifies the prompt dynamically without changing the module's declared Signature. The modification is local to that retry context.
+
+**What constraints do NOT do:** They do not prevent the LLM from reasoning however it wants internally. They constrain the declared output shape. The LLM's chain-of-thought (if using ChainOfThought) is unconstrained; only the final output fields are validated.
+
+---
+
+### 6. Optimization — The Compiler Approach
+
+This is DSPy's most distinctive contribution. The optimizer treats your entire module tree as a parameterized program and searches for better prompt parameters.
+
+**What can be optimized:**
+- Few-shot demonstration examples (selected and ordered)
+- System-level instructions (the Signature docstring)
+- Field descriptions
+- LM weights (via BootstrapFinetune)
+
+**Optimizer catalog:**
+
+| Optimizer | Tunes | Min Trainset | Cost |
+|---|---|---|---|
+| LabeledFewShot | Few-shot demos | 5-10 examples | Minimal |
+| BootstrapFewShot | Few-shot (synthetic) | ~10 examples | Low |
+| BootstrapFewShotWithRandomSearch | Few-shot + search | 50+ examples | Medium |
+| COPRO | Instructions (coordinate ascent) | 50+ examples | Medium |
+| MIPROv2 | Instructions + few-shot (Bayesian) | 200+ examples | ~$2-3 |
+| SIMBA | Instructions (self-reflective) | 50+ examples | Medium |
+| GEPA | Instructions (trajectory-based) | 50+ examples | Medium |
+| BootstrapFinetune | LM weights | 200+ examples | High |
+
+**MIPROv2 algorithm (most capable):**
+1. Bootstrap: run program on trainset, collect execution traces, filter high-scoring trajectories
+2. Grounded proposal: LM reviews program code, data samples, and successful traces; proposes N candidate instruction variants per module
+3. Bayesian search: sample mini-batches, try instruction/demo combinations, score against metric, update a surrogate model to guide next exploration step
+
+**SIMBA algorithm:**
+Uses stochastic mini-batch sampling to identify examples where the model's output has high variability (indicating uncertainty or inconsistency). Applies the LM to introspectively analyze failures and generate self-reflective improvement rules. More efficient than full Bayesian search for medium-sized datasets.
+
+**Usage pattern:**
+```python
+teleprompter = dspy.MIPROv2(metric=my_metric, num_candidates=10)
+optimized_program = teleprompter.compile(
+    my_module,
+    trainset=train_examples,
+    num_trials=50
+)
+optimized_program.save("optimized.json")  # stores optimized prompts
+```
+
+The critical property: optimization is **separable from definition**. The same module can be compiled with different optimizers, different trainsets, or different metrics — producing different optimized variants without touching the module source.
+
+---
+
+### 7. Extensibility
+
+**Custom modules:** Subclass `dspy.Module`, implement `__init__` and `forward()`. No registration required. The module tree is introspected automatically by optimizers.
+
+**Custom types:** Subclass `dspy.Type` with custom parse logic. DSPy's adapter calls the type's parser as a fallback when standard JSON parsing fails.
+
+**Custom adapters:** New adapters can implement the prompt formatting strategy for specialized LM APIs. The Signature contract remains stable; adapters translate it to model-specific formats.
+
+**Custom optimizers:** Implement the optimizer interface (`compile(program, trainset, metric)` → optimized program). All built-in optimizers follow this contract.
+
+**Serialization:** Optimized programs serialize to JSON (just the learned parameters — demos, instructions). The module architecture (code) is separate from its parameters, similar to neural network weight files.
+
+**Third-party integration:** `forward()` can call any Python: Langchain agents, MCP tool handlers, database clients. DSPy traces these calls through its forward pass for optimization purposes.
+
+---
+
+### 8. Key Patterns
+
+**Signature polymorphism:** `dspy.ReAct`, `dspy.ChainOfThought`, `dspy.Predict` all accept any Signature. The reasoning strategy (chain-of-thought reasoning, tool use, direct prediction) is separate from the task contract (the Signature). You can swap reasoning strategies without changing the declared inputs/outputs.
+
+**Metric-as-contract:** Optimizers require a metric function `(example, prediction, trace) -&gt; float`. The metric is the machine-readable specification of "good output." The optimizer finds prompts that maximize the metric. This is a form of behavioral contract enforced through optimization rather than runtime validation.
+
+**Traces as training data:** Every DSPy execution generates a trace. Traces accumulate into demonstration examples. Good traces become few-shot examples in future prompts. This creates a flywheel: more usage → better examples → better prompts → better outputs.
+
+**Immutable Signature mutation:** The pattern of creating Signature variants (via `with_instructions`, `with_updated_fields`) without mutating the original is critical for safe concurrent optimization runs and assertion backtracking.
+
+---
+
+## Part 2: Microsoft AutoGen (v0.4+)
+
+### 1. Architecture — Core Primitives
+
+AutoGen v0.4 is a three-layer system:
+
+**Core Layer** — asynchronous, event-driven infrastructure. Implements the actor model: each agent is an independent actor that processes messages from its mailbox. Communication is pub-sub via topics and subscriptions. The runtime manages agent lifecycles (local for dev, distributed for production). This layer has no concept of "conversations" — only messages, topics, and subscriptions.
+
+**AgentChat Layer** — high-level, task-oriented abstraction built on Core. Provides `BaseChatAgent`, pre-built agents (`AssistantAgent`, `CodeExecutorAgent`), pre-built team patterns (`RoundRobinGroupChat`, `SelectorGroupChat`, `Swarm`, `GraphFlow`), and a termination condition system. This is the layer most users interact with.
+
+**Extensions Layer** — concrete implementations of Core interfaces (Azure code executor, OpenAI/Anthropic clients) and third-party integrations. Maintained by both Microsoft and community contributors. This is the plugin boundary.
+
+The actor model means agents are inherently concurrent and composable into distributed systems without architectural changes. A swarm that works locally can run distributed by switching the runtime.
+
+---
+
+### 2. Message Contracts
+
+AutoGen's message system is strongly typed via Pydantic models:
+
+**Core message types (AgentChat layer):**
+- `TextMessage` — plain text from an agent
+- `ToolCallMessage` — agent requests a tool invocation
+- `ToolCallResultMessage` — tool invocation result
+- `HandoffMessage` — agent transfers control to another agent (target: str, content: str)
+- `StopMessage` — signals team termination
+- `StructuredMessage[T]` — typed output carrying a Pydantic model (emitted when `output_content_type` is set)
+
+**Structured output contract:**
+```python
+class AnalysisResult(BaseModel):
+    sentiment: Literal["positive", "negative", "neutral"]
+    confidence: float
+    key_themes: list[str]
+    summary: str
+
+agent = AssistantAgent(
+    "analyzer",
+    model_client=client,
+    output_content_type=AnalysisResult,  # forces StructuredMessage[AnalysisResult]
+    system_message="Analyze customer feedback and return structured results."
+)
+```
+
+When `output_content_type` is set, the agent uses the model's structured output mode (OpenAI JSON schema mode, etc.) to generate a response that validates against the Pydantic model. The agent emits a `StructuredMessage[AnalysisResult]` instead of `TextMessage`. Downstream agents can pattern-match on message type.
+
+**`produced_message_types` property:** Every `BaseChatAgent` subclass declares what message types it can emit. Teams use this for routing validation. A custom agent that only produces `StructuredMessage[MySchema]` declares that explicitly, and the framework can enforce it.
+
+---
+
+### 3. Agent Definitions
+
+**Full `AssistantAgent` constructor:**
+```python
+AssistantAgent(
+    name: str,
+    model_client: ChatCompletionClient,
+    *,
+    tools: List[BaseTool | Callable] | None = None,
+    handoffs: List[Handoff | str] | None = None,
+    system_message: str | None = "You are a helpful AI assistant...",
+    description: str = "An agent that provides assistance...",
+    output_content_type: type[BaseModel] | None = None,
+    reflect_on_tool_use: bool | None = None,
+    max_tool_iterations: int = 1,
+    memory: Sequence[Memory] | None = None,
+    metadata: Dict[str, str] | None = None
+)
+```
+
+Key parameters for cooperative systems:
+
+- **`description`**: Read by `SelectorGroupChat`'s routing model to decide which agent handles the next turn. This is the agent's externally visible capability declaration — essentially a routing label. It should describe what the agent does and when to call it, not how it works.
+
+- **`system_message`**: The agent's private instructions (role, constraints, persona). Not exposed to the routing layer. Separation between public description (for routing) and private instructions (for behavior) is intentional.
+
+- **`handoffs`**: In Swarm, declares which other agents this agent can transfer control to. Can be `str` (agent name) or a `Handoff` object with richer metadata:
+  ```python
+  Handoff(
+      target="specialist_agent",
+      name="transfer_to_specialist",  # tool call name
+      description="Use when the task requires deep domain expertise",  # shown to LLM
+      message="Transferring to specialist: {reason}"  # content of HandoffMessage
+  )
+  ```
+
+- **`output_content_type`**: Forces the agent's final response to be a validated Pydantic model. This is the strongest output constraint mechanism in AutoGen.
+
+**Custom agent definition:**
+```python
+class MyCustomAgent(BaseChatAgent):
+    def __init__(self, name: str, description: str):
+        super().__init__(name, description)
+        # ... setup
+    
+    @property
+    def produced_message_types(self) -&gt; tuple[type[BaseChatMessage], ...]:
+        return (TextMessage, StructuredMessage[MyOutputSchema])
+    
+    async def on_messages(
+        self,
+        messages: Sequence[BaseChatMessage],
+        cancellation_token: CancellationToken
+    ) -&gt; Response:
+        # ... implementation
+        return Response(chat_message=StructuredMessage(
+            content=MyOutputSchema(...),
+            source=self.name
+        ))
+    
+    async def on_reset(self, cancellation_token: CancellationToken) -&gt; None:
+        pass
+```
+
+**Component serialization (plugin registry pattern):**
+```python
+class MyAgent(BaseChatAgent, Component[MyAgentConfig]):
+    component_config_schema = MyAgentConfig
+    component_provider_override = "mypackage.agents.MyAgent"
+    
+    @classmethod
+    def _from_config(cls, config: MyAgentConfig) -&gt; "MyAgent":
+        return cls(name=config.name, ...)
+    
+    def _to_config(self) -&gt; MyAgentConfig:
+        return MyAgentConfig(name=self.name, ...)
+```
+
+This enables `dump_component()` / `load_component()` — JSON serialization of entire agent configurations for sharing, versioning, and registry-based instantiation.
+
+---
+
+### 4. Cooperation Model
+
+AutoGen has four distinct cooperation patterns with different trade-offs:
+
+**RoundRobinGroupChat** — fixed turn order. All agents share message history. Simple, predictable, good for deliberation pipelines where every agent should weigh in on every step. No routing intelligence.
+
+**SelectorGroupChat** — model-based routing. A selector LLM sees the conversation and agent descriptions, then picks which agent speaks next. Dynamic and intelligent but adds an LLM call per routing decision. The `description` field is the routing contract — the selector reads it.
+
+**Swarm** — emergent delegation via HandoffMessage. Agents decide locally who handles next. The current speaker is determined by the most recent `HandoffMessage`. No central coordinator; agents need to declare their `handoffs` targets up front. Good for workflows with clear specialization boundaries.
+
+```python
+# Swarm setup
+travel_agent = AssistantAgent(
+    "travel_agent",
+    model_client=client,
+    handoffs=["flights_refunder", "user"],
+    system_message="You are a travel agent. Hand off to flights_refunder for refunds."
+)
+flights_refunder = AssistantAgent(
+    "flights_refunder",
+    model_client=client,
+    handoffs=["travel_agent", "user"],
+    tools=[refund_flight_tool],
+    system_message="You specialize in flight refunds. Return to travel_agent when done."
+)
+
+termination = HandoffTermination(target="user") | TextMentionTermination("TERMINATE")
+team = Swarm([travel_agent, flights_refunder], termination_condition=termination)
+```
+
+**GraphFlow (experimental)** — explicit directed graph with conditional edges. Deterministic control for complex workflows:
+
+```python
+builder = DiGraphBuilder()
+builder.add_node(writer_agent)
+builder.add_node(reviewer_agent)
+builder.add_edge(writer_agent, reviewer_agent)
+builder.add_edge(
+    reviewer_agent, writer_agent,
+    condition=lambda msg: "APPROVE" not in msg.to_model_text()
+)
+# loop until reviewer approves
+
+graph = builder.build()
+team = GraphFlow(
+    participants=[writer_agent, reviewer_agent],
+    graph=graph,
+    termination_condition=MaxMessageTermination(20)
+)
+```
+
+Termination when: leaf node reached (no outgoing edges), explicit `StopMessage`, or termination condition fires.
+
+---
+
+### 5. Constraint Mechanisms
+
+**Output type constraint** (strongest): `output_content_type=MyPydanticModel` forces structured generation via model's JSON schema mode. The agent cannot return a malformed response — the model API itself enforces the schema. This is enforcement at the generation layer, not post-hoc validation.
+
+**Handoff routing constraint**: Agents can only transfer to agents listed in their `handoffs` parameter. The framework validates at setup time that handoff targets exist in the team. This is a compile-time constraint on cooperation topology.
+
+**Termination conditions**: Teams define when a run ends. `HandoffTermination(target="user")` stops when control returns to the user. `MaxMessageTermination(n)` stops after n messages. `TextMentionTermination("TERMINATE")` stops when any agent says the word. Conditions combine with `|` (OR) and `&amp;` (AND). This is a behavioral contract on the team as a whole.
+
+**`produced_message_types`**: Agents declare what types they can emit. Teams can validate that connected agents can pass compatible messages. This is the interface contract at the framework level.
+
+**Tool call validation**: Tools declared as `Callable` have their type signatures automatically parsed as the tool schema. The model is shown the exact function signature including type hints, constraining what arguments it can pass.
+
+**What AutoGen does NOT constrain**: The reasoning process inside an agent's system_message. The agent can think however it wants; only the declared outputs (`output_content_type`, `produced_message_types`) and handoff targets are enforced.
+
+---
+
+### 6. Optimization
+
+AutoGen has no built-in equivalent to DSPy's optimizer. There is no automatic prompt search. This is a deliberate design choice — AutoGen is a runtime framework, not a compilation framework.
+
+What exists instead:
+- **Observability**: OpenTelemetry integration for full message traces. You can log every agent's inputs and outputs.
+- **Memory components**: Agents can be given `Memory` objects that accumulate interaction history. This is manual optimization — you curate what gets remembered.
+- **External optimization**: DSPy and AutoGen can be combined — use DSPy to optimize individual agent prompts, then deploy those agents in an AutoGen team.
+
+The v0.4 docs explicitly call out that "community support allows open-source developers to manage their own extensions," suggesting optimizer extensions are a planned ecosystem contribution.
+
+---
+
+### 7. Extensibility
+
+**Agent plugin pattern:**
+1. Subclass `BaseChatAgent` (AgentChat) or implement `RoutedAgent` (Core) 
+2. Implement `on_messages()`, `on_reset()`, and `produced_message_types`
+3. Optionally implement `Component[ConfigSchema]` for registry serialization
+4. Register as a team participant — any `BaseChatAgent` works in any team type
+
+**Tool plugin pattern:**
+- Any Python callable becomes a tool (function signature auto-parsed)
+- `BaseTool` subclass for complex tools with validation
+- Workbench for tool groups with shared state
+
+**Extension packages:** `autogen_ext` is the official extension namespace. Third parties publish `autogen_ext.*` packages with custom agents, model clients, memory backends, etc. The Extensions layer is the intended plugin boundary.
+
+**Component registry:** `dump_component()` and `load_component()` enable declarative agent configuration in JSON. An agent defined in a third-party package can be loaded by name from a JSON config file — a plugin registry pattern.
+
+---
+
+### 8. Key Patterns
+
+**Description-based routing:** In `SelectorGroupChat`, agent `description` fields are the only thing the router sees. This is a clean separation: the agent's internal behavior is hidden; its public capability declaration is the routing contract. Agents compete for tasks based purely on their declared description.
+
+**Shared context without shared state:** Swarm agents all read from the same message history, but each agent's internal state (model context, memory) is private. The shared history is the coordination mechanism; private state is the agent's working memory.
+
+**Handoff-as-tool-call:** Handoffs are implemented as tool calls under the hood. The LLM generates a function call whose name matches a delegate function. This means handoffs are visible in traces, loggable, and can be intercepted at the tool execution layer.
+
+**SocietyOfMindAgent:** An agent that internally runs a full team. Externally it looks like a single agent; internally it orchestrates a multi-agent deliberation. This enables hierarchical agent composition — teams of teams — with clean external interfaces.
+
+**Termination as composition:** Termination conditions compose with `|` and `&amp;` operators. This is a combinator pattern for expressing complex stopping criteria without special-casing.
+
+---
+
+## Part 3: Synthesis — Takeaways for Cooperative Plugin Ecosystem Design
+
+### A. Schema-Constrained Outputs Without Over-Specifying Reasoning
+
+**DSPy's model:** The Signature specifies fields and types; the Module (and its Signature docstring) specifies the goal. The reasoning strategy (`ChainOfThought`, `ReAct`, `Predict`) is chosen separately. An agent can reason with full chain-of-thought internally and still emit only the declared output fields. The reasoning is completely unconstrained; the output contract is enforced by the adapter layer.
+
+**Autogen's model:** `output_content_type=MyPydanticModel` forces structured JSON generation at the model API level. The system_message expresses the goal in natural language; the output schema enforces what comes back. Again: internal reasoning is unconstrained, output shape is locked.
+
+**Direct takeaway for your system:** Define schemas at handoff boundaries only. Each agent gets a typed `InputSchema` and a typed `OutputSchema`. The agent's system_message/instructions express the goal ("produce a deployment plan that addresses the analysis findings"). How it reasons to get there is its business. The schemas are the interface contract, not the implementation contract.
+
+### B. Letting Agents Think While Constraining What They Return
+
+**DSPy pattern:** Add a `rationale: str` field to your Signature. DSPy (and `ChainOfThought`) uses this as a scratchpad — the LLM writes its reasoning into `rationale` before producing the constrained output fields. You get full thinking, and the output is still schema-bound. This is DSPy's native solution to "show your work but return typed output."
+
+**AutoGen pattern:** `reflect_on_tool_use=True` on `AssistantAgent` causes the agent to generate a text reflection after tool calls before producing its final `output_content_type` response. The reflection is unconstrained; the final response is typed.
+
+**Direct takeaway:** Include an explicit `reasoning: str` or `analysis: str` field in your handoff schemas. Make it an `OutputField` but not part of the downstream agent's `InputField` set — it's metadata, not passed forward. This way every handoff carries the agent's thinking, which is valuable for debugging and for future optimization, without burdening downstream consumers with it.
+
+### C. Typed Signatures as Replacement/Augmentation for shared/schemas/
+
+DSPy signatures and your shared schemas are solving the same problem but at different levels:
+
+**What shared schemas give you:** Pydantic model definitions that can be imported by any agent. Runtime validation. A single source of truth for data shapes.
+
+**What DSPy signatures add on top:**
+- Field-level descriptions that become part of the prompt (the schema is self-documenting to the LLM)
+- Distinction between input and output fields (not just "this is the shape" but "this is what the LLM should produce")
+- Adapter-driven coercion (schema validation is attempted multiple ways before failing)
+- Assertion backtracking (retry with error context when schema validation fails)
+- Optimizer compatibility (the signature becomes the target the optimizer tunes against)
+
+**The pattern worth adopting:** Your `shared/schemas/` become the ground-truth Pydantic models. DSPy-style signatures wrap them with field descriptions and I/O role declarations. The Pydantic model is the transport wire format; the signature adds the semantic layer that makes it LLM-legible.
+
+Concretely:
+```python
+# shared/schemas/handoffs.py
+class PlanningOutput(BaseModel):
+    deployment_plan: list[DeploymentStep]
+    risks: list[str]
+    reasoning: str  # scratchpad, not forwarded
+
+# In the planning agent's module
+class PlanningSignature(dspy.Signature):
+    """Given analysis findings, produce a concrete deployment plan with risk assessment."""
+    analysis: AnalysisOutput = dspy.InputField(
+        desc="Structured findings from the analysis agent"
+    )
+    constraints: list[str] = dspy.InputField(
+        desc="Hard constraints that the plan must satisfy"
+    )
+    reasoning: str = dspy.OutputField(
+        desc="Step-by-step reasoning before committing to a plan"
+    )
+    plan: PlanningOutput = dspy.OutputField(
+        desc="The final deployment plan with risk assessment"
+    )
+```
+
+The Pydantic model travels between agents. The DSPy signature wraps it for the LLM that produces it. This gives you optimizer compatibility, field-level documentation, and typed enforcement — without changing your transport schemas.
+
+### D. The Optimizer Loop as a Process System
+
+DSPy's optimizer is applicable to your development process framework directly. The optimizer's input is a metric function — a programmatic definition of "did this agent do the job well?" For a cooperative plugin system, this metric could be:
+
+- Did the downstream agent successfully parse and use the output?
+- Did the pipeline reach the correct terminal state?
+- Did any agent's output fail schema validation?
+
+Running MIPROv2 or SIMBA against a curated set of development tasks would automatically improve each agent's instructions (Signature docstrings) and few-shot demonstrations. This is continuous process improvement without manual prompt engineering.
+
+The key insight: you do not need a single global optimizer. Each agent module can be compiled independently with a local metric, then composed. The composition still benefits from optimization because each component has been individually tuned.
+
+### E. Autogen's Description-Routing vs. DSPy's Signature-Routing
+
+These are two approaches to "how does the system know which agent to call?":
+
+- **AutoGen SelectorGroupChat**: a routing LLM reads agent `description` fields and the conversation, then picks the next speaker. Flexible, but adds LLM cost per routing decision and depends on description quality.
+- **AutoGen Swarm/GraphFlow**: agents declare their own handoff topology (Swarm) or you specify it as a graph (GraphFlow). Deterministic for known workflows.
+- **DSPy**: no built-in routing — you compose modules explicitly in Python. The routing logic is code, not LLM decisions.
+
+For a cooperative plugin ecosystem where plugins declare their capabilities, the **Autogen `description` field pattern** is directly applicable: each plugin agent declares a structured description of what tasks it handles. A coordinator (SelectorGroupChat-style) routes incoming work items to the right plugin. The `produced_message_types` property is the machine-readable output contract that a coordinator can introspect without LLM involvement.
+
+---
+
+## Summary Reference Table
+
+| Dimension | DSPy | AutoGen |
+|---|---|---|
+| **Primary model** | Compilation + optimization | Runtime multi-agent orchestration |
+| **Cooperation** | Python function calls (synchronous composition) | Async message passing (actor model) |
+| **Output constraint** | Type annotations + adapter coercion + Assert/Suggest backtracking | `output_content_type` Pydantic model via JSON schema mode |
+| **Schema declaration** | Signature class with typed fields | `BaseChatAgent.produced_message_types` + `output_content_type` |
+| **Agent role** | Signature docstring + field names | `system_message` (private) + `description` (routing-public) |
+| **Handoff** | Direct Python call (explicit) | `HandoffMessage` (Swarm) or graph edge (GraphFlow) |
+| **Optimization** | Built-in: MIPROv2, SIMBA, GEPA, BootstrapFewShot | None built-in; external telemetry |
+| **Constraint enforcement** | Best-effort coercion + backtracking retry | Hard enforcement at model API level (JSON schema mode) |
+| **Reasoning vs. output** | `rationale` field pattern; reasoning unconstrained | `reflect_on_tool_use`; reasoning in text, output typed |
+| **Extensibility** | Subclass `dspy.Module`; no registration needed | Subclass `BaseChatAgent`; `Component` for registry |
+| **Distributed** | No native support | First-class via actor model runtime |
+| **State sharing** | Explicit field passing | Shared message history (Swarm) or pub-sub (Core) |
+
+---
+
+Sources:
+- [stanfordnlp/dspy — DeepWiki](https://deepwiki.com/stanfordnlp/dspy)
+- [DSPy Building Programs — DeepWiki](https://deepwiki.com/stanfordnlp/dspy/3-building-dspy-programs)
+- [DSPy Class-Based Signatures](https://dspy.ai/getting-started/class-based-signatures/)
+- [DSPy Signatures In Depth](https://dspy.ai/diving-deeper/signatures-in-depth/)
+- [DSPy Optimizers Reference](https://github.com/stanfordnlp/dspy/blob/main/docs/docs/learn/optimization/optimizers.md)
+- [DSPy Custom Module Tutorial](https://dspy.ai/tutorials/custom_module/)
+- [DSPy Assert/Suggest Mechanism](https://learnbybuilding.ai/tutorial/guiding-llm-output-with-dspy-assertions-and-suggestions/)
+- [MIPROv2 — DSPy](https://dspy.ai/api/optimizers/MIPROv2/)
+- [AutoGen v0.4 Launch Blog](https://devblogs.microsoft.com/autogen/autogen-reimagined-launching-autogen-0-4/)
+- [AutoGen v0.4 Research Blog — Microsoft](https://www.microsoft.com/en-us/research/blog/autogen-v0-4-reimagining-the-foundation-of-agentic-ai-for-scale-extensibility-and-robustness/)
+- [AutoGen AgentChat Agents Reference](https://microsoft.github.io/autogen/stable//reference/python/autogen_agentchat.agents.html)
+- [AutoGen Custom Agents Guide](https://microsoft.github.io/autogen/stable//user-guide/agentchat-user-guide/custom-agents.html)
+- [AutoGen Swarm Pattern](https://microsoft.github.io/autogen/stable//user-guide/agentchat-user-guide/swarm.html)
+- [AutoGen Handoff Design Pattern](https://microsoft.github.io/autogen/stable//user-guide/core-user-guide/design-patterns/handoffs.html)
+- [AutoGen GraphFlow](https://microsoft.github.io/autogen/stable//user-guide/agentchat-user-guide/graph-flow.html)
+- [AutoGen Teams Reference](https://microsoft.github.io/autogen/stable//reference/python/autogen_agentchat.teams.html)
+- [Autogen Structured Outputs — AG2 Docs](https://docs.ag2.ai/latest/docs/user-guide/basic-concepts/structured-outputs/)</result>
+<usage><subagent_tokens>41345</subagent_tokens><tool_uses>32</tool_uses><duration_ms>387300</duration_ms></usage>
+</task-notification>
