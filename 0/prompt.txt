@@ -1,0 +1,1 @@
+Let’s do a quick audit of the current state, what we set out to build, etc. look particularly for stubbed or hard coded values and outputs. Make sure we’re not just covering the happy path but also corner cases and error cases
