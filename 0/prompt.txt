@@ -1,0 +1,585 @@
+<task-notification>
+<task-id>aa94bb9147d755f83</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/a7803a0d-e581-4a20-b81d-2d3d26a5761a/tasks/aa94bb9147d755f83.output</output-file>
+<status>completed</status>
+<summary>Agent "Deep research: Semantic Kernel and Haystack plugin/pipeline architectures" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have comprehensive data on both frameworks. Let me compile the full report.
+
+---
+
+# Research Report: Microsoft Semantic Kernel and Haystack (deepset) for a Cooperative Plugin Ecosystem
+
+---
+
+## Part I: Microsoft Semantic Kernel
+
+### 1. Architecture
+
+The central primitive is the **Kernel** — a dependency-injection container that holds two categories of registrations:
+
+- **Services**: AI connectors (chat completion, embedding, etc.) and infrastructure services (loggers, HTTP clients). Modelled after .NET's `IServiceProvider`.
+- **Plugins**: Grouped collections of `KernelFunction` objects that are exposed to both the LLM planner and calling code.
+
+```
+Kernel
+  ├── Services (IServiceCollection)
+  │     ├── IChatCompletionService  →  OpenAI / Azure / Ollama etc.
+  │     └── ILogger, HttpClient, etc.
+  └── Plugins (KernelPluginCollection)
+        ├── LightsPlugin
+        │     ├── KernelFunction "get_lights"
+        │     └── KernelFunction "change_state"
+        └── TimePlugin
+              └── KernelFunction "get_time"
+```
+
+The Kernel is intentionally lightweight and recommended to be created as a **transient** service because the plugin collection is mutable. Filters attach as ordered lists to the Kernel instance itself.
+
+---
+
+### 2. Plugin / Component Definitions
+
+Plugins are classes; their methods become functions via decorator or attribute:
+
+**Python**
+```python
+from semantic_kernel.functions import kernel_function
+from typing import Annotated
+
+class LightsPlugin:
+    @kernel_function(name="get_lights", description="Gets all lights and their state")
+    async def get_lights(self) -&gt; list[LightModel]:
+        """Gets a list of lights and their current state."""
+        return self._lights
+
+    @kernel_function
+    async def change_state(
+        self,
+        id: Annotated[int, "The ID of the light"],
+        new_state: LightModel
+    ) -&gt; LightModel | None:
+        """Changes the state of the light."""
+        ...
+```
+
+**C#**
+```csharp
+public class LightsPlugin
+{
+    [KernelFunction("get_lights")]
+    [Description("Gets a list of lights and their current state")]
+    public async Task&lt;List&lt;LightModel&gt;&gt; GetLightsAsync() { ... }
+
+    [KernelFunction("change_state")]
+    [Description("Changes the state of the light")]
+    public async Task&lt;LightModel?&gt; ChangeStateAsync(
+        [Description("The ID of the light")] int id,
+        LightModel lightModel) { ... }
+}
+```
+
+**Metadata carried by each `KernelFunction`:**
+
+| Field | Source |
+|---|---|
+| `Name` | Attribute param or method name |
+| `Description` | `[Description]` attribute / docstring |
+| `Parameters` | Reflected from method signature |
+| `Parameters[n].Name` | Param name |
+| `Parameters[n].Description` | `[Description]` on param or `Annotated` type |
+| `Parameters[n].Schema` | Auto-generated JSON Schema from CLR/Python type |
+| `ReturnParameter.Description` | `[return: Description(...)]` / type annotation |
+| `ReturnParameter.Schema` | Auto-generated from return type |
+| `AdditionalProperties` | OpenAPI operation metadata (for imported specs) |
+
+**Registration:**
+```python
+kernel.add_plugin(LightsPlugin(), plugin_name="Lights")
+```
+```csharp
+kernel.Plugins.AddFromType&lt;LightsPlugin&gt;("Lights");
+kernel.Plugins.AddFromObject(new LightsPlugin(lights));
+```
+
+Plugins can also be dynamically created from a collection of functions:
+```csharp
+kernel.Plugins.AddFromFunctions("time_plugin", [
+    KernelFunctionFactory.CreateFromMethod(
+        method: () =&gt; DateTime.Now,
+        functionName: "get_time",
+        description: "Get the current time"
+    )
+]);
+```
+
+---
+
+### 3. Routing and Discovery
+
+**Routing is LLM-driven, not rule-driven.**
+
+All registered `KernelFunction` objects are serialized as JSON Schema tool definitions and sent to the LLM with the chat history. The LLM decides which function to call by matching the semantic descriptions against the user's goal. This is the native function-calling mechanism of OpenAI, Gemini, Claude, and Mistral.
+
+The automatic planning loop Semantic Kernel runs:
+1. Build JSON schemas for each registered function.
+2. Send schemas + chat history to the LLM.
+3. Parse the LLM's response — did it request a function call?
+4. If yes: extract function name + arguments, dispatch to the plugin.
+5. Return results to the LLM.
+6. Repeat until the LLM signals completion.
+
+`FunctionChoiceBehavior.Auto()` enables this loop. `FunctionChoiceBehavior.None()` disables function calling. `FunctionChoiceBehavior.Required(functions: [...])` forces the LLM to use specific functions.
+
+There is **no CSO-style deterministic routing** — the LLM is the router. The recommendation is to keep the total function count at or below 10–20, because accuracy degrades above that.
+
+---
+
+### 4. Contract System
+
+**Inputs** are typed via the host language's type system. Semantic Kernel reflects on the method signature and generates a JSON Schema that is sent to the LLM. The LLM's reply is deserialized back into the parameter types by the framework.
+
+**Outputs** have no standard schema enforcement at the boundary between a function's result and the next LLM invocation — the result is serialized to JSON and inserted into the chat history as a "tool result" message. The LLM reasons about it from there.
+
+**Return type schemas can be embedded in function descriptions** (workaround for the lack of a standard):
+```csharp
+[KernelFunction("change_state")]
+[Description("""Changes the state of the light and returns:
+{
+  "type": "object",
+  "properties": {
+    "id": { "type": "integer" },
+    "is_on": { "type": "boolean" }
+  }
+}""")]
+public async Task&lt;LightModel?&gt; ChangeStateAsync(...) { }
+```
+
+Or provided dynamically via the `IAutoFunctionInvocationFilter` that wraps results with their schema.
+
+There is **no shared schema registry** between plugins. Each plugin manages its own type definitions; type compatibility is enforced by the LLM's understanding of descriptions, not by a structural contract layer.
+
+---
+
+### 5. Composition Model
+
+**Level 1 — Within a single prompt invocation:** The LLM drives a loop calling multiple functions sequentially or in parallel (parallel function calls added in OpenAI 1106). This is the primary composition mechanism.
+
+**Level 2 — Agent Orchestration (experimental):** Semantic Kernel provides five named patterns for multi-agent composition:
+
+| Pattern | Semantics |
+|---|---|
+| `SequentialOrchestration` | Output of agent N becomes input of agent N+1 |
+| `ConcurrentOrchestration` | All agents receive the same task; results collected independently |
+| `HandoffOrchestration` | Agents declare which other agents they can transfer to, with natural-language routing conditions; the LLM decides when to hand off |
+| `GroupChatOrchestration` | All agents participate in a shared conversation; a manager decides turn order |
+| `MagenticOrchestration` | A manager agent breaks tasks into subtasks and delegates to specialists |
+
+All patterns share the same invocation interface:
+```python
+orchestration = SequentialOrchestration(members=[agent_a, agent_b])
+runtime = InProcessRuntime()
+runtime.start()
+result = await orchestration.invoke(task="...", runtime=runtime)
+```
+
+**Handoff routing** uses natural-language descriptions, not typed schemas:
+```python
+handoffs = (
+    OrchestrationHandoffs()
+    .add_many(
+        source_agent=support_agent.name,
+        target_agents={
+            refund_agent.name: "Transfer to this agent if the issue is refund related",
+            order_status_agent.name: "Transfer if it's about order status",
+        },
+    )
+)
+```
+
+Data flowing between agents is `ChatMessageContent` (role + string content). There is **no typed schema at handoff boundaries** — the LLM infers the semantic content from the conversation.
+
+---
+
+### 6. Extensibility
+
+Third parties extend Semantic Kernel by:
+
+1. **Native code plugins** — any class with `@kernel_function` / `[KernelFunction]` methods. No interface to implement; no registration file.
+2. **OpenAPI plugins** — import any OpenAPI 2.0/3.0 spec by URL, file, or stream:
+   ```python
+   await kernel.add_plugin_from_openapi(
+       plugin_name="my_api",
+       openapi_document_path="./swagger.json"
+   )
+   ```
+3. **MCP Server plugins** — import any MCP-compatible server:
+   ```python
+   await kernel.add_plugin_from_mcp_server(...)
+   ```
+4. **Filters** — hook into the function invocation, prompt rendering, or auto-function-invocation lifecycle by implementing one of three interfaces and registering on the Kernel.
+
+The Kernel itself can be **exported as an MCP server**, allowing other applications to consume the registered plugins as a service.
+
+---
+
+### 7. Versioning and Compatibility
+
+- **SDK versioning**: .NET package reached v1.0 in December 2023; Python/Java reached GA in May 2024. The .NET package (Microsoft.SemanticKernel) was at v1.74.0 as of early 2026, with a stated commitment to non-breaking changes within major versions.
+- **Plugin versioning**: There is **no native plugin versioning system**. The OpenAPI `info.version` field is available in `KernelFunction.Metadata.AdditionalProperties["info"]` but is not used by the framework for compatibility gating.
+- **Process Framework**: The earlier "Process Framework" (stage-based state machines) was deprecated in favor of the Agent Framework Workflows and orchestration patterns.
+
+---
+
+### 8. Key Patterns
+
+**Semantic descriptions as the routing contract.** The entire selection mechanism — which plugin to call, which function within it, and what arguments to supply — is governed by natural-language descriptions. This is both the strength (easy to add plugins; no wiring code) and the weakness (non-deterministic; accuracy degrades with scale).
+
+**Filter middleware chain.** Filters implement a `next` delegate pattern identical to ASP.NET middleware:
+```python
+@kernel.filter(FilterTypes.FUNCTION_INVOCATION)
+async def logging_filter(context: FunctionInvocationContext, next):
+    print(f"Invoking {context.function.name}")
+    await next(context)          # calls the next filter or the function
+    print(f"Result: {context.result}")
+```
+
+Multiple filters of the same type stack in registration order. Each filter can inspect, modify, short-circuit, or retry. This is the primary hook point for cross-cutting concerns: caching, PII redaction, responsible AI, retry-with-fallback-model.
+
+**DI-native plugin construction.** Plugins are plain classes whose constructors are satisfied by DI. This makes it natural to inject database connections, HTTP clients, and domain services without any framework-specific lifecycle management.
+
+**Plugin-as-a-service via MCP.** A Kernel instance with registered plugins can be served as an MCP server, decoupling plugin authorship from consumption.
+
+---
+
+### 9. Takeaways for Your Stage-Plugin System
+
+| Their pattern | How it maps |
+|---|---|
+| `@kernel_function` + `[Description]` | Your `plugin.json` declaring `fulfills:` and `description:` — the description is the routing signal |
+| `KernelFunction.Metadata.Parameters[n].Schema` | Each stage's declared input schema, auto-derived from types |
+| `FunctionChoiceBehavior.Required([fn])` | Forcing a specific stage plugin to run instead of letting the LLM choose |
+| Filter chain | Per-stage cross-cutting concerns (validation, logging, schema enforcement) |
+| `OpenApiFunctionExecutionParameters` | Configuration object at import time — a model for your `plugin.json`'s config block |
+| `AdditionalProperties["info"]` | Where you'd store `fulfills:`, `produces:`, `version:` — attach to `KernelFunctionMetadata` |
+
+**What SK does NOT give you:** typed schema enforcement at stage handoff boundaries. You would need to add a filter or pre-flight validation step that checks the previous stage's output schema against the next stage's declared input schema before execution. SK has no built-in notion of "this plugin produces `SpecDocument` and the next plugin requires `SpecDocument`."
+
+---
+
+---
+
+## Part II: Haystack (deepset)
+
+### 1. Architecture
+
+Haystack's core primitive is the **Pipeline**, which is a **directed multigraph** of **Component** instances connected by **typed sockets**. Unlike SK's LLM-driven dispatch, Haystack is explicitly wired: you declare which output port connects to which input port, and the pipeline engine executes the graph.
+
+```
+Pipeline (directed multigraph)
+  ├── Component "converter"    (type: TextFileToDocument)
+  │     outputs: documents → [DocumentCleaner.documents]
+  ├── Component "cleaner"      (type: DocumentCleaner)
+  │     inputs:  documents ← [converter.documents]
+  │     outputs: documents → [embedder.documents]
+  └── Component "embedder"     (type: SentenceTransformersDocumentEmbedder)
+        inputs:  documents ← [cleaner.documents]
+        outputs: documents → [writer.documents]
+```
+
+Components run when all their required inputs are satisfied. The pipeline engine handles data flow. `AsyncPipeline` runs independent components in parallel when their dependencies allow.
+
+---
+
+### 2. Plugin / Component Definitions
+
+A component is any class decorated with `@component` that has a `run()` method:
+
+```python
+from haystack import component
+from haystack.dataclasses import Document
+from typing import Optional, List
+
+@component
+class DocumentFilter:
+    """Filters documents by minimum character length."""
+
+    def __init__(self, min_length: int = 100):
+        self.min_length = min_length  # MUST match __init__ param name exactly
+
+    @component.output_types(documents=List[Document], rejected=List[Document])
+    def run(self, documents: List[Document]) -&gt; dict:
+        kept = [d for d in documents if len(d.content or "") &gt;= self.min_length]
+        rejected = [d for d in documents if d not in kept]
+        return {"documents": kept, "rejected": rejected}
+```
+
+**The `@component` decorator is backed by the `ComponentMeta` metaclass**, which intercepts instance creation:
+1. Inspects `run()` and `run_async()` signatures to extract input socket names and types.
+2. Reads `@component.output_types(...)` to extract output socket names and types.
+3. Attaches `__haystack_input__` (a `Sockets` collection of `InputSocket` objects) and `__haystack_output__` (a `Sockets` collection of `OutputSocket` objects) to every instance.
+4. Validates that `run` and `run_async` have matching signatures if both exist.
+
+**Dynamic input/output** (for components whose sockets are not known until runtime):
+```python
+@component
+class DynamicRouter:
+    def __init__(self, output_names: list[str]):
+        component.set_output_types(self, **{name: str for name in output_names})
+
+    def run(self, **kwargs):
+        ...
+```
+
+**The Component Protocol** (structural typing, not inheritance):
+```python
+@runtime_checkable
+class Component(Protocol):
+    def run(self, *args: Any, **kwargs: Any) -&gt; Mapping[str, Any]: ...
+```
+
+Required lifecycle methods:
+- `run(**kwargs) -&gt; dict` — mandatory; core logic
+- `warm_up()` — optional; called before first run for heavy init (loading models, etc.)
+- `run_async()` — optional; async variant, must have identical signature to `run()`
+- `__init__(**kwargs)` — optional; init params must be JSON-serializable and must have 1:1 matching instance attributes for serialization to work
+
+---
+
+### 3. Routing and Discovery
+
+Routing is **explicit graph wiring**, not LLM-driven:
+
+```python
+from haystack import Pipeline
+
+pipeline = Pipeline()
+pipeline.add_component("converter", TextFileToDocument())
+pipeline.add_component("cleaner", DocumentCleaner())
+pipeline.connect("converter.documents", "cleaner.documents")
+```
+
+**Validation at connection time** (not run time): `connect()` immediately checks that:
+- Both components and their named ports exist
+- The output type of the sender is compatible with the input type of the receiver
+- No non-Variadic input has more than one connection
+
+**Conditional routing** via `ConditionalRouter`:
+```python
+routes = [
+    {
+        "condition": "{{query|length &gt; 200}}",    # Jinja2 template
+        "output": "{{query}}",
+        "output_name": "long_query",
+        "output_type": str,
+    },
+    {
+        "condition": "{{query|length &lt;= 200}}",
+        "output": "{{query}}",
+        "output_name": "short_query",
+        "output_type": str,
+    },
+]
+router = ConditionalRouter(routes=routes)
+```
+
+The `ConditionalRouter.run(**kwargs)` method evaluates conditions in order using `ast.literal_eval()` on rendered Jinja2 templates, returns the first matching output, and raises `NoRouteSelectedException` if none match.
+
+**Discovery**: There is no component registry or discovery service. Components are Python classes; they appear in a pipeline when explicitly added with `add_component()`.
+
+---
+
+### 4. Contract System
+
+**The contract is enforced at pipeline construction time via typed sockets.**
+
+Every socket has a Python type annotation. When you call `pipeline.connect("a.output_name", "b.input_name")`, the pipeline validates:
+- `a`'s output socket `output_name` exists and has type `T`
+- `b`'s input socket `input_name` exists and accepts type `T` (or a compatible supertype)
+
+If types don't match, Haystack raises a connection error before any data flows. This is build-time contract enforcement — analogous to a compiler type check.
+
+**"Smart connections"** automatically match compatible single outputs and single inputs:
+```python
+pipeline.connect("converter", "cleaner")  # matches converter.documents → cleaner.documents
+```
+
+**Optional inputs** are declared with `Optional[T]` in the `run()` signature. `Variadic` inputs accept multiple connections.
+
+**No shared schema registry** — schemas are Python type annotations. If two components need to exchange a custom type, they import from the same module. Haystack does not have a central type/schema catalog.
+
+---
+
+### 5. Composition Model
+
+**Sequential (default):** Components run when all inputs are ready. Chain `A → B → C` by connecting A's outputs to B's inputs to C's inputs.
+
+**Parallel:** `AsyncPipeline` runs components with satisfied inputs concurrently using async tasks.
+
+**Conditional / branching:** `ConditionalRouter` directs data to one of several output ports based on Jinja2 conditions. Connect each output port to a different downstream component.
+
+**Loops:** A component's output can connect back to an earlier component's input, creating a cycle. `max_runs_per_component` (default 100) prevents infinite loops.
+
+**SuperComponents:** An entire pipeline can be wrapped into a single component, enabling hierarchical composition. The outer pipeline sees the SuperComponent as a black-box component with its own typed sockets.
+
+---
+
+### 6. Extensibility
+
+Third parties extend Haystack in three ways:
+
+1. **Inline custom component** — any `@component`-decorated class. No registration, no manifest.
+2. **Installable integration package** — a pip package following the naming convention `haystack-&lt;name&gt;`. Listed in the `haystack-integrations` GitHub repository. deepset maintains `haystack-core-integrations`; the community maintains others.
+3. **Contributed integration listing** — submit a PR to `deepset-ai/haystack-integrations` with a YAML entry declaring: name, description, GitHub URL, type (Model Provider, Document Store, Custom Component, etc.), installation instructions, usage examples.
+
+**No formal interface beyond the `@component` protocol.** The integration's components just need to implement the `run()` method and be decorated with `@component`.
+
+**Security constraint on deserialization:** When loading a pipeline from YAML, Haystack will only instantiate classes from a trusted-module allowlist:
+
+```
+haystack, haystack_integrations, haystack_experimental, builtins, typing, collections
+```
+
+To use a third-party component in a saved pipeline, you must extend the allowlist:
+```python
+# Per-call
+Pipeline.from_dict(data, allowed_modules=["my_company.haystack_components"])
+
+# Process-wide
+from haystack.core.serialization import allow_deserialization_module
+allow_deserialization_module("my_company.haystack_components")
+
+# Via env var
+export HAYSTACK_DESERIALIZATION_ALLOWLIST=my_company.haystack_components
+```
+
+---
+
+### 7. Versioning and Compatibility
+
+**No version field in the serialized pipeline format.** The YAML format contains `components`, `connections`, `max_runs_per_component`, and `metadata` — but no `schema_version` field.
+
+Breaking changes are handled through **migration notes in release changelogs**. For example, Haystack 2.7.0 enforced that serialized component data must be basic Python datatypes (`str`, `int`, `float`, `bool`, `list`, `dict`, `set`, `tuple`, `None`). The migration path was: load with 2.6.x, re-save to YAML, load with 2.7.x.
+
+**Component type resolution is by fully-qualified class path:**
+```yaml
+type: haystack.components.preprocessors.document_cleaner.DocumentCleaner
+```
+
+If a third-party component moves its package path, all saved pipelines referencing the old path break. There is no aliasing or migration hook in the format itself.
+
+---
+
+### 8. Key Patterns
+
+**Typed socket wiring as the contract.** The design insight is that by making the *type* of each input/output socket the contract, Haystack gets compile-time-like safety for pipeline construction. You cannot connect a `List[Document]` output to a `str` input — the pipeline will refuse to build. This is the most important pattern to study.
+
+**ComponentMeta metaclass for socket introspection.** Rather than requiring components to inherit from a base class and call registration methods, the metaclass intercepts instantiation and automatically derives socket definitions from the `run()` signature and `@component.output_types()` decorator. This gives a clean component-author experience while maintaining rich internal metadata.
+
+**YAML serialization via class paths.** Pipelines are fully serializable to YAML. The component's class path is the identity; its `init_parameters` are stored 1:1 with constructor arguments. This means any correctly authored component is automatically portable across processes and machines — a strong primitive for a plugin ecosystem.
+
+**Jinja2 conditions in `ConditionalRouter`.** Using a template language for routing conditions (rather than code) makes routing logic declaratable in YAML/JSON, auditable, and serializable. The `output_type` field on each route makes routing decisions type-safe.
+
+**`warm_up()` lifecycle hook.** Components that need expensive initialization (loading an ML model, opening a database connection) defer it to `warm_up()`, which the pipeline calls before the first run. This separates pipeline construction from readiness — important for staging and hot-swap scenarios.
+
+---
+
+### 9. Takeaways for Your Stage-Plugin System
+
+| Their pattern | How it maps |
+|---|---|
+| `@component` + `run()` + `@component.output_types()` | Your plugin's contract: a class that declares what it receives and what it produces |
+| `ComponentMeta` metaclass socket parsing | Derive your plugin's I/O schema by inspecting `run()` type annotations at load time |
+| `pipeline.connect("a.output", "b.input")` + type check | Your handoff validation: check that the stage producing `produces: "SpecDocument"` has a schema compatible with the stage consuming it |
+| `ConditionalRouter` with Jinja2 `condition` + `output_type` | Stage routing when multiple plugins `fulfills: "research"` — select based on conditions, with typed outputs |
+| Serialization `type: module.path.ClassName` | Your `plugin.json` `implementation: "my_org.stages.MyResearchStage"` — fully-qualified class path is a stable identity |
+| `init_parameters` 1:1 with constructor args | Your plugin `config:` block — whatever the plugin declares as its config is passed to the constructor |
+| Trusted-module allowlist for deserialization | Security gate for third-party plugin loading — require plugins to appear in an allowlist before instantiation |
+| `warm_up()` | Stage plugins that load models or open connections should declare a lifecycle hook separate from construction |
+| `max_runs_per_component` | Your stage-execution budget — prevent runaway loops in iterative workflows |
+
+**What Haystack does NOT give you:** a concept of "this component fulfills a named stage contract." Haystack components are identified by their class path, not by a role they claim. Your `fulfills: "research"` declaration requires a separate registry layer that maps role names to the component(s) currently registered to fill them.
+
+---
+
+---
+
+## Cross-Framework Synthesis: Designing Your Stage-Plugin System
+
+Based on both frameworks, here is what each dimension looks like when you combine their lessons:
+
+### Plugin metadata (your `plugin.json`)
+
+Take Semantic Kernel's rich declarative metadata model and Haystack's class-path identity:
+
+```json
+{
+  "name": "my-research-stage",
+  "version": "1.2.0",
+  "fulfills": "research",
+  "produces": "ResearchSummary",
+  "consumes": "NeedStatement",
+  "implementation": "my_org.stages.MyResearchStage",
+  "config": {
+    "max_sources": 10,
+    "timeout_seconds": 30
+  },
+  "description": "Searches the web and internal docs to produce a ResearchSummary artifact"
+}
+```
+
+### Schema registry (the public API)
+
+Haystack proves that **typed sockets are the right primitive**: the handoff schema is the contract, not the plugin implementation. Define your shared schemas (like `NeedStatement`, `ResearchSummary`, `Spec`, `Plan`) as versioned JSON Schema documents in a central registry. Every plugin declares `consumes` and `produces` referencing a schema name + version. The runtime validates compatibility before running.
+
+### Routing
+
+- For **deterministic stage sequencing** (need → research → spec → plan): Haystack's explicit wiring model is correct. The stage graph is declared, not LLM-resolved.
+- For **substitution selection** ("which plugin fulfills 'research' today?"): a registry lookup that finds all plugins declaring `fulfills: "research"` and applies selection criteria (version constraints, feature flags, user config).
+- For **conditional routing within a stage** (e.g., "if the need is unclear, loop back to clarification"): Haystack's `ConditionalRouter` pattern — Jinja2/logic conditions with typed output branches.
+
+### Cross-cutting concerns
+
+Semantic Kernel's **filter middleware chain** is the right model: a `next`-delegate pipeline where each filter can inspect, modify, short-circuit, or retry. Apply this at stage boundaries for schema validation, logging, telemetry, and human-in-the-loop approval gates.
+
+### Extensibility interface
+
+The minimum interface a third-party stage plugin must implement:
+
+1. Declare `plugin.json` with `fulfills`, `consumes`, `produces`, `implementation`, `version`.
+2. Implement a class at `implementation` with:
+   - `__init__(self, **config)` accepting the `config` block
+   - `run(self, input: ConsumedSchema) -&gt; ProducedSchema` with typed signature
+   - Optional `warm_up(self)` for heavy initialization
+3. Register the package in the allowlist (Haystack's security model).
+
+### Versioning
+
+Neither framework has native stage-level versioning. You need to add it explicitly:
+- Store `produces: "ResearchSummary@1.2"` (schema name + version) in the handoff contract.
+- The runtime checks that the consuming stage's `consumes` schema is compatible with the producing stage's `produces` schema (semver compatibility rules).
+- Adapters can bridge incompatible versions (Semantic Kernel's "transforming functions" pattern).
+
+---
+
+Sources:
+- [Plugins in Semantic Kernel](https://learn.microsoft.com/en-us/semantic-kernel/concepts/plugins/)
+- [Understanding the kernel in Semantic Kernel](https://learn.microsoft.com/en-us/semantic-kernel/concepts/kernel/)
+- [What are Planners in Semantic Kernel](https://learn.microsoft.com/en-us/semantic-kernel/concepts/planning)
+- [Provide native code to your agents](https://learn.microsoft.com/en-us/semantic-kernel/concepts/plugins/adding-native-plugins)
+- [Give agents access to OpenAPI APIs](https://learn.microsoft.com/en-us/semantic-kernel/concepts/plugins/adding-openapi-plugins)
+- [Semantic Kernel Filters](https://learn.microsoft.com/en-us/semantic-kernel/concepts/enterprise-readiness/filters)
+- [Agent Orchestration in Semantic Kernel](https://learn.microsoft.com/en-us/semantic-kernel/frameworks/agent/agent-orchestration/)
+- [Handoff Agent Orchestration](https://learn.microsoft.com/en-us/semantic-kernel/frameworks/agent/agent-orchestration/handoff)
+- [Enhancing Plugin Metadata Management with SemanticPluginForge](https://devblogs.microsoft.com/semantic-kernel/enhancing-plugin-metadata-management-with-semanticpluginforge/)
+- [Skills to plugins: fully embracing the OpenAI plugin spec](https://devblogs.microsoft.com/agent-framework/skills-to-plugins-fully-embracing-the-openai-plugin-spec-in-semantic-kernel/)
+- [Pipelines in Haystack](https://docs.haystack.deepset.ai/docs/pipelines)
+- [Serializing Pipelines in Haystack](https://docs.haystack.deepset.ai/docs/serialization)
+- [Introduction to Integrations in Haystack](https://docs.haystack.deepset.ai/docs/integrations)
+- [GitHub — deepset-ai/haystack](https://github.com/deepset-ai/haystack)
+- [GitHub — haystack/core/component/component.py](https://github.com/deepset-ai/haystack/blob/main/haystack/core/component/component.py)
+- [ConditionalRouter in Haystack](https://github.com/deepset-ai/haystack/blob/main/haystack/components/routers/conditional_router.py)
+- [GitHub — deepset-ai/haystack-integrations](https://github.com/deepset-ai/haystack-integrations)</result>
+<usage><subagent_tokens>79711</subagent_tokens><tool_uses>29</tool_uses><duration_ms>370680</duration_ms></usage>
+</task-notification>
