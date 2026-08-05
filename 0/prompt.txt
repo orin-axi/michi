@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>a927191c26a832636</task-id>
+<tool-use-id>toolu_01WhfH52oDx1ERFFn5HB8WkH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/3bb5bd40-bcf1-44f3-afc5-3b8ba770a7d6/tasks/a927191c26a832636.output</output-file>
+<status>completed</status>
+<summary>Agent "Assess headroom for michi-benefit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I now have everything needed for a precise, evidenced report.
+
+## Summary
+
+**(a) What headroom actually does technically.** Headroom is a Rust workspace (top-level `Cargo.toml`, `resolver="2"`, members `headroom-core`/`headroom-proxy`/`headroom-simulators`/`headroom-py`/`headroom-parity`) fronting a much larger, mature Python package (`headroom/`, with its own `pyproject.toml`, `_version.py`, `client.py` at 38K) — the Rust side is described in its own module docs as an in-progress "parity port" of the Python original (`crates/headroom-core/src/transforms/smart_crusher/mod.rs:1-9`: "Rust port of `headroom/transforms/smart_crusher.py`... Stage 3c.1... byte-equal output parity"). There are two independent MCP servers in the Python tree: `headroom/ccr/mcp_server.py` (1188 lines, hand-rolled JSON-RPC dict responses) and `headroom/memory/mcp_server.py` (450 lines). Both import the **official `mcp` Python SDK** (`from mcp.server import Server`, `from mcp.types import TextContent, Tool` — `headroom/memory/mcp_server.py:37-39`) — they do not hand-roll the `content[]`/`isError` envelope, they hand-roll the *payload* that goes inside a single `TextContent` block via `json.dumps(result, indent=2)` (e.g. `headroom/ccr/mcp_server.py:778, 833, 898`).
+
+**(b) Verdict: genuinely complementary, not competing** — but with one important caveat: headroom has already partially reinvented TOON's core idea for its compression path, so michi's win here is standardization/protocol-conformance, not introducing a novel technique.
+
+- **Compression technique**: `crates/headroom-core/src/transforms/smart_crusher/` is a statistical/semantic sampler (entropy, sequential-ID detection, rare-status preservation, structural-outlier detection, k-split row sampling) — genuinely different from TOON, which is a pure rendering grammar with no sampling logic. `json_minifier.rs` is separately just whitespace-stripping. Neither overlaps with TOON.
+- **But** `crates/headroom-core/src/transforms/smart_crusher/compaction/formatter.rs:6-19` explicitly says: *"`CsvSchemaFormatter` — `[N]{cols}` row-count-and-shape declaration + typed column header + CSV-escaped rows. **Steals TOON's most useful idea** (the `[N]{cols}` declaration) without adopting TOON's bespoke escaping rules — every model has seen millions of CSV examples in training."* This formatter is wired up as a real default (`compaction/mod.rs:58,68`, `walker.rs:66`), not dead code. So headroom's authors already know about TOON, already judged it useful, and already built a bespoke non-conformant clone (CSV-escaped rows instead of TOON's actual grammar) rather than depending on a TOON implementation.
+
+**(c) Concrete mapping**:
+- `michi::mcp::CallToolResult`/`ContentBlock` (`src/mcp.rs`) → both `mcp_server.py` files' `list[TextContent]` construction, which today only ever sets `type="text"`, never `isError`, never `structuredContent`, never `annotations.audience` (`grep` for `isError` in both files returns zero hits). This is the strongest, cleanest fit: michi gives them protocol-correct error signaling and structured-content parity they currently don't have at all.
+- `michi::error`/`recovery` (`hints::Hint`) → the ad hoc `"error"`/`"hint"` string-pair fields hand-rolled per call site at `headroom/ccr/mcp_server.py:512-535` (expired/not-found CCR retrieval — literally a recovery hint reimplemented as a raw string, with no shared schema).
+- `michi::toon` → `CsvSchemaFormatter`/`MarkdownKvFormatter` in `formatter.rs` — same declared shape+compact-rows idea, but headroom's own comment shows they consciously chose *not* to adopt TOON's actual grammar; adopting michi's `toon` module would mean giving up the CSV-familiarity argument they documented, so this is a real design tradeoff, not a slam dunk.
+- `michi::truncate::truncate_inline` → no equivalent found in the tool-response path; `_payload_for_retrieval_log`'s `payload_truncated` flag (`headroom/cache/compression_store.py:111-120`) is log-only, not surfaced to the agent.
+
+**(d)** Not applicable — genuine complementary fit exists, concentrated in the MCP envelope layer, weaker (deliberately, per their own comment) in the list-rendering layer.</result>
+<usage><subagent_tokens>50492</subagent_tokens><tool_uses>21</tool_uses><duration_ms>135136</duration_ms></usage>
+</task-notification>
