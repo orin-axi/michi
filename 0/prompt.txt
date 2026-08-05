@@ -1,0 +1,1 @@
+Do we have an appropriately written readme? contributing? architecture? etc? Succinct, friendly, eng focused and scannable? Devoid of AI slop, AI word salad and filler words?
