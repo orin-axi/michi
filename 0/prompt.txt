@@ -1,0 +1,1 @@
+Architecture seems a little bare, no? Does it talk about the overall contents of michi and its architecture?? This should be a rich engineering document, no?
