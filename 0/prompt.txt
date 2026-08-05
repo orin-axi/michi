@@ -1,0 +1,238 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+This session resumed from a prior context window mid-execution of a 14-task edge-case fixes plan. The key actions:
+
+**Completed:** AI-1 through AI-5 action items from an adversarial bug hunt:
+- AI-1: Ported `PartialSuccess`/`FailedOp` to `crates/michi-core/src/idempotency.rs`, deleted 17 orphaned dead `src/` files (only `src/lib.rs` and `src/napi.rs` remain)
+- AI-2: Hardened `src/napi.rs` — added `jitter_seed` param to `next_retry_delay`, NaN/Inf/negative guards, fixed wildcard `_ => NotFound` in `render_domain_error`
+- AI-3: Wired `opts.validate()?` into `list()`, promoted `STRUCTURAL` const, fixed `# Errors` doc
+- AI-4: Fixed CR encoding in `render_github_annotation`, `render_json()` capacity estimate, `structured_content` doc
+- AI-5: Rewrote `docs/spec/03-rust-api.md` to match actual code
+
+**User then requested a process retrospective** and improvement of adversarial methodology before continuing with remaining confirmed bugs.
+
+**User then asked:** How to generalize these learnings into a plugin for agents/skills, how to prevent errors in research, spec writing, planning and implementing (not just catch after the fact), and whether it's compatible with Claude and AGY (Google Antigravity).
+
+**Current focus:** Designing a plugin for `~/projects/agent-plugins` — simultaneously building a new prevention plugin and `bug-hunter-rust` v2. In the brainstorming skill, just presented Section 1 (names and structure) and user asked "is there a better name for the plugin?" (referring to `dev-ground-truth`).
+
+2. Key Technical Concepts:
+
+- **michi workspace**: `crates/michi-toon`, `crates/michi-core`, `crates/michi-resilience`, `crates/michi-truncate`, `src/` facade (only `src/lib.rs` and `src/napi.rs` compiled)
+- **TOON format**: Token-Optimized Object Notation; `toon::list()` returns `Result<String, ToonError>`
+- **NAPI boundary contract**: `#[napi(catch_unwind)]` on every export, normalizing `RetryConfig::new()`, `jitter_seed` must be explicit per-call
+- **Dead src/ tree**: 17 files in `src/` were never compiled — no `mod` declarations in `src/lib.rs`. This corrupted 8/35 adversarial findings
+- **Sibling function pattern**: When fixing a bug in function A, function B doing the same for a different output format has the same bug (e.g., `kv_value_to_json` got NaN guard but `push_kv_value` did not)
+- **AGY**: Google Antigravity — the other agent platform alongside Claude Code. Plugin repo at `~/projects/agent-plugins` targets both via cross-platform authoring rules
+- **CSO trigger descriptions**: 100-200 words, user-intent focus for skills, delegation-scenario focus for subagents. Used for automatic routing
+- **3-Tier Progressive Disclosure**: Metadata (frontmatter) → Body (SKILL.md) → References (shared/)
+- **Superpowers 5-Section Framework**: `<context>`, `<role>`, `<goal>`, `<execution_strategy>`, `<success_criteria>` for all subagents
+- **Process failures identified**: No reconnaissance phase, synthesis abstraction lost finding fidelity, no cross-path audit after fixes, rounds parallel not sequential, no independent exit gate
+
+3. Files and Code Sections:
+
+- **`crates/michi-core/src/idempotency.rs`** — CREATED
+  - Ported `PartialSuccess` and `FailedOp` from dead `src/idempotency.rs`
+  - Applied M1 fix: `f.operation` uses `escape_value` (conditional quoting), `f.reason` uses `escape_value_quoted`
+  - Uses `crate::recovery::append_recovery_lines` (pub(crate)) directly to write `help[N]:` section header manually (not `append_recovery` which writes `recovery[N]:`)
+  - 6 tests included
+
+- **`crates/michi-core/src/lib.rs`** — MODIFIED
+  - Added `pub mod idempotency;`
+  - Added `pub use idempotency::{FailedOp, PartialSuccess};`
+  - `rustfmt` reordered modules alphabetically (hints before idempotency)
+
+- **`crates/michi-resilience/src/lib.rs`** — MODIFIED
+  - Fixed broken doc link: `michi_core::idempotency::PartialSuccess` (was plain string, now proper rustdoc link)
+
+- **`src/napi.rs`** — MODIFIED (major changes)
+  - `next_retry_delay`: added `jitter_seed: f64` parameter, `napi::Result<Option<f64>>` return type, finite+non-negative guards, `#[allow(clippy::too_many_arguments)]`
+  - `render_domain_error`: added explicit `"not_found"` arm, `other => Err(...)` with list of valid codes
+  ```rust
+  #[napi(catch_unwind)]
+  #[allow(clippy::too_many_arguments)]
+  pub fn next_retry_delay(
+      max_retries: u32, base_delay_ms: f64, max_delay_ms: f64,
+      jitter_factor: f64, jitter_seed: f64, attempt: u32,
+      retry_after_ms: Option<f64>,
+  ) -> napi::Result<Option<f64>> {
+      for (name, val) in [("base_delay_ms", base_delay_ms), ("max_delay_ms", max_delay_ms)] {
+          if !val.is_finite() || val < 0.0 {
+              return Err(napi::Error::from_reason(format!("{name} must be a finite non-negative number, got {val}")));
+          }
+      }
+      // ...
+      Ok(michi_resilience::next_retry_delay(&config, attempt, jitter_seed, retry_after).map(|d| d.as_secs_f64() * 1000.0))
+  }
+  ```
+
+- **`packages/michi-node/__test__/index.test.mjs`** — MODIFIED
+  - Updated `nextRetryDelay` call: added `jitter_seed=0.5` argument (6th param)
+  - Added 4 tests: NaN delay, negative delay, Infinity delay, unknown error code
+
+- **`crates/michi-toon/src/escape.rs`** — MODIFIED
+  - Promoted `STRUCTURAL` from local const inside function to module-level:
+  ```rust
+  pub(crate) const STRUCTURAL: &[char] = &['[', ']', '{', '}', ',', '\n', '\r'];
+  ```
+  - Removed local `const STRUCTURAL` from inside `sanitize_header_token`
+
+- **`crates/michi-toon/src/lib.rs`** — MODIFIED
+  - `validate()` now uses `escape::STRUCTURAL.contains(&c)` — stricter for fields (now rejects `[`, `]` too)
+  - `list()` now calls `opts.validate()?` before `render_toon(&opts)`
+  - Fixed `list()` `# Errors` doc
+
+- **`crates/michi-core/src/error.rs`** — MODIFIED
+  - `render_github_annotation()`: added `.replace('\r', "%0D")`
+  - `render_json()` capacity: added `hints_est` and `recovery_est`
+  ```rust
+  let hints_est: usize = self.hints.iter().map(|h| h.as_str().len() + 4).sum();
+  let recovery_est: usize = self.recovery.as_ref().map_or(0, |r| {
+      50 + r.tool.len() + r.params.iter().map(|_| 20usize).sum::<usize>()
+      + r.reason.as_ref().map_or(0, |s| s.len() + 12)
+  });
+  ```
+  - Added 3 new tests: CR/CRLF encoding, JSON shape with all fields, capacity smoke test
+
+- **`crates/michi-core/src/mcp.rs`** — MODIFIED
+  - `structured_content` doc: replaced false "same data as content[0]" with accurate description
+
+- **`docs/spec/03-rust-api.md`** — REWRITTEN
+  - Removed `ToonSerializer` section and false zero-allocation claim
+  - Fixed `list()` return type, re-export block, added all missing APIs
+  - Added `PartialSuccess`, `FailedOp`, `ToonError`, `validate()`, `render_json()`, `to_call_tool_result()`, `jitter_seed`
+
+- **`~/projects/agent-plugins/shared/agent-best-practices.md`** — READ (not modified)
+  - Confirms AGY = Google Antigravity; platform matrix for cross-platform authoring
+  - Plugin conventions, CSO trigger writing guide, 5-section framework
+
+- **`~/projects/agent-plugins/plugins/bug-hunter-rust/skills/bug-hunter-rust/SKILL.md`** — READ (not modified)
+  - 6 hazard taxonomies, 6 architectural smells, 5 subagents
+  - Scanner → Adversary → Remediator → Architect → Mutator pattern
+
+4. Errors and Fixes:
+
+- **`crates/michi-core/src/idempotency.rs` test failure — operation quoted unexpectedly**:
+  - `escape_value_quoted` always wraps in quotes. Used it for `f.operation` but test expected `assign_user` unquoted
+  - Fix: changed operation to use `escape_value` (conditional quoting), kept `escape_value_quoted` for reason
+
+- **`crates/michi-core/src/idempotency.rs` test failure — `recovery[N]:` header in help block**:
+  - `append_recovery` writes its own `recovery[N]:` header; the idempotency format uses `help[N]:` as header
+  - Fix: write `help[N]:\n` manually then call `append_recovery_lines` (pub(crate)) directly for the lines
+
+- **clippy: too many arguments (7/6) on `next_retry_delay`**:
+  - Fix: added `#[allow(clippy::too_many_arguments)]` with comment explaining NAPI boundary rationale
+
+- **`render_json()` capacity: `.values()` on `Vec<(String, KvValue)>`**:
+  - `params` is `Vec<(String, KvValue)>` not a map; `.values()` doesn't exist
+  - Fix: changed to `.iter()`
+
+- **`render_json()` test: used `.with_recovery()` method**:
+  - Method is named `.recovery()` not `.with_recovery()`
+  - Fix: corrected method name
+
+- **`just check` fmt failure after edits**:
+  - Ran `cargo fmt -p michi-core` / `cargo fmt -p michi` before re-running check
+  - Also ran `CI=true pnpm exec oxfmt --write "docs/spec/03-rust-api.md"` for markdown
+
+- **git staging from wrong working directory**:
+  - Was in `packages/michi-node/` when running `git add`; used `git -C /Users/gabe/Projects/michi add ...` for subsequent commits
+
+5. Problem Solving:
+
+**Solved:**
+- Orphaned `src/` tree deleted; `PartialSuccess`/`FailedOp` properly in `crates/michi-core/src/idempotency.rs`
+- NAPI boundary hardened against NaN/Inf/negative f64 and unknown error codes
+- `list()` now validates before rendering; `STRUCTURAL` const shared between validate and sanitize
+- CR encoding, render_json capacity, structured_content doc all fixed
+- `03-rust-api.md` matches actual code
+
+**Ongoing:**
+- Remaining confirmed findings not yet addressed: `push_kv_value` NaN/Inf guard (Float arm), `is_retryable_status` missing tests for 429/503/500/200 boundary, S3 tests for `as_error()`/`render_for()`/`has_human_content()`/`render_hints_only()`, L5-L10 doc gaps, property-based tests for `render_json()`
+
+**Process improvement recognized:**
+- Root cause of quality gaps: no reconnaissance phase, synthesis abstracted findings into action items losing traceability, no sibling-function cross-path audit, parallel rounds not sequential, implementer self-declared done
+- Solution: two-artifact plugin system (prevention plugin + bug-hunter-rust v2)
+
+6. All User Messages:
+
+- (Session continuation — user had previously approved plan execution)
+- "Do we need another round or are you extremely confident there are no bugs and no gaps?"
+- "We should address all of them but before we do we need to check ourselves. We've been letting things get through and we need to consider what happened and adjust how we do adversarial analysis and bug hunting to improve further and make sure there are no more issues. Learn from these rounds"
+- "If we take this learnings and generalize them for agents/skills in a plugin how should we do this? Is this a new workflow? Is it bug hunting? Both? How do we prevent errors in research, spec writing, planning and implementing? Not just catch issues after the fact?"
+- "Is all of this compatible with claude and agy?"
+- "Shall we tackle and create this in our plugin repo?"
+- (Answer to plugin repo location question): "~/projects/agent-plugins"
+- (Answer to build order question): "Both simultaneously"
+- (Answer to activation question): "CSO-routed automatic (recommended)"
+- "is there a better name for the plugin?"
+
+7. Pending Tasks:
+
+**Plugin design and implementation (primary current focus):**
+- Answer naming question for new prevention plugin (user asked "is there a better name for the plugin?" referring to `dev-ground-truth`)
+- Continue brainstorming: present sections 2-5 (shared vocabulary, prevention skills detail, bug-hunter-rust v2 additions, integration points)
+- Get user approval on design sections
+- Write design spec doc to `docs/superpowers/specs/YYYY-MM-DD-<name>-design.md` in the plugin repo
+- Write implementation plan
+- Implement both plugins (new prevention plugin + bug-hunter-rust v2)
+
+**Remaining michi confirmed findings:**
+- `push_kv_value` Float arm: add NaN/Inf guard (same as `kv_value_to_json` already has)
+- `is_retryable_status`: add tests for 429, 503, 500 (not retryable), 200
+- S3: `as_error()`, `render_for()`, `has_human_content()`, `render_hints_only()` — add Rust-level tests
+- L5-L10: various doc gaps (AlreadyDone/PartialSuccess boundary, decisions.md rename, RFC 850 non-support, pipeline step ID, KV padding Unicode, empty strings policy)
+- Property-based tests for `render_json()`
+
+8. Current Work:
+
+Immediately before this summary, we were in the **brainstorming skill**, designing the plugin system. We had:
+1. Explored `~/projects/agent-plugins` (repo structure, conventions, existing bug-hunter-rust plugin)
+2. Read `shared/agent-best-practices.md` (confirmed AGY = Google Antigravity, platform matrix)
+3. Read bug-hunter-rust SKILL.md and key subagents
+4. Determined: build both artifacts simultaneously, CSO-routed automatic activation
+5. Presented Section 1 of the design:
+
+```
+plugins/
+├── dev-ground-truth/          ← NEW: prevention plugin
+│   ├── plugin.json
+│   ├── skills/
+│   │   └── dev-ground-truth/
+│   │       └── SKILL.md
+│   └── subagents/
+│       ├── ground-truth-recon.md
+│       ├── spec-verifier.md
+│       └── exit-gate-verifier.md
+│
+└── bug-hunter-rust/           ← EXISTING: v2 additions
+    └── subagents/
+        ├── bug-hunter-recon-rust.md   ← NEW Phase 0
+        └── bug-hunter-exit-gate-rust.md  ← NEW closure
+
+shared/
+└── finding-schema.md          ← NEW: shared finding ID table format
+```
+
+The user then asked: **"is there a better name for the plugin?"** (referring to `dev-ground-truth`)
+
+This is where the conversation was interrupted for this summary.
+
+9. Optional Next Step:
+
+The user's last message was: "is there a better name for the plugin?"
+
+The next step is to answer this naming question in the brainstorming context. The current proposed name is `dev-ground-truth`. Better alternatives to consider based on the plugin's purpose (prevention through verified ground truth across all dev phases):
+
+- `evidence-first` — emphasizes working from verified evidence, not assumptions
+- `ground-truth` — direct, minimal
+- `verified-development` — clear but sounds redundant
+- `phase-discipline` — emphasizes per-phase gates
+- `grounded-dev` — concise
+
+This is directly the task in progress: answering the naming question as part of the brainstorming skill's section-by-section design presentation.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
