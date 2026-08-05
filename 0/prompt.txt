@@ -1,0 +1,1 @@
+For axi we should be providing CLIs with human and agent output no? Same with MCPs
