@@ -1,0 +1,1 @@
+How should we adjust our architecture (if anything) to better suit our needs based on our findings?
