@@ -1,0 +1,1 @@
+Check on spec-review-task24 result. This is the final review of the entire plan. If passed, dispatch code-quality reviewer for Task 24 covering all 5 commits (e5c3f64..e0f04fd) in worktree /Users/gabe/Projects/michi/.worktrees/spec-parity. If issues found, dispatch fix subagent then re-review. Once both reviews pass, the entire 24-task plan is complete.
