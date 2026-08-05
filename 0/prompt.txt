@@ -1,0 +1,55 @@
+<task-notification>
+<task-id>ac3336020588ef90f</task-id>
+<tool-use-id>toolu_01Ni5KNjWS3LAzcn7isw1Ww1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/ac3336020588ef90f.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Rust lint rules, fix warnings, and JS/TS lint setup" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is green. Here is the full report:
+
+---
+
+**Status: DONE**
+
+## What was done
+
+### Part 1 — Rust lints
+
+**Step 1 — `.clippy.toml`:** Replaced with the full config including `allow-unwrap-in-tests`, `allow-expect-in-tests`, `cognitive-complexity-threshold = 20`, and `disallowed-macros` for `println!`/`eprintln!`/`dbg!`.
+
+**Step 2 — `src/lib.rs`:** Prepended the full lint attr block (compiler lints + `clippy::all` + `clippy::pedantic` + pedantic allows + restriction group).
+
+**Step 3 — clippy warnings fixed:**
+
+| Warning | File | Fix |
+|---|---|---|
+| `string_to_string` lint removed | `src/lib.rs`, `packages/michi-node/src/lib.rs` | Replaced with `clippy::implicit_clone` (the correct successor) |
+| `missing_docs` (14×) | `src/lib.rs` | Added `///` doc comments to all `pub mod X;` declarations |
+| `unreachable_pub` | `src/toon/render.rs:21` | Changed `pub fn render` → `pub(crate) fn render` |
+| `cast_possible_truncation` + `cast_precision_loss` + `cast_sign_loss` | `src/resilience/mod.rs` | Added `#[allow(...)]` with comment on `next_retry_delay` — casts are safe because delays are capped and jitter seed is documented as `[0.0, 1.0]` |
+| `uninlined_format_args` | `src/truncate.rs:26` | Changed to `format!(" ({char_count} chars truncated — use {hint})")` |
+| `map_unwrap_or` (2×) | `src/truncate.rs:30,39` | Changed `map(...).unwrap_or(...)` → `map_or(default, closure)` |
+
+**Step 4 — NAPI lint attrs:** Added `deny(unwrap_used, expect_used, panic, indexing_slicing)` + `warn(use_self, implicit_clone)`.
+
+**Commit:** `7be581d` — `chore: comprehensive Rust lint rules — pedantic + restriction + safety`
+
+---
+
+### Part 2 — JS/TS lints
+
+**oxlint version:** 1.72.0. `--type-aware` flag **is supported** — used in scripts.
+
+**`oxlint-tsgolint`:** 0.24.0 — package exists and was installed.
+
+**tsc:** TypeScript 6.0.3 installed; `@types/node 26.1.0` needed for `node:test` and `node:assert/strict` imports. Added `"types": ["node"]` to `tsconfig.json`.
+
+**oxlint findings fixed:** 11× `typescript/no-floating-promises` on `describe()` and `it()` calls (node:test's API returns Promises). Fixed by adding `void` operator before each call in `__test__/index.test.mjs`.
+
+**Final test counts:**
+- Rust: **96 tests** across 6 suites — all pass
+- Node: **7 tests** across 4 suites — all pass
+
+**Commit:** `f9aae18` — `chore: oxlint + tsc typecheck for michi-node; lint-js CI job`</result>
+<usage><subagent_tokens>72544</subagent_tokens><tool_uses>76</tool_uses><duration_ms>431190</duration_ms></usage>
+</task-notification>
