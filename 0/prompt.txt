@@ -1,0 +1,149 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The session continues from a prior conversation where the user asked to: (1) audit michi's codebase for edge cases and document them; (2) produce an architecture analysis for 7 systemic issues; (3) run an adversarial analysis before planning. In this session the user asked: (4) "How should we adjust our architecture (if anything) to better suit our needs based on our findings?" — leading to adjustments to PRINCIPLES.md, ARCHITECTURE.md, and 06-decisions.md; (5) "Let's make the adjustments and then write the plan. Consider agent teams and workflows with the most appropriate model and effort. Focus on haiku, sonnet 4.6 and Opus 4.6 for the most part to keep token usage lower but quality high." — leading to writing a 14-task plan; (6) "Yes" — approving execution via subagent-driven development.
+
+   **Standing rule (preserved from prior session):** Batch commits, show user the log/diff, get explicit go-ahead before any `git push`.
+
+2. Key Technical Concepts:
+   - michi: pure-sync Rust workspace, zero runtime deps by default, no unsafe outside NAPI boundary
+   - Workspace layout: `crates/michi-toon`, `crates/michi-core`, `crates/michi-resilience`, `crates/michi-truncate`, `src/` facade
+   - TOON format: Token-Optimized Object Notation — header grammar requires `[a-z_][a-z0-9_]*` for type_name/fields
+   - Unified invariant policy (new): infallible constructors normalize, render functions always produce valid output (keep debug_assert!), additive try_new()/validate() for strict callers
+   - "Wire it in or document it as opt-in" rule: validate() with zero callers is documentation masquerading as validation
+   - NAPI boundary contract: NAPI functions use normalizing constructors (new()), not strict ones (try_new())
+   - Adversarial analysis: three-agent pattern (finding refuter, gap hunter, architecture critic)
+   - Tests run with `cargo nextest run`, not `cargo test`
+   - Snapshots via `insta`; benchmarks via `divan`
+
+3. Files and Code Sections:
+
+   - **docs/superpowers/specs/2026-08-04-edge-case-architecture.md** — Complete rewrite after adversarial review. Key changes:
+     - Added unified invariant policy preamble
+     - Decision A: sanitize_header_token replaces structural chars AND newlines with `_`; validate() must be wired into AgentResponse::toon_body()
+     - Decision B: Keep debug_assert! AND add clamp/pad (not either/or)
+     - Decision F: REJECTED fallible new() — new() stays infallible with normalization, add additive try_new()
+     - Decision G: render_json() must include hints/recovery in same shape as AgentResponse::render_json()
+
+   - **PRINCIPLES.md** — Added new "1. Invariant enforcement policy" heuristic (renumbered existing heuristics 2–6):
+     ```
+     Infallible constructors normalize. new() clamps inputs silently.
+     Render functions always succeed. Keep debug_assert! alongside graceful fallback.
+     Wire it in or document it as opt-in. validate() with zero callers = dead API.
+     Empty strings are accepted everywhere. Deliberate contract, not oversight.
+     ```
+
+   - **ARCHITECTURE.md** — Added "NAPI Boundary Contract" section and updated mermaid diagram to show `DomainError →|"to_call_tool_result()"| mcp::CallToolResult`. NAPI section explains: NAPI functions use normalizing `new()`, not `try_new()`; canonical error output path is `domain_error.to_call_tool_result()`, not `AgentResponse::as_error()` wrapping.
+
+   - **docs/spec/06-decisions.md** — Fixed `initial_delay` → `base_delay` (L6); added RFC 850/asctime non-support note (L7); fixed stale coverage claim (src/response.rs → crates/michi-core/src/response.rs); added new decision entries for D (ErrorClass::Internal reachable) and G (DomainError → MCP canonical path).
+
+   - **docs/superpowers/plans/2026-08-04-edge-case-fixes.md** — NEW 14-task implementation plan with:
+     - Model annotations: haiku for mechanical tasks, sonnet for multi-file/judgment, opus for calendar validation (H5)
+     - Full code snippets for each step
+     - Task dependency map (2→1, 6→5, 8→2, 9→6+8, 11→10, 12→10)
+
+   - **crates/michi-toon/src/escape.rs** — Added:
+     ```rust
+     #[must_use]
+     pub(crate) fn sanitize_header_token(s: &str) -> std::borrow::Cow<'_, str> {
+         const STRUCTURAL: &[char] = &['[', ']', '{', '}', ',', '\n', '\r'];
+         if s.chars().any(|c| STRUCTURAL.contains(&c)) {
+             std::borrow::Cow::Owned(
+                 s.chars()
+                     .map(|c| if STRUCTURAL.contains(&c) { '_' } else { c })
+                     .collect(),
+             )
+         } else {
+             std::borrow::Cow::Borrowed(s)
+         }
+     }
+     pub(crate) use sanitize_header_token as sanitize_hint;
+     ```
+
+   - **crates/michi-toon/src/render.rs** — Wired sanitizers into 3 raw push positions (type_name, field names, hints). Replaced row-rendering loop with `0..field_count` + `row.get(i)` clamp/pad approach (kept debug_assert!). Added Float NaN/Inf quoting:
+     ```rust
+     Some(Value::Float(f)) => {
+         if f.is_nan() || f.is_infinite() {
+             let s = f.to_string();
+             let _ = write!(out, "\"{}\"", s);
+         } else {
+             let _ = write!(out, "{f}");
+         }
+     }
+     ```
+
+   - **crates/michi-toon/src/lib.rs** — Added ToonError enum:
+     ```rust
+     pub enum ToonError {
+         InvalidTypeName { name: String },
+         InvalidFieldName { name: String },
+         RowLengthMismatch { row_index: usize, expected: usize, actual: usize },
+         InvalidItem { row_index: usize, reason: String },  // added post-review
+     }
+     ```
+     Added `ToonOptions::validate()`. Changed `list()` return type to `Result<String, ToonError>`, returns `Err(ToonError::InvalidItem)` for non-object items.
+
+4. Errors and Fixes:
+   - **Task 1 quality issue: Missing `#[must_use]` on `sanitize_header_token`** — Code quality reviewer flagged it. Fixed directly by inserting `#[must_use]` attribute before the function definition and committing (b935535).
+   - **Task 2 quality issue: `list()` used `InvalidTypeName` for non-object errors** — Misleading because `InvalidTypeName` documents "structural char in name," not "wrong item type." Fixed by adding `ToonError::InvalidItem { row_index, reason }` variant and updating `list()` to use it (committed bae33f4).
+   - **Task 2 note from implementer:** Tests that intentionally create mismatched rows would panic in debug/test builds (debug_assert! fires before the rendering loop), so no unit tests were added for the clamp/pad path — observable only in release builds.
+
+5. Problem Solving:
+   - Synthesized three adversarial agent reports to produce final architectural decisions
+   - Resolved philosophical inconsistency across decisions A/B/F by codifying a unified invariant policy in PRINCIPLES.md
+   - Resolved F by recognizing napi.rs:274 constraint (can't use unwrap, can't silently fall back) → infallible new() + additive try_new()
+   - Resolved G by requiring DomainError::render_json() to include hints/recovery matching AgentResponse shape
+   - Plan task ordering accounts for compile-time dependencies between tasks
+
+6. All User Messages:
+   - "Please read through the latest iteration and setup of Callisto looking for learning lessons to apply here. Check commits for more details" (prior session)
+   - "Let's go through our spec and codebase and understand not just our happy path but our edge cases. We don't always do a good job of planning for edge cases, failure cases, errors, etc. Let's be very intentional and comprehensively understand and document these states so we can identify gaps and bugs." (prior session)
+   - "Tell me about what you've found" (prior session)
+   - "How shall we systematically and comprehensively address these? we want to create agent teams and workflows to complete this work with implementation, tests to cover the edge cases, error cases, etc. Documentation and updating the specs, architecture etc. Should we do a round or architectural analysis to consider gaps that may have resulted in these issues you found?" (prior session)
+   - "Yes please" (prior session — approving Step 0 + Step 1)
+   - "Is anything written to file?" (prior session)
+   - "yes, write it" (prior session — writing architecture analysis to file)
+   - "With all that you have found shall we do an adversarial analysis before planning?" (prior session)
+   - "yes" (prior session — launching adversarial analysis)
+   - "How should we adjust our architecture (if anything) to better suit our needs based on our findings?" (this session)
+   - "Let's make the adjustments and then write the plan. Consider agent teams and workflows with the most appropriate model and effort. Focus on haiku, sonnet 4.6 and Opus 4.6 for the most part to keep token usage lower but quality high. Adjust effort as needed." (this session)
+   - "Yes" (this session — approving plan execution via subagent-driven development)
+
+7. Pending Tasks:
+   - Task 3: Delete serializer.rs dead code — RUNNING (background, haiku)
+   - Task 4: KV newline escaping + NaN/Inf guard — RUNNING (background, haiku)
+   - Task 5: ErrorCode::default_class() + fix Error::class() — DISPATCHED (background, sonnet)
+   - Task 6: DomainError::to_call_tool_result() + render_json() — PENDING (blocked on Task 5)
+   - Task 7: Port PartialSuccess/FailedOp, fix FailedOp.operation escaping, snapshots — PENDING
+   - Task 8: 5 Rust render_json tests + wire validate() into toon_body() — PENDING (Task 2 done, unblocked)
+   - Task 9: as_error/render_for/has_human_content tests + schema alignment — PENDING (blocked on 6+8)
+   - Task 10: Normalizing RetryConfig::new() + try_new() + RetryConfigError + napi.rs — PENDING
+   - Task 11: Port resilience correctness tests from src/ — PENDING (blocked on 10)
+   - Task 12: Fix parse_http_date calendar validation — PENDING (blocked on 10, opus/high effort)
+   - Task 13: Recompute signal after hard-cap in michi-truncate — RUNNING (background, haiku)
+   - Task 14: Doc comments (u64 clamp, pipeline step ID, KV padding, AlreadyDone boundary) — DISPATCHED (background, haiku)
+
+8. Current Work:
+   Executing the 14-task edge-case fixes plan using subagent-driven development. Tasks 1 and 2 are fully complete and quality-approved. Tasks 3, 4, 5, 13, and 14 were dispatched concurrently to background agents (3, 4, 13 as haiku; 5 as sonnet; 14 as haiku).
+
+   The subagent workflow is:
+   1. Implementer subagent per task → reports DONE/DONE_WITH_CONCERNS/NEEDS_CONTEXT/BLOCKED
+   2. Spec compliance reviewer (haiku or sonnet)
+   3. Code quality reviewer (haiku or sonnet)
+   4. Fix any issues → re-review
+   5. Mark task complete, move to next
+
+   After completing Tasks 3/4/5/13/14, the next sequential tasks are:
+   - Task 6 (DomainError MCP path — needs Task 5)
+   - Task 7 (PartialSuccess port — independent)
+   - Task 8 (render_json tests — Task 2 done, unblocked)
+   - Task 10 (RetryConfig — independent)
+
+9. Optional Next Step:
+   Wait for the background agents (Tasks 3, 4, 5, 13, 14) to complete. For each, run the spec compliance review and code quality review, fix any issues found, mark complete. Then dispatch the next wave of tasks (6, 7, 8, 10 — all can run in parallel since they touch different files).
+
+   The user's most recent explicit request was "Yes" approving the plan execution. The task immediately before this summary request was dispatching background agents for Tasks 3, 4, 5, 13, and 14 while Tasks 1 and 2 had just completed with full review cycles. The plan continues: "After all tasks complete: Run full test suite: `just test`, Run lints: `just check`, Review insta snapshots: `just snapshots`."
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
