@@ -1,0 +1,3 @@
+For each one we want a goal and outcome, what success looks like, not prescriptive steps. We want focused skills and agents that know how to collaborate, handoff and validate each other.
+
+Thinkk of this from the pov of the development process. Someone defines the need, a spec is created, implemented, tested, validated. Bugs need to be found and addressed but ideally not created in the first place. And we need a way to iterate and improve
