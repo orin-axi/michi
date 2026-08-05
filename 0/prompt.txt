@@ -1,0 +1,1 @@
+We want to minimize token usage, optimize model and effort usage and optimize for agents that can pull the context out of the main context window and allow us to run more effectively with context. Right? We can write this guidance into the agent-plugins repo so we don't have to repeat ourselves
