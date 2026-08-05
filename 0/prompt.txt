@@ -1,0 +1,49 @@
+<task-notification>
+<task-id>a12f710c89034f6f3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a12f710c89034f6f3.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec + quality review Task 13: AgentResponse builder" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Here is my verdict.
+
+---
+
+**Spec:** ❌ Issues: [one missing test — 10 inline tests present, spec requires 11]
+
+**Verification checklist:**
+
+1. `OutputFormat::default()` returns `Text` via `#[derive(Default)]` + `#[default]` on the `Text` variant — ✅
+2. `render()` has `#[must_use]` at line 99 — ✅
+3. `json_string` is private (no `pub`) at line 154 — ✅
+4. `if let Some(ex) = &amp;r.example { ... }` at lines 139–142 — key is omitted entirely when `None`, not emitted as `null` — ✅
+5. Text render order at lines 112–114: `body` → `hint_block` → `recovery_block` — ✅
+6. Test count: **10 `#[test]` functions found, spec requires 11** — ❌
+
+   Tests present: `text_render_body_only`, `text_render_with_hints`, `text_render_with_recovery`, `text_render_hints_before_recovery`, `json_render_basic`, `json_render_error_flag`, `json_render_escapes_quotes`, `json_render_with_hints`, `json_render_with_recovery`, `default_output_format_is_text`.
+
+   The most likely missing test is one for JSON recovery **without** an example, to explicitly assert the `"example"` key is absent (not `null`). The logic is correct (line 139 uses `if let Some`), but the spec-required test covering that case isn't there.
+
+7. `# Examples` doctest at lines 22–30 uses `Hint::new()` (public, line 10 of hints.rs), `AgentResponse::new()`, `with_hint()`, and `render()` — all public API — ✅
+
+### Code Quality Issues
+
+- `json_render_error_flag` (line 217) calls `AgentResponse::error("bad").as_error()` — `.error()` already sets `is_error = true`, so `.as_error()` is redundant. The test passes but it doesn't actually exercise `as_error()` in isolation. Minor nit, not a correctness problem.
+
+### Assessment: Not ready to merge — with one fix
+
+Add the 11th test verifying that a `RecoveryHint` with no example produces JSON without an `"example"` key:
+
+```rust
+#[test]
+fn json_render_recovery_no_example_omits_key() {
+    let r = AgentResponse::new("body")
+        .with_recovery(RecoveryHint::new("retry", "wait and retry"));
+    let json = r.render(OutputFormat::Json);
+    assert!(!json.contains("\"example\""), "example key must be absent when None");
+}
+```
+
+Everything else is solid. One test short of spec.</result>
+<usage><subagent_tokens>19744</subagent_tokens><tool_uses>5</tool_uses><duration_ms>60682</duration_ms></usage>
+</task-notification>
