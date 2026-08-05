@@ -1,0 +1,1 @@
+Can we close the gaps? Any docs, readmes should be written with a friendly tone, engineering focused, scannable and devoid of AI slop and AI word salad.
