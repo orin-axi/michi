@@ -1,0 +1,43 @@
+<task-notification>
+<task-id>afa1a10e76ba622b7</task-id>
+<tool-use-id>toolu_014vbtvMvk1KCGMG9BdA3a4C</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/afa1a10e76ba622b7.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec + quality review Tasks 11-12: status and recovery" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Spec:** ✅ Compliant
+
+All spec requirements are met across both files. Detailed verification:
+
+**Task 11 — `src/status.rs`**
+
+- `Health` derive: `#[derive(Debug, Clone, Copy, PartialEq, Eq)]` — line 4, `Copy` present ✅
+- `label() -&gt; &amp;'static str` with `#[must_use]` — line 16-23 ✅
+- `impl Display` delegates to `label()` — lines 26-30 ✅
+- `StatusItem` fields all `pub` with doc comments, `new()` and `with_detail()` constructors — lines 34-61 ✅
+- `StatusResponse` fields all `pub` with doc comments, `new()`, `with_hints()`, `render()` — lines 65-125 ✅
+- `render()` has `#[must_use]` and `String::with_capacity` — lines 102-108 ✅
+- Render format correct: `"status: {label}\n"` then `"{name}: {label}\n"` or `"{name}: {label} ({detail})\n"` then optional help block via `hints::append_hints` ✅
+- 7 inline tests (spec required 6 minimum) ✅
+
+**Task 12 — `src/recovery.rs`**
+
+- `RecoveryHint` fields all `pub` with doc comments, `new()` and `with_example()` constructors — lines 6-37 ✅
+- `render_recovery` has `#[must_use]` — line 49 ✅
+- `String::with_capacity` used — lines 54-55 ✅
+- Empty slice returns `String::new()` — lines 51-53 ✅
+- Format: `"recovery[N]:\n  action: description\n"` with optional ` → example` suffix — lines 56-69 ✅
+- 4 inline tests ✅
+
+**`src/lib.rs`**
+
+- `pub mod recovery;` — line 9 ✅
+- `pub mod status;` — line 11 ✅
+
+### Code Quality Issues
+
+None. The implementation is clean: no `unwrap()`, pre-allocated strings, doc comments on all `pub` items, `Copy` on the enum as required.
+
+### Assessment: Ready to merge? Yes</result>
+<usage><subagent_tokens>16702</subagent_tokens><tool_uses>3</tool_uses><duration_ms>26415</duration_ms></usage>
+</task-notification>
