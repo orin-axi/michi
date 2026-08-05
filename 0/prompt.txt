@@ -1,0 +1,1 @@
+Can you think through the architecture, repo setup, etc? Plan out an implementation in details using agent teams
