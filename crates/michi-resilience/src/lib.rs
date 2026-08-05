@@ -528,7 +528,9 @@ mod tests {
     #[test]
     fn retryable_status_codes() {
         assert!(is_retryable_status(429));
+        assert!(is_retryable_status(502));
         assert!(is_retryable_status(503));
+        assert!(is_retryable_status(504));
         assert!(!is_retryable_status(404));
         assert!(!is_retryable_status(400));
     }
@@ -611,5 +613,35 @@ mod tests {
     fn try_new_accepts_valid_config() {
         let result = RetryConfig::try_new(3, Duration::from_millis(500), Duration::from_secs(30), 0.2);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn already_done_yes_when_stored() {
+        assert_eq!(already_done(Some("prior result".into())), AlreadyDone::Yes { result: "prior result".into() });
+    }
+
+    #[test]
+    fn already_done_no_when_none() {
+        assert_eq!(already_done(None), AlreadyDone::No);
+    }
+
+    #[test]
+    fn render_already_done_no_hints_format() {
+        let out = render_already_done("delete_item", "item 42 was deleted in run abc", &[]);
+        assert_eq!(out, "operation: delete_item\nstatus:    already_done\nsummary:   item 42 was deleted in run abc\n");
+    }
+
+    #[test]
+    fn render_already_done_with_hints() {
+        let out = render_already_done("sync", "synced 10 records", &["use get_status to check".into()]);
+        assert!(out.contains("help[1]:\n  use get_status to check\n"), "got: {out}");
+        assert!(out.contains("operation: sync\n"), "got: {out}");
+    }
+
+    #[test]
+    fn render_already_done_multiple_hints() {
+        let hints = ["hint a".to_string(), "hint b".to_string()];
+        let out = render_already_done("op", "done", &hints);
+        assert!(out.contains("help[2]:\n  hint a\n  hint b\n"), "got: {out}");
     }
 }

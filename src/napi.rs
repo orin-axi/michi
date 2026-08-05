@@ -57,6 +57,9 @@ pub struct JsToonValue {
     /// The value when `type` is `"bool"`.
     #[napi(js_name = "boolVal")]
     pub bool_val: Option<bool>,
+    /// Decimal places when `type` is `"float"` (KV render only). Clamped to [0, 20]. Defaults to 6.
+    #[napi(js_name = "decimalsVal")]
+    pub decimals_val: Option<i32>,
 }
 
 /// Options for rendering a TOON document (JavaScript-friendly).
@@ -224,7 +227,10 @@ fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
     match v.r#type.as_str() {
         "str" => crate::kv::KvValue::Text(v.str_val.unwrap_or_default()),
         "int" => crate::kv::KvValue::Int(i64::from(v.int_val.unwrap_or(0))),
-        "float" => crate::kv::KvValue::Float(v.float_val.unwrap_or(0.0), 6),
+        "float" => {
+            let decimals = v.decimals_val.unwrap_or(6).clamp(0, 20) as u8;
+            crate::kv::KvValue::Float(v.float_val.unwrap_or(0.0), decimals)
+        }
         "bool" => crate::kv::KvValue::Bool(v.bool_val.unwrap_or(false)),
         _ => crate::kv::KvValue::Missing,
     }
@@ -385,11 +391,15 @@ pub fn render_status(
                 Some(h) if h.starts_with("error:") => {
                     Some(crate::status::Health::Error(h.trim_start_matches("error:").trim().to_string()))
                 }
-                Some(_) => Some(crate::status::Health::Ok),
+                Some(other) => {
+                    return Err(napi::Error::from_reason(format!(
+                        "unknown health value {other:?}: expected \"ok\", \"degraded: <reason>\", or \"error: <reason>\""
+                    )));
+                }
             };
-            crate::status::StatusItem { key: i.key, value: js_kv_value_to_rust(i.value), health }
+            Ok(crate::status::StatusItem { key: i.key, value: js_kv_value_to_rust(i.value), health })
         })
-        .collect();
+        .collect::<napi::Result<Vec<_>>>()?;
 
     let hint_objs: Vec<crate::hints::Hint> = hints_vec.into_iter().map(Into::into).collect();
     let resp = crate::status::StatusResponse::new(tool_name, description, status_items).with_hints(hint_objs);
@@ -701,7 +711,14 @@ mod tests {
     use super::*;
 
     fn value(t: &str) -> JsToonValue {
-        JsToonValue { r#type: t.to_string(), str_val: None, int_val: None, float_val: None, bool_val: None }
+        JsToonValue {
+            r#type: t.to_string(),
+            str_val: None,
+            int_val: None,
+            float_val: None,
+            bool_val: None,
+            decimals_val: None,
+        }
     }
 
     #[test]
@@ -1017,5 +1034,82 @@ mod tests {
         assert_eq!(result.content.len(), 2);
         assert_eq!(result.content[1].text, "friendly summary");
         assert_eq!(result.content[1].annotations.audience, vec!["user".to_string()]);
+    }
+
+    #[test]
+    fn render_already_done_napi_basic() {
+        let out = render_already_done("delete_item".into(), "already deleted".into(), vec![]).unwrap();
+        assert!(out.contains("operation: delete_item"), "got: {out}");
+        assert!(out.contains("status:    already_done"), "got: {out}");
+        assert!(out.contains("summary:   already deleted"), "got: {out}");
+    }
+
+    #[test]
+    fn render_already_done_napi_with_hints() {
+        let out = render_already_done("sync".into(), "done".into(), vec!["use get_status to verify".into()]).unwrap();
+        assert!(out.contains("help[1]:\n  use get_status to verify\n"), "got: {out}");
+    }
+
+    #[test]
+    fn render_kv_napi_float_default_decimals() {
+        let item = JsKvItem { key: "score".into(), value: JsToonValue { float_val: Some(3.14159), ..value("float") } };
+        let out = render_kv(vec![item], None, vec![]).unwrap();
+        assert!(out.contains("score:"), "got: {out}");
+        assert!(out.contains("3.141590"), "expected 6 decimal places by default, got: {out}");
+    }
+
+    #[test]
+    fn render_kv_napi_float_custom_decimals() {
+        let item = JsKvItem {
+            key: "score".into(),
+            value: JsToonValue { float_val: Some(3.14159), decimals_val: Some(2), ..value("float") },
+        };
+        let out = render_kv(vec![item], None, vec![]).unwrap();
+        assert!(out.contains("3.14"), "expected 2 decimal places, got: {out}");
+        assert!(!out.contains("3.141"), "must not have more than 2 decimal places, got: {out}");
+    }
+
+    #[test]
+    fn render_status_napi_ok_health() {
+        let items = vec![JsStatusItem {
+            key: "index".into(),
+            value: JsToonValue { str_val: Some("ready".into()), ..value("str") },
+            health: Some("ok".into()),
+        }];
+        let out = render_status("my-tool".into(), "desc".into(), items, None).unwrap();
+        assert!(out.contains("tool:"), "got: {out}");
+        assert!(!out.contains("DEGRADED") && !out.contains("ERROR"), "ok should have no annotation, got: {out}");
+    }
+
+    #[test]
+    fn render_status_napi_degraded_health() {
+        let items = vec![JsStatusItem {
+            key: "cache".into(),
+            value: JsToonValue { str_val: Some("warm".into()), ..value("str") },
+            health: Some("degraded: high latency".into()),
+        }];
+        let out = render_status("my-tool".into(), "desc".into(), items, None).unwrap();
+        assert!(out.contains("[DEGRADED: high latency]"), "got: {out}");
+    }
+
+    #[test]
+    fn render_status_napi_error_health() {
+        let items = vec![JsStatusItem {
+            key: "db".into(),
+            value: JsToonValue { str_val: Some("down".into()), ..value("str") },
+            health: Some("error: connection refused".into()),
+        }];
+        let out = render_status("my-tool".into(), "desc".into(), items, None).unwrap();
+        assert!(out.contains("[ERROR: connection refused]"), "got: {out}");
+    }
+
+    #[test]
+    fn render_status_napi_unknown_health_returns_error() {
+        let items = vec![JsStatusItem {
+            key: "x".into(),
+            value: JsToonValue { str_val: Some("v".into()), ..value("str") },
+            health: Some("degraded".into()), // missing colon and reason
+        }];
+        assert!(render_status("t".into(), "d".into(), items, None).is_err());
     }
 }

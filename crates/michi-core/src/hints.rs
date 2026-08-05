@@ -69,4 +69,23 @@ mod tests {
         let hints = [Hint::new("Call get_item with id=<id>")];
         assert_eq!(render_hints(&hints), "help[1]:\n  Call get_item with id=<id>\n");
     }
+
+    #[test]
+    fn empty_hints_returns_empty_string() {
+        assert_eq!(render_hints(&[]), "");
+    }
+
+    #[test]
+    fn multiple_hints_all_appear_in_order() {
+        let hints = [Hint::new("first"), Hint::new("second"), Hint::new("third")];
+        let out = render_hints(&hints);
+        assert_eq!(out, "help[3]:\n  first\n  second\n  third\n");
+    }
+
+    #[test]
+    fn append_hints_on_empty_slice_does_nothing() {
+        let mut buf = "prefix\n".to_string();
+        append_hints(&mut buf, &[]);
+        assert_eq!(buf, "prefix\n");
+    }
 }

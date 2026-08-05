@@ -5,7 +5,15 @@ use std::time::Duration;
 proptest! {
     #[test]
     fn parse_retry_after_never_panics(input in ".{0,200}") {
+        // Smoke test: must not panic on arbitrary input
         let _ = parse_retry_after(&input);
+    }
+
+    #[test]
+    fn parse_retry_after_integer_seconds_parses_correctly(n in 0u64..86_400) {
+        let input = n.to_string();
+        let result = parse_retry_after(&input);
+        prop_assert_eq!(result, Some(Duration::from_secs(n)), "integer input {} must parse to {}s", n, n);
     }
 
     #[test]

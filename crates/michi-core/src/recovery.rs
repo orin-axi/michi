@@ -91,4 +91,38 @@ mod tests {
         let out = render_recovery(&hints);
         assert!(out.contains("assign_user: suggestedParams: { user: alice }"), "got: {out}");
     }
+
+    #[test]
+    fn empty_hints_returns_empty_string() {
+        assert_eq!(render_recovery(&[]), "");
+    }
+
+    #[test]
+    fn hint_with_no_params_renders_tool_name_only() {
+        let hints = [RecoveryHint::new("retry_upload")];
+        let out = render_recovery(&hints);
+        assert_eq!(out, "recovery[1]:\n  retry_upload\n");
+    }
+
+    #[test]
+    fn hint_with_reason_but_no_params() {
+        let hints = [RecoveryHint::new("reload_cache").reason("cache entry expired")];
+        let out = render_recovery(&hints);
+        assert!(out.contains("reload_cache — cache entry expired"), "got: {out}");
+        assert!(!out.contains("suggestedParams"), "got: {out}");
+    }
+
+    #[test]
+    fn multiple_hints_all_appear() {
+        let hints = [RecoveryHint::new("step_a"), RecoveryHint::new("step_b")];
+        let out = render_recovery(&hints);
+        assert_eq!(out, "recovery[2]:\n  step_a\n  step_b\n");
+    }
+
+    #[test]
+    fn append_recovery_on_empty_slice_does_nothing() {
+        let mut buf = "prefix\n".to_string();
+        append_recovery(&mut buf, &[]);
+        assert_eq!(buf, "prefix\n");
+    }
 }

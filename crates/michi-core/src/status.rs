@@ -91,4 +91,68 @@ mod tests {
             "got: {out}"
         );
     }
+
+    #[test]
+    fn empty_items_renders_only_tool_and_description() {
+        let resp = StatusResponse::new("tool-x", "does things", vec![]);
+        let out = resp.render();
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "only tool + description lines, got: {out}");
+    }
+
+    #[test]
+    fn health_ok_produces_no_annotation() {
+        let resp = StatusResponse::new(
+            "tool",
+            "desc",
+            vec![StatusItem { key: "index".into(), value: KvValue::Text("ready".into()), health: Some(Health::Ok) }],
+        );
+        let out = resp.render();
+        assert!(!out.contains("DEGRADED") && !out.contains("ERROR"), "Ok should add no annotation, got: {out}");
+    }
+
+    #[test]
+    fn health_degraded_annotation_appears() {
+        let resp = StatusResponse::new(
+            "tool",
+            "desc",
+            vec![StatusItem {
+                key: "cache".into(),
+                value: KvValue::Text("warm".into()),
+                health: Some(Health::Degraded("slow eviction".into())),
+            }],
+        );
+        let out = resp.render();
+        assert!(out.contains("[DEGRADED: slow eviction]"), "got: {out}");
+    }
+
+    #[test]
+    fn health_error_annotation_appears() {
+        let resp = StatusResponse::new(
+            "tool",
+            "desc",
+            vec![StatusItem {
+                key: "db".into(),
+                value: KvValue::Text("unreachable".into()),
+                health: Some(Health::Error("connection refused".into())),
+            }],
+        );
+        let out = resp.render();
+        assert!(out.contains("[ERROR: connection refused]"), "got: {out}");
+    }
+
+    #[test]
+    fn multiple_items_all_appear() {
+        let resp = StatusResponse::new(
+            "tool",
+            "desc",
+            vec![
+                StatusItem { key: "alpha".into(), value: KvValue::Int(1), health: None },
+                StatusItem { key: "beta".into(), value: KvValue::Int(2), health: None },
+            ],
+        );
+        let out = resp.render();
+        assert!(out.contains("alpha:"), "got: {out}");
+        assert!(out.contains("beta:"), "got: {out}");
+    }
 }

@@ -34,4 +34,17 @@ proptest! {
         prop_assert!(json.contains("\"structuredContent\""), "missing camelCase structuredContent: {json}");
         prop_assert!(!json.contains("\"is_error\""), "leaked snake_case is_error: {json}");
     }
+
+    #[test]
+    fn call_tool_result_with_invalid_structured_content_uses_string_fallback(
+        content in proptest::collection::vec(content_block_strategy(), 1..3),
+        is_error in any::<bool>(),
+        garbage in "[^{][^}]{0,40}", // guaranteed not valid JSON
+    ) {
+        // The serde fallback path: invalid structured_content must not panic
+        // and must produce a serializable result (stored as JSON string).
+        let r = CallToolResult::new(content, is_error, &garbage);
+        let json = serde_json::to_string(&r).expect("must serialize even with invalid structured_content");
+        prop_assert!(json.contains("\"structuredContent\""), "structuredContent must always appear: {json}");
+    }
 }

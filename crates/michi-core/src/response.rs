@@ -22,6 +22,9 @@ enum RenderTarget {
     Kv,
 }
 
+/// Default per-cell truncation limit used by [`AgentResponse::new`].
+pub const DEFAULT_TRUNCATE_CELLS: usize = 200;
+
 /// Builder for an agent-facing response.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -51,7 +54,7 @@ impl AgentResponse {
             total_count: None,
             hints: Vec::new(),
             recovery: Vec::new(),
-            truncate_cells_at: 200,
+            truncate_cells_at: DEFAULT_TRUNCATE_CELLS,
             is_error: false,
             human_content: None,
         }

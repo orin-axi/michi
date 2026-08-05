@@ -96,4 +96,40 @@ mod tests {
         let out = p.render();
         assert_eq!(out, "step[2]{id,name,status}:\n  fetch,Fetch Data,completed\n  upload,Upload,pending\n");
     }
+
+    #[test]
+    fn empty_pipeline_renders_zero_steps() {
+        let p = Pipeline { id: "empty".into(), steps: vec![] };
+        let out = p.render();
+        assert_eq!(out, "step[0]{id,name,status}:\n");
+    }
+
+    #[test]
+    fn failed_step_label() {
+        let p = Pipeline {
+            id: "p".into(),
+            steps: vec![PipelineStep { id: "build".into(), name: "Build".into(), status: StepStatus::Failed }],
+        };
+        assert!(p.render().contains(",failed\n"), "got: {}", p.render());
+    }
+
+    #[test]
+    fn skipped_step_label() {
+        let p = Pipeline {
+            id: "p".into(),
+            steps: vec![PipelineStep { id: "lint".into(), name: "Lint".into(), status: StepStatus::Skipped }],
+        };
+        assert!(p.render().contains(",skipped\n"), "got: {}", p.render());
+    }
+
+    #[test]
+    fn step_id_with_comma_is_toon_escaped() {
+        let p = Pipeline {
+            id: "p".into(),
+            steps: vec![PipelineStep { id: "a,b".into(), name: "A,B Step".into(), status: StepStatus::Pending }],
+        };
+        let out = p.render();
+        // Comma in id/name must be escaped so TOON field separation is preserved
+        assert!(!out.contains("a,b,A,B"), "raw commas must not appear unescaped, got: {out}");
+    }
 }

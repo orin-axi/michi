@@ -159,6 +159,41 @@ mod tests {
     }
 
     #[test]
+    fn push_kv_value_float_nan_renders_as_nan_token() {
+        // Plain-text KV is agent-readable text; NaN is an acceptable token here
+        // (unlike JSON where bare NaN is syntactically invalid).
+        let mut out = String::new();
+        push_kv_value(&mut out, &KvValue::Float(f64::NAN, 2));
+        assert_eq!(out, "NaN");
+    }
+
+    #[test]
+    fn push_kv_value_float_inf_renders_as_inf_token() {
+        let mut out = String::new();
+        push_kv_value(&mut out, &KvValue::Float(f64::INFINITY, 0));
+        assert_eq!(out, "inf");
+    }
+
+    #[test]
+    fn push_kv_value_duration_renders_with_one_decimal() {
+        let mut out = String::new();
+        push_kv_value(&mut out, &KvValue::Duration(std::time::Duration::from_millis(1500)));
+        assert_eq!(out, "1.5s");
+    }
+
+    #[test]
+    fn render_kv_empty_items_returns_empty_string() {
+        assert_eq!(render_kv(&[], None, &[]), "");
+    }
+
+    #[test]
+    fn render_kv_total_count_appended() {
+        let items = vec![KvItem { key: "id".into(), value: KvValue::Int(1) }];
+        let out = render_kv(&items, Some(42), &[]);
+        assert!(out.contains("totalCount: 42\n"), "got: {out}");
+    }
+
+    #[test]
     fn float_nan_in_json_is_quoted() {
         let mut out = String::new();
         kv_value_to_json(&mut out, &KvValue::Float(f64::NAN, 2));
