@@ -1,0 +1,5 @@
+We should not have placeholder shims, that means we have not finished implementing our work right?
+
+Let’s split the crates, and setup moon, Proto and just to manage the monorepo, no?
+
+Then tackle the missing shims.
