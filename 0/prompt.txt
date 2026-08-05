@@ -1,0 +1,1 @@
+Do we need a separate crate or should it all be one michi agentic crate/library?
