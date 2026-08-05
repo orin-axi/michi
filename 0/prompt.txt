@@ -1,0 +1,85 @@
+<task-notification>
+<task-id>a5e239b797131f282</task-id>
+<tool-use-id>toolu_01McJ6wi8ZgRHXcEmXoSnEXf</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/3bb5bd40-bcf1-44f3-afc5-3b8ba770a7d6/tasks/a5e239b797131f282.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit docs for future-functionality claims stated as present" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Documentation Accuracy Audit — Findings
+
+Cross-checked README.md, CLAUDE.md, ARCHITECTURE.md, CONTRIBUTING.md, PRINCIPLES.md, docs/00-overview.md, docs/01-spec.md, and docs/spec/*.md against src/, packages/michi-node/, Cargo.toml, and .github/workflows/ci.yml (the only CI file present — no separate publish/release workflow exists).
+
+### README.md
+
+**HIGH — Line 5: suite tools presented as already consuming michi.**
+&gt; "Four tools in the suite (Monokl, Firkin, Lumen, Pulse) build on it instead of re-implementing this formatting themselves."
+
+Present tense ("build on it") asserts active integration. `docs/spec/README.md` line 21 states plainly: "**No real consumer depends on michi yet.** crates.io publish is explicitly gated on that happening first." No source in this repo shows Monokl/Firkin/Lumen/Pulse importing michi — this is the future/suite vision, not current state. Fix: "Four tools in the suite (Monokl, Firkin, Lumen, Pulse) are designed to build on it eventually, instead of re-implementing this formatting themselves — none currently depend on it; see docs/spec/README.md's known gaps."
+
+**HIGH — Lines 85-96: Install section has no "not yet published" caveat.**
+```toml
+[dependencies]
+michi = "0.1"
+```
+```bash
+pnpm add @orin-axi/michi     # or npm install / yarn add
+```
+Neither crates.io nor npm has this package published (`docs/spec/05-scope-and-quality.md` lines 68-69: "not yet published" for both). `CONTRIBUTING.md` correctly tells contributors to `git clone` + build locally, and CLAUDE.md itself says "(not yet published)". A reader following README's Install section literally will get `cargo add michi` / `pnpm add @orin-axi/michi` failures. Fix: add a line before the snippets, e.g. "Not yet published to crates.io or npm — see CONTRIBUTING.md for building from source in the meantime," matching the phrasing already used in CLAUDE.md.
+
+### docs/00-overview.md
+
+**HIGH — Lines 113-125: "Where michi fits in the suite" table implies live integration.**
+&gt; "Each agent-facing tool imports it rather than re-implementing AXI formatting." … table: `Monokl | AST-based semantic code search | TOON list output`, etc.
+
+Same issue as README line 5 — present-tense "imports it" / "Uses michi for" columns read as current fact. Combined with the `Known gaps` / `README.md` (spec) statement that no real consumer exists yet, and PRINCIPLES.md's rule #5 ("Publish/release gates are earned... a release gate exists for a reason"), this table should be marked as target/planned integration, not current. Fix: retitle the section "Where michi is intended to fit in the suite (planned — no current consumer)" or add a one-line caveat above the table.
+
+**MEDIUM — Line 13: "TypeScript consumers reach it via the NAPI npm wrapper `@orin-axi/michi`."** Present tense, same unpublished-package issue as README's Install section. Fix: "...will reach it via..." or add the not-yet-published caveat once, near the top, and let it govern this line too.
+
+**HIGH — Lines 173-180: "Publishing targets" section, no unpublished caveat.**
+```
+## Publishing targets
+- **crates.io** — public, `michi`
+- **npmjs.com** — public, `@orin-axi/michi` (NAPI wrapper)
+```
+Labeling these "public" without qualification reads as current status, directly conflicting with `docs/spec/05-scope-and-quality.md`'s explicit "not yet published" for both. Fix: rename to "Publishing targets (planned)" and add "— neither is published yet; see docs/spec/06-decisions.md's open questions."
+
+### docs/spec/README.md
+
+**HIGH — Lines 22-23: stub-comment claim contradicts ARCHITECTURE.md's description of the actual code.**
+&gt; "The `cli` feature is a stub... Plan 2 ... `pipeline` has a real, tested data type and `render()`; the actual executor, `fuzzy`, `cache`, and the resilience `circuit`/`policy` modules are **one-line stub comments**."
+
+I verified via `find`/`grep` that no `fuzzy`, `cache`, `cli`, `circuit`, `policy`, or `executor` files/modules exist anywhere in `src/` — not even as stub comments. `ARCHITECTURE.md` line 38 says the opposite explicitly: "There is no `pipeline::executor`/`resilience::circuit`/`resilience::policy` in this crate anymore, and no `sink` module either... **It was removed from this crate's feature graph deliberately**" (ARCHITECTURE.md line 14), and `docs/spec/06-decisions.md` line 61 confirms: "None of this is scaffolded ahead of time... the deleted `pipeline`/`sink`/`resilience` stub files." So "one-line stub comments" describes code that used to exist and was deliberately deleted — this doc line is stale/wrong about current repo state, not just imprecise about the future. Fix: "the actual executor, `fuzzy`, `cache`, and the resilience `circuit`/`policy` modules don't exist in this crate at all (earlier stub placeholders were deliberately removed — see ARCHITECTURE.md); they'll land as separate crates when built."
+
+### CONTRIBUTING.md
+
+**MEDIUM — Line 3: "filling in a Plan 2 stub."**
+&gt; "most contributions will be a bug fix, a new primitive, or filling in a Plan 2 stub."
+
+Same root problem as above: there is no Plan 2 stub to fill in — ARCHITECTURE.md and 06-decisions.md are explicit that Plan 2 pieces get built as brand-new separate crates, with no pre-scaffolded stub in this repo by design ("None of this is scaffolded ahead of time"). "Filling in a stub" invites a contributor to go looking for one that doesn't exist. Fix: "...or starting one of the Plan 2 crates (`pipeline` executor, `fuzzy`, `cache`, `cli`) described in ARCHITECTURE.md — none of these exist yet, not even as stubs, by design."
+
+### docs/spec/04-mcp-and-napi.md
+
+**HIGH — Lines 146-170: "Cross-compilation and CI" describes a publish pipeline that isn't wired up.**
+&gt; "Publish CI uses a `fail-fast: false` matrix — one `.node` per target, uploaded as an artifact — then a publish job downloads everything and runs `napi prepublish`:" (followed by a YAML snippet), and "The publish job emits the per-platform packages and the main `@orin-axi/michi` package together. CI asserts the npm package version equals the crate version before publish."
+
+I read `.github/workflows/ci.yml` in full — it is the *only* workflow file in the repo. It has `lint`, `version-sync`, `test`, `deny`, `coverage`, `bench-build`, `lint-js`, and `napi` (build + test) jobs, but **no publish job at all** — no crates.io publish, no `napi prepublish`, no artifact-download-and-publish step. The YAML fragment shown in this doc (`matrix.include` with `x86_64-unknown-linux-musl` / `aarch64-apple-darwin`, `cross: true`) does not exist anywhere in the actual CI config; the real `napi` job's matrix has four different targets used for build+test, not publish. This reads as documenting real, wired-up release automation when it's aspirational design. Fix: prefix the section "Planned publish CI (not yet implemented — today's `.github/workflows/ci.yml` only builds and tests, it does not publish)" and drop or clearly bracket the YAML as an illustrative future sketch.
+
+### docs/spec/05-scope-and-quality.md
+
+**HIGH — Line 86: same nonexistent-publish-job claim.**
+&gt; "**Version sync:** the npm package version tracks the crate version exactly. CI asserts the two are equal before any publish... The publish job builds the per-platform `.node` artifacts, runs `napi prepublish` to emit them as `optionalDependencies`, then publishes the main package."
+
+The `version-sync` job in `ci.yml` genuinely does assert `Cargo.toml`/`package.json` version equality (real and accurate), but it runs on every push/PR — there is no "publish job" for it to gate, since none exists. "Before any publish" and "the publish job builds... then publishes" describe a step that hasn't been built. Fix: "CI asserts the two are equal on every push/PR (a `version-sync` job); a publish job that builds `.node` artifacts and runs `napi prepublish` is planned but not yet implemented."
+
+(Lines 68-69 in this same file are the one place in the repo that gets it right: "Intended to publish... not yet published" — worth using as the template phrasing for the other files flagged above.)
+
+### docs/spec/03-rust-api.md
+
+**MEDIUM — Lines 5-30: "Crate root (`src/lib.rs`)" code block is stale/incomplete, omitting real always-compiled modules.**
+The snippet lists only `empty, error, hints, idempotency, kv, recovery, resilience, response, status, toon, truncate` as `pub mod`s and a matching `pub use` list. The actual `src/lib.rs` also has `pub mod audience;` and `pub mod mcp;` (both always-compiled, no feature gate) plus `pub use audience::Audience;` and `pub use mcp::{CallToolResult, ContentBlock};` — neither appears in this "reproduction" of lib.rs, even though prose elsewhere in the same doc and in `04-mcp-and-napi.md` discusses both modules at length. This is the same class of bug as the telemetry-omission fix mentioned in the task context — a module table/snippet silently missing a real, shipped module. Fix: add `pub mod audience;` and `pub mod mcp;` (and their re-exports) to the code block, or add a note like the one already present for `pipeline`/`telemetry` ("`audience` and `mcp` are also always-compiled but omitted above for brevity — see their own sections").
+
+### No findings in
+
+ARCHITECTURE.md, PRINCIPLES.md, docs/spec/01-overview-and-setup.md, docs/spec/02-toon-format.md, docs/spec/06-decisions.md, CLAUDE.md — these consistently and correctly caveat Plan 2 as nonexistent-as-code, correctly state crates.io/npm are unpublished, and correctly describe the `pipeline` module as data-only. These read as the "gold standard" phrasing the flagged files should be brought into line with.</result>
+<usage><subagent_tokens>106980</subagent_tokens><tool_uses>23</tool_uses><duration_ms>169352</duration_ms></usage>
+</task-notification>
