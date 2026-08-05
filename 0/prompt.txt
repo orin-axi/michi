@@ -1,0 +1,112 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The user asked to: (1) read the Callisto project for lessons applicable to michi; (2) comprehensively audit michi's codebase for edge cases, failure cases, and error states across all modules and specs; (3) commit the untracked workspace split (crates/ directory) and delete dead files; (4) produce an architecture analysis for 7 systemic issues before planning implementation; (5) write the architecture analysis to a file; (6) run an adversarial analysis challenging the findings and architectural decisions before planning any implementation. Currently mid-adversarial-analysis — waiting on the architecture critic agent to complete.
+
+   Standing workflow rule: batch commits, show user the log/diff, get explicit go-ahead before any `git push`.
+
+2. Key Technical Concepts:
+   - michi: pure-computation Rust crate, zero runtime deps by default, no async, no unsafe outside NAPI boundary
+   - Workspace split: michi now a facade re-exporting from michi-toon, michi-core, michi-resilience, michi-truncate sub-crates
+   - TOON format: Token-Optimized Object Notation — header grammar requires `[a-z_][a-z0-9_]*` for type_name and fields
+   - NAPI boundary: src/napi.rs exposes Rust to TypeScript; release builds ship without debug_asserts
+   - AXI principles: ten design principles for agent-ergonomic tooling; michi encodes 7 of 10
+   - MCP (Model Context Protocol): CallToolResult wire format; michi-core/src/mcp.rs assembles it
+   - Changeset-based publishing (Callisto lessons): two-phase release, cargo publish retry loop, per-platform NAPI packages
+   - Adversarial analysis: three-agent pattern — finding refuter, architectural critic, gap hunter
+
+3. Files and Code Sections:
+   - `crates/michi-toon/src/render.rs` — TOON rendering; lines 150/158/205 push type_name/field/hint raw with no escaping; debug_assert! for row mismatch compiled out in release
+   - `crates/michi-toon/src/escape.rs` — escape_value() for cell values; no equivalent for header positions
+   - `crates/michi-toon/src/lib.rs` — ToonOptions struct; toon::list() silently emits empty rows for non-struct items via `_ => Map::new()`
+   - `crates/michi-toon/src/serializer.rs` — ValueSerializer; no call site found in toon::list(); likely dead scaffolding
+   - `crates/michi-core/src/error.rs` — Error::class() only returns User/Transient; ErrorClass::Internal unreachable; FailedOp.operation unescaped while reason uses escape_value_quoted
+   - `crates/michi-core/src/response.rs` — AgentResponse builder; render_json() has zero Rust-level tests; render() stays infallible returning String
+   - `crates/michi-core/src/kv/mod.rs` — kv_value_to_json() writes floats unquoted: `write!(out, "{f:.*}", decimals)` — NaN/inf produce invalid JSON silently
+   - `crates/michi-core/src/mcp.rs` — mcp.rs:89: `serde_json::from_str(&r.structured_content).unwrap_or(serde_json::Value::Null)` silently discards structured_content and replaces with null on parse failure; zero tests for serde round-trip
+   - `crates/michi-core/src/recovery.rs` — RecoveryHint::param() accepts any KvValue including KvValue::Float(f64::NAN)
+   - `crates/michi-core/src/pipeline/mod.rs` — Pipeline/PipelineStep missing from auto-trait test; no snapshot coverage
+   - `crates/michi-resilience/src/lib.rs` — RetryConfig::new() infallible; max_delay=0 documented intentional behavior (but comment lost in split); only 4 tests; HTTP-date correctness tests NOT ported from src/
+   - `src/resilience/mod.rs` — has thorough test suite (HTTP-date correctness, is_retryable_status incl. 500 exception, jitter-bounds proptest) NOT ported to crates/michi-resilience
+   - `src/idempotency.rs` — has PartialSuccess/FailedOp NOT yet ported to crates/
+   - `crates/michi-truncate/src/lib.rs` — signal computed before hard-cap; diverges from content at small max_chars
+   - `docs/superpowers/specs/2026-08-04-edge-case-architecture.md` — NEW: full architectural decisions for 7 systemic issues with exact Rust API signatures
+   - Scratchpad HTML artifact: https://claude.ai/code/artifact/c8cdbf34-7377-4186-a8e0-0bbe7b40cead — 29 findings, filterable by severity/module
+
+   Key architectural decisions recorded in the spec file:
+   ```rust
+   // Decision A: sanitize_header_token in escape.rs
+   pub(crate) fn sanitize_header_token(s: &str) -> std::borrow::Cow<'_, str>
+
+   // Decision A: ToonError in lib.rs
+   pub enum ToonError { InvalidTypeName{name:String}, InvalidFieldName{name:String}, RowLengthMismatch{row_index:usize,expected:usize,actual:usize} }
+   impl ToonOptions { pub fn validate(&self) -> Result<(), ToonError> }
+
+   // Decision D: ErrorCode::default_class()
+   impl ErrorCode { pub fn default_class(&self) -> ErrorClass }
+   // RateLimited|Unavailable|Timeout|ExternalFailure → Internal
+   // InvalidInput|NotFound|Unauthorized|Forbidden|Conflict → User
+
+   // Decision F: RetryConfig::new() → Result
+   pub enum RetryConfigError { MaxDelayIsZero, BaseDelayExceedsMaxDelay{..}, JitterFactorOutOfRange{..} }
+   impl RetryConfig { pub fn new(...) -> Result<Self, RetryConfigError> }
+
+   // Decision G: DomainError→MCP
+   impl DomainError {
+     pub fn to_call_tool_result(&self) -> crate::mcp::CallToolResult
+     pub fn render_json(&self) -> String  // {"error":"<code>","message":"<msg>","retryable":<bool>}
+   }
+   ```
+
+4. Errors and Fixes:
+   - Dead code in src/: `src/response.rs` and `src/mcp.rs` were never compiled after the workspace split (src/lib.rs only does `pub use michi_core::*`). Fixed by `git rm` and committed as `d8fa122`.
+   - decisions.md had false coverage claim pointing to tests in src/response.rs. Fixed in the same commit.
+   - The adversarial-findings agent revealed M6 (max_delay=0) was incorrectly rated as a bug — it's documented intentional behavior in src/resilience/mod.rs; the comment was lost during the split.
+   - The adversarial-findings agent revealed M4/L4 were false positives for src/ — tests exist there but weren't ported to crates/michi-resilience.
+   - New critical finding G1 from gap agent: NaN/Infinity in KvValue::Float passed to recovery params causes invalid JSON, with inconsistent failure behavior across call paths (silent corruption in render_json, confusing napi::Error in to_call_tool_result, silent null replacement in mcp.rs:89 under serde feature).
+
+5. Problem Solving:
+   - Solved: committed the full workspace split (59 files, 3612 insertions) as a single clean commit after verifying all 104 tests pass
+   - Solved: identified and deleted dead src/response.rs and src/mcp.rs
+   - Solved: produced architecture analysis with concrete Rust API signatures for 7 systemic issues
+   - Solved: adversarial analysis revealed false positives (L3, L4 for src/, M6, L10) and downgraded C2, H1, M9
+   - In progress: adversarial-architecture agent still running
+   - Pending: synthesize all adversarial findings, then plan implementation
+
+6. All User Messages:
+   - "Please read through the latest iteration and setup of Callisto looking for learning lessons to apply here. Check commits for more details"
+   - "Let's go through our spec and codebase and understand not just our happy path but our edge cases. We don't always do a good job of planning for edge cases, failure cases, errors, etc. Let's be very intentional and comprehensively understand and document these states so we can identify gaps and bugs."
+   - "Tell me about what you've found"
+   - "How shall we systematically and comprehensively address these? we want to create agent teams and workflows to complete this work with implementation, tests to cover the edge cases, error cases, etc. Documentation and updating the specs, architecture etc. Should we do a round or architectural analysis to consider gaps that may have resulted in these issues you found?"
+   - "Yes please" (to proceeding with Step 0 + Step 1)
+   - "Is anything written to file?"
+   - "yes, write it" (architecture analysis to file)
+   - "With all that you have found shall we do an adversarial analysis before planning?"
+   - "yes" (to launching adversarial analysis)
+
+7. Pending Tasks:
+   - Wait for adversarial-architecture agent to complete and report findings
+   - Synthesize all three adversarial reports into updated finding/priority list
+   - Update architecture spec file if adversarial-architecture changes any decisions
+   - Plan implementation workflow (parallel agent teams per module cluster)
+   - Port src/resilience/mod.rs test suite into crates/michi-resilience (resolves M3, M4, L4 in one shot)
+   - Port PartialSuccess/FailedOp from src/idempotency.rs into crates/ (S2)
+   - Implement the unified escaping fix (C1+M1+M2 as one change)
+   - Fix NaN/Infinity in kv_value_to_json (new G1 finding — critical)
+   - Push commits to GitHub (requires explicit user go-ahead per standing rule)
+
+8. Current Work:
+   Three adversarial agents were launched in parallel. Two have completed:
+   - adversarial-findings: reported full verdict table for all 29 findings
+   - adversarial-gaps: found 4 new gaps, most importantly G1 (NaN in recovery params → invalid JSON with inconsistent multi-module failure behavior)
+   
+   adversarial-architecture is still running, critiquing the 7 architectural decisions (A through G) from 2026-08-04-edge-case-architecture.md.
+
+9. Optional Next Step:
+   Wait for adversarial-architecture to report, then synthesize all three adversarial reports. The user's most recent explicit request was "yes" to launching the adversarial analysis, and the stated next step after completion is to synthesize before planning implementation.
+
+   Current state verbatim: "Still waiting on adversarial-architecture before synthesizing everything."
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
