@@ -1,0 +1,1 @@
+let's save the current state and allow me to reset context and read back a prompt that gives ultracode a full context to do an adversarial evaluation of our codebase looking for rust best practices adherence, architecture, performance and security. Keeping in mind the underlying goal of what we're building in terms of DX, usability and maintainability of the codebase.
