@@ -1,0 +1,198 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+
+This session continued from a prior conversation mid-execution of a 14-task edge-case fixes implementation plan. The standing rule from the prior session was preserved: **batch commits, show the user the log/diff, and get explicit go-ahead before any `git push`**.
+
+The session's work:
+1. Resuming and completing the 14-task plan (Tasks 3–14 were in flight or pending)
+2. Running final verification (`just test`, `just check`, `just snapshots`) after all tasks complete
+3. The user's final explicit request: **"Do we have any hardcoded values, stubs or missing functionality that we missed? You have a habit of considering only the happy path and missing the full functionality so I feel like a bug hunt and adversarial analysis with agent teams + workflows leveraging the most appropriate model & effort is still in order. Might need a few rounds of those to feel confident we're not shipping faulty code. Use the output of each round to learn patterns and feed it into the next round to refine our process and our codebase. Report your findings at the end of multiple rounds and help understand how we can improve the process of writing our code and managing the codebase with AI assistance"**
+
+A 3-round adversarial workflow was launched and completed. Results are ready to be acted on.
+
+2. Key Technical Concepts:
+
+- michi: pure-sync Rust workspace, zero runtime deps by default, no unsafe outside NAPI boundary
+- Workspace layout: `crates/michi-toon`, `crates/michi-core`, `crates/michi-resilience`, `crates/michi-truncate`, `src/` facade (only `src/lib.rs` and `src/napi.rs` are compiled — the rest of `src/` is an orphaned dead tree)
+- TOON format: Token-Optimized Object Notation — `toon::list()` now returns `Result<String, ToonError>` (changed in this session)
+- Unified invariant policy: infallible constructors normalize, render functions always succeed, wire-it-in or document-it-as-opt-in
+- NAPI boundary contract: NAPI functions use normalizing `new()`, not `try_new()`; canonical error output is `domain_error.to_call_tool_result()`
+- Tests: `cargo nextest run`; snapshots via `insta`; benchmarks via `divan`; `just test` runs Rust + Node; `just check` runs fmt + clippy + deny + typos
+- Multi-round adversarial workflow pattern: parallel hunters → adversarial verification (3-skeptic voting) → Opus synthesis
+
+3. Files and Code Sections:
+
+**`tests/toon_integration.rs`** — MODIFIED (critical fix during final verification)
+- `toon::list()` return type changed from `ToonOptions` to `Result<String, ToonError>` in Task 2, but integration tests were not updated
+- Three tests broke: `list_builds_toon_options_from_serializable_struct_slice`, `list_handles_empty_slice`, `list_stringifies_nested_values_losslessly`
+- Fix: changed `let opts = michi::toon::list(...)` → `let out = michi::toon::list(...).expect("list failed")` and asserted directly on the rendered string
+- Second iteration needed: `out.contains(r#"["a","b"]"#)` failed because nested arrays are quoted+escaped in TOON output as `"[\"a\",\"b\"]"` — fixed assertion to `out.contains(r#""[\"a\",\"b\"]""#)`
+- Commit: `fix(tests): update toon_integration tests for list() -> Result<String, ToonError> API change`
+
+**`crates/michi-toon/src/escape.rs`** — Previously modified (Task 1)
+- Added `sanitize_header_token()` replacing structural chars AND newlines with `_`
+- Added `pub(crate) use sanitize_header_token as sanitize_hint;`
+- Wired into 3 render positions in render.rs (type_name, field names, hints)
+
+**`crates/michi-toon/src/lib.rs`** — Previously modified (Task 2)
+- Added `ToonError` enum with `InvalidTypeName`, `InvalidFieldName`, `RowLengthMismatch`, `InvalidItem { row_index, reason }`
+- Added `ToonOptions::validate()` method
+- Changed `list()` return type to `Result<String, ToonError>`
+- Returns `Err(ToonError::InvalidItem)` for non-object items
+
+**`crates/michi-toon/src/render.rs`** — Previously modified (Tasks 1, 2)
+- Wired `sanitize_header_token` into header positions
+- Replaced `debug_assert!` row-length check with clamp/pad approach
+- Added Float NaN/Inf quoting
+
+**`crates/michi-core/src/error.rs`** — Modified in mixed commit 3f150db (Task 6 work landed via Task 8's commit)
+- Added `DomainError::render_json()` — produces `{"isError":true,"error":"<code>","message":"<msg>","retryable":<bool>,"hints":[...],"recovery":null|{...}}`
+- Added `DomainError::to_call_tool_result()` — builds `CallToolResult` with `is_error:true`
+- Added `ErrorCode::default_class()` (Task 5) mapping infra codes to `ErrorClass::Internal`
+- Fixed `Error::class()` to use `default_class()` making `Internal` reachable
+- DomainError fields confirmed: `code: ErrorCode`, `message: String`, `hints: Vec<Hint>`, `recovery: Option<RecoveryHint>`, `retryable: bool`, `retry_after: Option<Duration>`
+
+**`crates/michi-core/src/mcp.rs`** — Modified in mixed commit 3f150db
+- Fixed silent null replacement: `unwrap_or(serde_json::Value::Null)` → `unwrap_or_else(|_| serde_json::Value::String(r.structured_content))`
+
+**`crates/michi-core/src/response.rs`** — Modified (Task 8)
+- Added 6 tests: `render_json_basic_structure`, `render_json_is_error_flag`, `render_json_recovery_int_param_is_numeric_not_string`, `render_json_hint_with_quotes_is_escaped`, `to_call_tool_result_composes_correctly`, `toon_body_returns_error_on_invalid_type_name`
+- Wired `ToonOptions::validate()` into `toon_body()` — returns `"error: toon_validation_failed\nmessage: {e}\n"` on failure
+
+**`crates/michi-core/src/idempotency.rs`** — Created (Task 7)
+- Ports `PartialSuccess` and `FailedOp` from dead `src/idempotency.rs`
+- Fixed M1 bug: `f.operation` was pushed raw — now uses `escape_value_quoted` like `f.reason`
+- Added caller-responsibility doc comment
+- `crates/michi-core/src/lib.rs` updated with `pub mod idempotency;`
+
+**`crates/michi-core/src/kv/mod.rs`** — Modified (Task 4)
+- `push_kv_value` KvValue::Text arm now strips `\n`/`\r`
+- `kv_value_to_json` Float arm now quotes NaN/Inf/−Inf
+
+**`crates/michi-resilience/src/lib.rs`** — Modified (Tasks 10, 11, 12)
+- Task 10 (landed in mixed commit 3f150db): `RetryConfigError` enum; normalizing `RetryConfig::new()` (clamps jitter_factor, base_delay, max_delay floor 1ms); `try_new()` returning `Result<Self, RetryConfigError>`
+- Task 11: 22 tests ported from `src/resilience/mod.rs` (total 39 tests)
+- Task 12: `days_in_month(year, month)` helper with leap-year logic; replaced bare `day > 31` guard with month-aware check
+
+**`crates/michi-truncate/src/lib.rs`** — Modified (Task 13)
+- Recomputed `signal` after hard-cap — now reflects text actually in `content`, not pre-cap suffix
+- Updated `Truncated.signal` doc comment
+
+**`src/napi.rs`** — Unchanged in this session, but adversarial audit identified multiple issues
+
+**`tests/snapshot_tests.rs`** — Modified (Tasks 7, 9)
+- Task 7: Added `snapshot_partial_success_full` (insta) and `partial_success_operation_with_comma_is_escaped`
+- Task 9: Added `error_structured_content_schemas_are_compatible` integration test (string-contains approach, no serde dep)
+
+**Adversarial workflow script** — `/Users/gabe/.claude/projects/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904/workflows/scripts/adversarial-bug-hunt-wf_47b8c92b-b91.js`
+- 3-phase workflow: 8 parallel hunters → 3-skeptic adversarial verification → Opus synthesis
+
+4. Errors and Fixes:
+
+**Mixed commit (Task 8 grabbed staged changes from Tasks 6 and 10):**
+- Task 8 agent committed `crates/michi-core/src/error.rs`, `crates/michi-core/src/mcp.rs`, `crates/michi-resilience/src/lib.rs` alongside its own `response.rs` changes
+- Fix: sent messages to Task6 and Task10 agents to stop, verify work was in HEAD, run tests, and report DONE without committing
+- All work was correct; just attributed to wrong commit message — no correctness issue
+
+**`tests/toon_integration.rs` compile failure:**
+- Error: `expected &ToonOptions, found &Result<String, ToonError>` in 3 tests
+- Root cause: `toon::list()` return type changed from `ToonOptions` to `Result<String, ToonError>` in Task 2 but integration tests not updated
+- Fix iteration 1: changed to `.expect("list failed")` and asserted on string output
+- Fix iteration 2: `out.contains(r#"["a","b"]"#)` failed — TOON escapes nested arrays as `"[\"a\",\"b\"]"` — fixed to `out.contains(r#""[\"a\",\"b\"]""#)`
+- Committed: `fix(tests): update toon_integration tests for list() -> Result<String, ToonError> API change`
+
+**Stash cleanup blocked:**
+- Attempted `git stash drop` to clean obsolete stashes from concurrent agents
+- Blocked by auto-mode safety classifier ("irreversible local destruction")
+- Decision: left stashes in place (harmless leftovers), continued
+
+**Task 12 initial spawn blocked:**
+- First attempt to spawn opus agent for Task 12 was blocked (classifier error about stash drop from previous command)
+- Fix: re-launched with sonnet instead of opus (same prompt)
+
+5. Problem Solving:
+
+**14-task plan completion:** All tasks completed across two context windows. Context reset mid-execution was handled by checking git log to determine actual state rather than trusting the summary.
+
+**Task dependency tracking:** Mixed commit meant Tasks 6 and 10 were effectively "done" but needed verification. SendMessage to running agents prevented duplicate work.
+
+**Integration test API mismatch:** Caught during final `just test` run. Fixed by updating 3 tests to the new `Result<String, ToonError>` API.
+
+**Adversarial workflow design:** Used pipeline for per-finding verification (3 skeptics), parallel for initial hunting, and Opus at high effort for synthesis. Schema-constrained agent calls for structured voting.
+
+**Dead src/ tree discovery:** The audit found that 17 files in `src/` (other than `src/lib.rs` and `src/napi.rs`) are not compiled — they have no `mod` declarations in `src/lib.rs`. This corrupted 8 of 35 audit findings (agents read and reasoned about uncompiled code). This is now a known critical hygiene issue.
+
+6. All User Messages:
+
+- (Session continuation from prior — user had previously approved plan execution with "Yes")
+- **"Do we have any hardcoded values, stubs or missing functionality that we missed? You have a habit of considering only the happy path and missing the full functionality so I feel like a bug hunt and adversarial analysis with agent teams + workflows leveraging the most appropriate model & effort is still in order. Might need a few rounds of those to feel confident we're not shipping faulty code. Use the output of each round to learn patterns and feed it into the next round to refine our process and our codebase. Report your findings at the end of multiple rounds and help understand how we can improve the process of writing our code and managing the codebase with AI assistance"**
+
+Note: All teammate messages (from Task6, Task7, Task8, etc.) were Claude subagents, NOT the user. The system-reminder explicitly states these are automated background-task events, not user input.
+
+7. Pending Tasks:
+
+Based on the adversarial audit synthesis, the following action items are pending (not yet started):
+
+**AI-1 (Do First): Delete orphaned `src/` tree**
+- Keep only `src/lib.rs` and `src/napi.rs`
+- Delete: `src/idempotency.rs`, `src/error.rs`, `src/response.rs`, `src/hints.rs`, `src/recovery.rs`, `src/status.rs`, `src/empty.rs`, `src/audience.rs`, `src/truncate.rs`, `src/kv/`, `src/toon/`, `src/resilience/`, `src/pipeline/`, `src/telemetry/`
+- First verify `PartialSuccess`/`FailedOp` actually landed in `crates/michi-core/src/idempotency.rs` with `pub mod idempotency;`
+- Add CI guard asserting all `.rs` under `src/` are reachable from `src/lib.rs`
+
+**AI-2: Harden `src/napi.rs`**
+- Fix `next_retry_delay` jitter_seed=0.5 hardcode → optional param or process-lifetime PRNG
+- Fix `next_retry_delay` panic on NaN/Inf/negative f64 inputs to `Duration::from_secs_f64`
+- Fix `render_domain_error` wildcard `_ => ErrorCode::NotFound` → explicit arms + error return
+- Fix negative `total_count` silent discard → explicit `napi::Error`
+- Add adversarial scalar table test in JS test suite
+
+**AI-3: Fix michi-toon validate/list/grammar cluster**
+- Insert `opts.validate()?` before `render_toon(&opts)` in `list()`
+- Fix `list()` `# Errors` doc (says `InvalidTypeName`, should say `InvalidItem`)
+- Promote `STRUCTURAL` to `pub(crate) const` shared between validate() and sanitize_header_token()
+- Add `truncation_hint: String` field to `ToonOptions` (defaulting to `"full=true"`)
+- Decide on first-item schema derivation behavior for heterogeneous slices
+
+**AI-4: Fix JSON/float rendering surfaces**
+- Add NaN/Inf guard to `push_kv_value` Float arm in `kv/mod.rs`
+- Fix `DomainError::render_json()` capacity estimate (ignores hints and recovery)
+- Fix `mcp.rs` `structured_content` doc comment (says "same data as content[0]" — false)
+- Fix `max_delay` doc in resilience to say it caps `Retry-After` too
+- Clamp `jitter_seed` in `next_retry_delay` signature
+- Encode `\r` as `%0D` in `render_github_annotation()`
+- Add property-based tests for `render_json()` output validity
+
+**AI-5: Reconcile or retire `docs/spec/03-rust-api.md`**
+- Delete `ToonSerializer` section (type never existed)
+- Correct `list()` signature (returns `Result<String, ToonError>`, not `ToonOptions`)
+- Fix re-export block (actual: `pub use michi_toon as toon;`, not flat re-exports)
+- Remove zero-allocation streaming claim
+- Document 18 missing public items (AgentResponse methods, DomainError methods, resilience types)
+
+8. Current Work:
+
+The adversarial 3-round bug hunt workflow (run ID: `wf_47b8c92b-b91`) completed successfully. The full synthesis report was read from `/Users/gabe/.claude/projects/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904/tool-results/bq316uxwi.txt`.
+
+**Final state before summary request:**
+- All 14 implementation tasks complete
+- 188/188 tests passing
+- `just check` clean (only pre-existing license-not-encountered warnings)
+- No pending snapshots
+- Adversarial audit workflow returned: 46 raw findings → 35 confirmed after 3-skeptic adversarial verification
+- Full synthesis report from Opus (34KB) read and available
+- 5 action items (AI-1 through AI-5) identified, ordered, with concrete file locations and fix descriptions
+
+The assistant had just finished presenting the full synthesis report content to the user. No implementation work on the AI-1 through AI-5 action items has started yet.
+
+9. Optional Next Step:
+
+The user's last explicit request was: "Report your findings at the end of multiple rounds and help understand how we can improve the process of writing our code and managing the codebase with AI assistance."
+
+The synthesis report has been read and its content displayed. The natural next step is to present a clean summary of findings to the user and ask how they want to proceed — specifically whether to implement the AI-1 through AI-5 action items, starting with AI-1 (deleting the orphaned `src/` tree) since the synthesis report explicitly states "do this first" as it affects line numbers of all other findings and its presence corrupted 8 of 35 audit findings.
+
+The pending work is directly referenced in the synthesis: **"Items AI-1 through AI-4 are roughly a day of focused work; AI-5 is a half day."** and **"AI-1 — Delete the orphaned `src/` tree *first*"** with the rationale: **"every other item's line numbers are ambiguous until this is done."**
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
