@@ -1,0 +1,1 @@
+Should we be supporting TOON output for MCP v2 spec, etc? What else should be here based on the spec?
