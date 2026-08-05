@@ -1,0 +1,1 @@
+Where would mermaid diagrams help? Probably architecture right? Let's not overuse them
