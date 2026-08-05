@@ -1,0 +1,34 @@
+ultracode: run an adversarial multi-agent review of the michi codebase (current HEAD on `main`, working tree clean). Read CLAUDE.md first for non-negotiables, then docs/00-overview.md and docs/superpowers/specs/2026-07-03-michi-design.md for the "why" behind the architecture.
+
+CONTEXT — what michi is and why:
+michi is a Rust crate of AXI (Agent eXperience Interface) response primitives — the primitive layer of the orin-axi suite. It's pure-computation rendering (TOON lists, KV items, truncation, empty states, structured errors, status, hints) that four other tools (Monokl, Firkin, Lumen, Pulse) will depend on. Consumed from Rust directly and from TypeScript via a NAPI wrapper (packages/michi-node, npm package "michi").
+
+The core design bet is token efficiency + agent ergonomics without sacrificing human ergonomics — TOON output is ~40% fewer tokens than JSON, help[] blocks give agents concrete next-step paths, errors always render agent-readable text with exit codes. Every architectural and lint decision should be judged against this: does it serve DX (for both human maintainers and LLM callers) and long-term maintainability across the whole suite, not just this one crate.
+
+CURRENT SCOPE (Plan 1 / MVP, v0.1.0, complete):
+- Always-compiled, zero-dep rendering: toon/, kv/, hints.rs, truncate.rs, empty.rs, error.rs, idempotency.rs, recovery.rs, status.rs, response.rs, resilience/mod.rs (RetryConfig, next_retry_delay, parse_retry_after), pipeline/mod.rs (pure Pipeline data type + render(), no execution)
+- Feature-gated (default = [], zero runtime deps): pipeline (tokio), fuzzy (nucleo-matcher), cache (moka+sha2), cli, mcp, napi
+- pipeline/executor.rs, resilience/circuit.rs, resilience/policy.rs, sink/mod.rs are INTENTIONAL STUBS (1-2 lines) for Plan 2 (execution engine) — not yet implemented. Do not flag their absence as a defect; do flag if the feature-gating/module boundary around them is unsound.
+- packages/michi-node: thin NAPI v3 cdylib shim (catch_unwind on every export)
+
+NON-NEGOTIABLES (from CLAUDE.md — verify adherence, don't just take my word for it):
+- No unwrap()/expect() in lib code (tests OK with a message)
+- No unsafe outside the napi boundary
+- BTreeMap for output maps (deterministic ordering), HashMap only for internal state
+- Strings pre-allocated with String::with_capacity
+- Truncation must use char boundaries (floor_char_boundary), never byte-slice blindly
+- Every pub item has a doc comment
+- NAPI: napi/napi-derive = "3", #[napi(catch_unwind)] on every export, no u64 across the FFI boundary
+- Benchmarks use divan, tests use cargo nextest
+
+LINT POSTURE already in place (src/lib.rs, .clippy.toml, .rustfmt.toml): clippy::pedantic + a curated slice of clippy::restriction (unwrap_used, expect_used, panic, todo, unimplemented, indexing_slicing, disallowed_macros, implicit_clone, inefficient_to_string, use_self) warned in the lib crate, several DENIED in packages/michi-node (panics at the FFI boundary crash the host process). 120-char width. This was tuned to be "pedantic as a baseline, minus rules that fight good structure" — the review should sanity-check that calibration, not just rubber-stamp it.
+
+REVIEW DIMENSIONS (adversarial — actively try to find real defects, not just style nits):
+1. Rust best-practices adherence — does the actual code live up to the non-negotiables above and idiomatic Rust more broadly (error handling, ownership, API ergonomics, trait design)?
+2. Architecture — is the feature-gating actually zero-cost/zero-dep as claimed? Are module boundaries (rendering vs. execution, always-compiled vs. gated) sound and will they hold up as Plan 2 fills in the stubs? Any layering violations or leaky abstractions?
+3. Performance — allocation patterns in the hot paths (toon/kv rendering, escape_value, truncate), unnecessary clones, capacity pre-sizing correctness, anything that would matter at the list-rendering scale this crate targets.
+4. Security — input handling at the NAPI boundary (untrusted JS values crossing into Rust), integer casts (there was a recent fix for a negative i32→usize wrap in packages/michi-node/src/lib.rs render_toon — check for siblings of that bug), dependency/license posture (deny.toml), anything unsafe.
+
+Also actively look for over-engineering or premature abstraction in the other direction — flag anything that adds ceremony without adding real safety/clarity, since the stated goal is "lint consistently but don't make it hard to write the best possible code," not maximal strictness for its own sake.
+
+Use the Workflow tool with an adversarial-verify pattern: dimension-scoped finders in parallel, each finding independently verified/refuted before being reported, ranked most-severe first. Report file:line, concrete failure scenario, and verdict for each surviving finding.
