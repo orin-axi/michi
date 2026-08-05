@@ -1,0 +1,1 @@
+We should address all of them but before we do we need to check ourselves. We've been letting things get through and we need to consider what happened and adjust how we do adversarial analysis and bug hunting to improve further and make sure there are no more issues. Learn from these rounds
