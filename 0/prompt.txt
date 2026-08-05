@@ -1,0 +1,1 @@
+We should bring the implementation up to spec, yes. Let's create a plan and write it out so we can reset the context and start fresh. Plan this out very very thorougly to bring everything that is lacking or a gap to spec
