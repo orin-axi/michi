@@ -1,0 +1,1 @@
+Let's make sure we use oxlint with typeaware support
