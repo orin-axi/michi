@@ -1,0 +1,29 @@
+<task-notification>
+<task-id>ab41f6a31c9b16b0c</task-id>
+<tool-use-id>toolu_01MDEiawJJLwY7n5UWZupoum</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/ab41f6a31c9b16b0c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Tasks 15 and 16: finalize lib.rs, snapshots, benchmarks" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>---
+
+**Status: DONE**
+
+**Task 15 — `src/lib.rs` finalized**
+- Added crate-level doc comment with feature-flag table
+- Added `pub mod sink;`
+- Added re-exports: `Error`, `ErrorClass`, `Sensitive`, `append_hints`, `render_hints`, `Hint`, `AgentResponse`, `OutputFormat`, `render_toon`, `ToonOptions`, `Value`
+- Added `Result&lt;T&gt;` alias
+- All 92 existing tests passed; clippy clean
+- Commit: `365163f`
+
+**Task 16 — Snapshots + benchmarks**
+- `tests/snapshot_tests.rs`: 4 tests (`snapshot_toon_basic_list`, `snapshot_toon_empty_state`, `snapshot_kv_single_item`, `snapshot_agent_response_full`)
+- Snapshot files created in `tests/snapshots/` (all 4 committed)
+- `benches/toon_render.rs`: `render_n_rows` (args: 1/10/100/1000) + `render_with_comma_escaping`
+- `benches/kv_render.rs`: `render_n_items` (args: 1/5/20)
+- Benchmarks compile: Yes (`cargo bench --no-run` clean)
+- Full test suite: **96 passed** (92 original + 4 snapshot)
+- Commit: `d3d3fab`</result>
+<usage><subagent_tokens>30005</subagent_tokens><tool_uses>25</tool_uses><duration_ms>123447</duration_ms></usage>
+</task-notification>
