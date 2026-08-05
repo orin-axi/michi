@@ -1,0 +1,190 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The user is building the `michi` Rust crate — a library of AXI (Agent eXperience Interface) response primitives for the orin-axi suite. Over the session, the requests evolved through several phases:
+   - **Phase 1**: Clean up and expand 5 raw doc files (overview, spec, MVP plan, legacy axi-core-spec, zip archive) into 3 well-organized final docs using agent teams
+   - **Phase 2**: Think through architecture, repo setup, tooling, and plan implementation using agent teams (Claude Code worktree sessions)
+   - **Phase 3 (current)**: Decide whether michi should be one unified crate (including pipeline execution, caching, fuzzy matching, resilience with async) or remain a pure rendering primitives library with a separate companion execution crate
+
+   The user is asking for a final architectural decision: **one `michi` agentic crate vs two separate crates (michi rendering + kata/pipeline execution)**.
+
+2. Key Technical Concepts:
+   - **AXI (Agent eXperience Interface)**: 10 design principles for agent-ergonomic tooling that treats token budget as a first-class constraint. michi encodes 7 of 10 (P1, P3, P4, P5, P6, P8, P9)
+   - **TOON format**: Token-Optimized Object Notation — agent-facing list format, ~40% token reduction vs JSON. Grammar: `type_name[count]{field_list}: rows totalCount: N help[N]: hints`
+   - **michi modules (11 current + proposed 12th)**: toon, kv, hints, truncate, empty, error, idempotency, resilience, status, recovery, response, (pipeline — proposed)
+   - **Pure computation constraint**: michi has zero tokio, zero async-std, zero I/O — data in, strings out
+   - **NAPI v3**: napi/napi-derive 3.x (NOT v2 as original spec said) — auto-generates index.d.ts from #[napi] macros
+   - **divan**: Current benchmark crate (not criterion, per oxc-react-codegen pattern)
+   - **cargo nextest**: Faster parallel test runner replacing `cargo test`
+   - **cargo-llvm-cov**: Coverage with lcov output to Codecov
+   - **cargo-deny**: License + advisory + bans policy
+   - **Pipeline execution crate** (proposed `kata`): Async execution layer with tokio, moka cache, nucleo fuzzy matching, surface adapters (CLI/MCP), trait-bounded I/O injection
+   - **Two-tier cache**: moka async LRU (memory) + disk LRU with tag invalidation + stale-while-revalidate
+   - **FuzzyMatcher/FuzzyResolver**: nucleo-matcher wrapper with Disambiguator trait injection
+   - **OutputSink trait**: Surface-agnostic event bus — AgentEvent values emitted to CLI (indicatif spinners) or MCP (accumulates into response body) or Noop
+   - **CheckpointStore trait**: Injected persistence for pipeline resume — disk (CLI) or memory (MCP) or Noop
+   - **AgentError vs AxiError**: Different error types for different layers — AgentError is execution/infrastructure, AxiError is agent-readable output format
+   - **Worktree sessions**: Claude Code worktree isolation for parallel implementation phases
+
+3. Files and Code Sections:
+   - `/Users/gabe/Projects/michi/docs/00-overview.md` (214 lines)
+     - Project identity, naming (道 etymology), suite context, AXI principles table, Quick Start, Documents table
+     - Created by workflow agent a374c201fd0a05b4e, recovered from JSONL transcript after finalize agent overwrote it with summary text
+   - `/Users/gabe/Projects/michi/docs/01-spec.md` (1641 lines)
+     - Definitive technical specification: all 11 modules, Cargo.toml, crate layout, TOON grammar, full Rust API, NAPI section, performance contract, testing strategy, Open Questions (Q1-Q5), Supplement
+     - Created by workflow agent a1b3261e5a51787d9, also recovered from JSONL transcript
+     - Key corrections vs original: NAPI section rewritten for v3, versioning section added, AXI principle count corrected to "seven of ten"
+   - `/Users/gabe/Projects/michi/docs/projects/01-mvp.md` (1358 lines)
+     - 7-session, 5-phase implementation plan (S0→S1A/S1B→S2A/S2B→S3A/S3B→S4)
+     - Session briefs with Acceptance Criteria, Non-negotiables, Gotchas, Done-means checklists
+   - `/Users/gabe/.claude/projects/-Users-gabe-Projects-michi/memory/project_michi.md`
+     - Stores: git remote is git@github.com:orin-axi/michi.git
+   - `/Users/gabe/Projects/oxc-react-codegen/Cargo.toml` (reference)
+     - Confirmed: napi = "3", napi-derive = "3", divan = "0.1", insta, pretty_assertions, rayon, tokio
+     - [profile.release]: opt-level=3, lto="thin", codegen-units=1
+     - [profile.bench]: inherits="release", debug=true
+   - `/Users/gabe/Projects/oxc-react-codegen/.clippy.toml` (reference)
+     - msrv="1.94", too-many-arguments-threshold=6, too-many-lines-threshold=150
+   - `/Users/gabe/Projects/oxc-react-codegen/.rustfmt.toml` (reference)
+     - edition="2021", max_width=120, use_small_heuristics="Max"
+   - `/Users/gabe/Projects/oxc-react-codegen/.github/workflows/ci.yml` (reference)
+     - Jobs: lint (fmt+clippy), test (nextest), deny, coverage (llvm-cov+codecov), bench (main only), typescript (Node 24+26 matrix), install (npm+pnpm matrix)
+     - Uses: dtolnay/rust-toolchain@1.96.0, Swatinem/rust-cache@v2, taiki-e/install-action@nextest, taiki-e/install-action@cargo-llvm-cov
+   - `/Users/gabe/Projects/oxc-react-codegen/CLAUDE.md` (reference)
+     - Pattern: Commands, Non-negotiables, Architecture overview, Crate guide
+   - `/Users/gabe/Projects/oxc-react-codegen/docs/10-QUALITY-AND-ARCHITECTURE.md` (reference)
+     - Architecture principles, module boundaries, tooling decisions, implementation sequence
+
+   **Proposed Pipeline Execution Crate spec (provided by user in conversation):**
+   Key types:
+   ```rust
+   // AgentError — execution layer errors
+   pub enum AgentError {
+       Http { status: u16, message: String, retryable: bool, retry_after: Option<Duration> },
+       Timeout { elapsed: Duration },
+       StepFailed { id: String, source: Box<AgentError> },
+       CircuitOpen { name: String, retry_after: Duration },
+       NoMatch { query: String },
+       AmbiguousMatch { query: String, count: usize },
+       CyclicDependency { cycle: Vec<String> },
+       Cancelled,
+       Cache(String),
+       Io(#[from] std::io::Error),
+   }
+   
+   // OutputSink — surface-agnostic event bus
+   pub enum AgentEvent {
+       StepStarted { id, name, level },
+       StepCompleted { id, duration },
+       StepSkipped { id, reason },
+       StepFailed { id, error, retryable },
+       RetryScheduled { label, attempt, max, wait },
+       CircuitOpened { name, retry_after },
+       PipelineFinished(PipelineResult),
+       Data(serde_json::Value),
+       Warn(String), Info(String),
+   }
+   pub trait OutputSink: Send + Sync { fn emit(&self, event: AgentEvent); }
+   
+   // Step execution
+   pub struct Step {
+       pub id: String,
+       pub name: String,
+       pub level: u32,
+       pub depends_on: Vec<String>,
+       pub idempotency_key: Option<String>,
+       pub best_effort: bool,
+       pub run: Arc<dyn StepFn>,
+   }
+   
+   // Checkpoint — pure data, no I/O in core
+   pub struct Checkpoint { pipeline_id, run_id, created_at, completed, step_outputs, failed }
+   pub trait CheckpointStore: Send + Sync { save/load/clear }
+   
+   // Pipeline result
+   pub enum RunStatus { Complete, Partial, Failed }
+   pub struct PipelineResult { run_id, status, completed, skipped, failed, checkpoint }
+   
+   // Cache — two-tier
+   pub struct Cache { memory: moka::future::Cache, disk: Option<DiskCache>, default_policy }
+   pub struct CachePolicy { ttl, stale_while_revalidate, tags }
+   
+   // Fuzzy matching
+   pub struct FuzzyMatcher { inner: nucleo_matcher::Matcher, config: MatcherConfig }
+   pub enum Resolution<T> { Exact(T), Resolved(T), Chosen(T), NotFound }
+   ```
+   
+   Cargo.toml deps for execution crate:
+   ```toml
+   tokio = { version = "1", features = ["full"] }
+   tokio-util = { version = "0.7", features = ["rt"] }
+   async-trait = "0.1"
+   serde = { version = "1", features = ["derive"] }
+   serde_json = "1"
+   thiserror = "1"
+   uuid = { version = "1", features = ["v4"] }
+   moka = { version = "0.12", features = ["future"] }
+   nucleo-matcher = "0.3"
+   sha2 = "0.10"
+   # cli feature
+   indicatif, inquire, crossterm, ctrlc, atty (optional)
+   ```
+
+4. Errors and fixes:
+   - **Workflow script fs/promises error**: First workflow attempt failed with "Cannot use keyword 'await' outside an async function" because I used `await import('fs/promises')` inside template literals within parallel() thunks. Workflow scripts have no filesystem API. Fixed by having agents read files themselves using their Read tool.
+   - **Finalize agent overwriting good content**: After the workflow ran, the write-overview and write-spec agents correctly wrote their files to disk AND returned summary text. The finalize agent then received those summaries and overwrote the correct files with the summary text. Fixed by reading agent JSONL transcripts to find the Write tool call content and restoring it manually via Python script.
+   - **Workflow session interrupted**: User "broke" the workflow by switching sessions. Fixed by using TaskStop then resuming with `resumeFromRunId: "wf_14c05ada-b48"` — cached agent results were reused.
+
+5. Problem Solving:
+   - Reconciled two spec drafts (axi-core-spec.md vs michi-01-spec.md) by diff analysis and merging best content
+   - Resolved NAPI version discrepancy (spec said v2, oxc-react-codegen uses v3) — use v3
+   - Resolved benchmark crate question — divan not criterion (from oxc-react-codegen pattern)
+   - Determined Rayon/miette/tokio are NOT appropriate for michi (pure sync, wrong layer)
+   - Determined parallel/sequential step grouping is INTERNAL to Pipeline builder — never appears in rendered TOON output
+   - Identified that the pipeline execution spec is a SEPARATE concern from michi's rendering primitives
+   - Proposed two-crate architecture: michi (rendering) + kata (execution)
+   - The current open question is whether to keep them separate or unify into one crate
+
+6. All user messages:
+   - "Our git remote will be: git@github.com:orin-axi/michi.git FYI"
+   - "We have another session that will add files to a docs folder in this repo. Coming soon"
+   - "Added files to the docs but they're not very well formatted and organized. Will need your help and cleaning that up but this is a good starting point. Leverage agent teams with the most appropriate model and do any and all research needed to understand the spec and further expand on it."
+   - "Sorry, I think I broke the workflow. Pick it up"
+   - "Can you think through the architecture, repo setup, etc? Plan out an implementation in details using agent teams"
+   - "I think the top one right? Can we make sure we prepare Claude.md and maybe some local agents to assist superpowers in this process. Let yourself be inspired by our best practices chats and the code in oxc-react-codegen locally. How do we want to lint, test, coverage? Performance benchmarks? Which crates should we use? Rayon, mielle, taikio?? Think through all of this first. The architecture, parallelization, output, CLI usage, MCP usage, napi"
+   - "What about pipeline and parallelization so we can wrap multiple APIs into a workflow. Part of what we've identified helps in AXI is working at the workflow level, not API or command level right? Michi should provide primitives and the way to combine into workflows with helpers, etc. Right?"
+   - "Do we need that in TOON or is that strictly internal??" (re: parallel/sequential group markers)
+   - [User provided full "Agentic Pipeline Library" spec with PipelineExecutor, OutputSink, Cache, FuzzyMatcher, surface adapters]
+   - "Do we need a separate crate or should it all be one michi agentic crate/library?" ← CURRENT QUESTION
+
+7. Pending Tasks:
+   - **Answer the one-crate vs two-crate question** (current open question from user)
+   - **Write the design doc** (brainstorming task #5) — pending user approval of design
+   - **Invoke writing-plans skill** (brainstorming task #6) — after design doc approval
+   - **Create CLAUDE.md** for the michi repo
+   - **Create agent session brief documents** in docs/projects/agents/ (S0 through S4)
+   - **Create detailed implementation plan** covering 7 worktree sessions
+   - **Resolve spec updates**: NAPI v2→v3, criterion→divan
+   - **Initialize git repo** and connect to git@github.com:orin-axi/michi.git
+
+8. Current Work:
+   In the brainstorming phase, responding to the user's question: "Do we need a separate crate or should it all be one michi agentic crate/library?"
+   
+   The context is:
+   - michi as specced: pure sync, no async, no runtime — 11 modules rendering primitives
+   - The pipeline execution spec the user provided: needs tokio (async), moka (cache), nucleo-matcher (fuzzy), surface adapters — fundamentally different dependency profile
+   - I had just proposed two crates: michi (rendering) + kata (execution, named after 型 Japanese for "form/pattern/sequence")
+   - The relationship: execution crate depends on michi for rendering; michi's `pipeline` module provides `Pipeline` pure data type + `render()` that the execution crate uses to format its `PipelineResult` for agent consumption
+
+9. Optional Next Step:
+   Answer the user's direct question: "Do we need a separate crate or should it all be one michi agentic crate/library?"
+   
+   The answer requires weighing: 
+   - One crate: simpler for consumers, one import, but forces tokio on everyone who just wants `render_toon()`; violates michi's stated "no async runtime" principle; bloated for Rust CLI tools that just need rendering
+   - Two crates: clean separation of concerns, michi stays usable without runtime, execution crate can evolve independently, matches the dependency profile reality; consumers that need both import both; the rendering/execution boundary is natural and maps to the existing michi design philosophy
+   
+   The recommendation is two separate crates (separate repos: orin-axi/michi and orin-axi/kata or similar), then proceed to write the design doc covering both.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
