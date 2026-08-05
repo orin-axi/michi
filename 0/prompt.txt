@@ -1,0 +1,3 @@
+Let’s do a very thorough analysis of our code for best practices adherence, for architecture analysis and performance.
+
+Look for patterns to be extracted, bugs to fix, gaps to address
