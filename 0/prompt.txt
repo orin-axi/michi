@@ -1,0 +1,24 @@
+<task-notification>
+<task-id>af6fa3313b594cbd6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/af6fa3313b594cbd6.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Tasks 8–10: error, idempotency, resilience modules" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Status: DONE**
+
+**Test results:** 63 passed (4 suites) — all existing tests continued to pass plus the new ones for `error`, `idempotency`, and `resilience`.
+
+**Files created/modified:**
+- `/Users/gabe/Projects/michi/src/error.rs` — unified error type with `ErrorClass`, `Sensitive&lt;T&gt;`, and `Error` enum
+- `/Users/gabe/Projects/michi/src/idempotency.rs` — `IdempotencyKey`, `AlreadyDone`, `already_done()`, `PartialSuccess`
+- `/Users/gabe/Projects/michi/src/resilience/mod.rs` — `RetryConfig`, `next_retry_delay()`, `parse_retry_after()`, `is_retryable_status()`
+- `/Users/gabe/Projects/michi/src/resilience/policy.rs` — Plan 2 stub
+- `/Users/gabe/Projects/michi/src/resilience/circuit.rs` — Plan 2 stub
+- `/Users/gabe/Projects/michi/src/lib.rs` — added `pub mod error`, `pub mod idempotency`, `pub mod resilience`
+
+**Git commit:** `43556e1`
+
+**One fix applied:** The `use std::time::Duration;` import in `error.rs` is only needed under `#[cfg(feature = "pipeline")]` (all `Duration` uses are in pipeline-gated variants). Wrapped it with `#[cfg(feature = "pipeline")]` to satisfy `-D warnings` / `unused_imports`. The `class()` match is naturally exhaustive without `pipeline` — no `_ =&gt;` arm needed since `InvalidInput` and `NotFound` cover all non-pipeline variants.</result>
+<usage><subagent_tokens>26547</subagent_tokens><tool_uses>15</tool_uses><duration_ms>127158</duration_ms></usage>
+</task-notification>
