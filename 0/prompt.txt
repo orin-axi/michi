@@ -1,0 +1,1 @@
+What about pipeline and parallelization so we can wrap multiple APIs into a workflow. Part of what we've identified helps in AXI is working at the workflow level, not API or command level right? Michi should provide primitives and the way to combine into workflows with helpers, etc. Right?
