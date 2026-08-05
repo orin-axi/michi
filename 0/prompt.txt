@@ -1,0 +1,1 @@
+Check on impl-task24 subagent for Task 24. If DONE or DONE_WITH_CONCERNS, read the report carefully and dispatch spec-compliance reviewer then code-quality reviewer in worktree /Users/gabe/Projects/michi/.worktrees/spec-parity. If BLOCKED/NEEDS_CONTEXT, address directly. If still running with no commits, keep waiting.
