@@ -1,0 +1,189 @@
+<task-notification>
+<task-id>a60aafe634be76fb4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/a60aafe634be76fb4.output</output-file>
+<status>completed</status>
+<summary>Agent "Research Rust and NAPI lint best practices" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good — the `unwrap()` calls in `response.rs` are in test code (covered by `allow_unwrap_in_tests`), and the `resilience` casts are real lib code that would need inline `#[allow]` annotations under `pedantic`. I have everything I need now.
+
+---
+
+Here are my concrete, opinionated recommendations.
+
+---
+
+## What popular projects actually do
+
+**Tokio, axum, rustfmt, serde**: None of them enable `clippy::pedantic` as a group wholesale. The pattern is `#![warn(clippy::all)]` plus a curated list of pedantic/restriction lints with explicit allows for the noise. That said, for a *library* with strict non-negotiables (no unwrap, all docs), enabling `pedantic` and suppressing the noise is the right call — you get strict defaults for future code.
+
+**Nursery**: Don't enable. It's unstable, changes between Rust releases, and has high false-positive rates. Skip it entirely.
+
+---
+
+## A. `src/lib.rs` — crate-level attributes
+
+Add this block at the top of `/Users/gabe/Projects/michi/src/lib.rs`:
+
+```rust
+// -- rustc lints ----------------------------------------------------------
+#![warn(missing_docs)]           // enforces "every pub item has a doc comment" rule at CI
+#![warn(unreachable_pub)]        // catches `pub` items not reachable from crate root → should be `pub(crate)`
+#![warn(unused_qualifications)]  // simplify over-qualified paths (e.g. `std::string::String`)
+#![warn(unused_lifetimes)]       // catches dead `'a` parameters
+
+// -- clippy groups --------------------------------------------------------
+#![warn(clippy::all)]            // the default correctness group (already implied, explicit is clearer)
+#![warn(clippy::pedantic)]       // raise the bar; noisy ones suppressed below
+
+// Pedantic allows — known false positives for this codebase
+#![allow(clippy::module_name_repetitions)] // `toon::ToonOptions`, `toon::render_toon` is idiomatic Rust
+#![allow(clippy::must_use_candidate)]      // rendering fns return String; callers decide whether to use it
+#![allow(clippy::missing_errors_doc)]      // re-evaluate once all pub fns have # Errors sections
+
+// -- clippy::restriction (not in any group, must be explicit) -------------
+// Safety — these match the existing project non-negotiables
+#![warn(clippy::unwrap_used)]
+#![warn(clippy::expect_used)]
+#![warn(clippy::panic)]
+#![warn(clippy::todo)]
+#![warn(clippy::unimplemented)]
+#![warn(clippy::indexing_slicing)]  // use .get() with proper error handling
+
+// String performance — matters for a rendering lib that builds lots of strings
+#![warn(clippy::string_to_string)]      // .to_string() on String → .clone()
+#![warn(clippy::inefficient_to_string)] // .to_string() on &amp;str → .to_owned()
+
+// Style
+#![warn(clippy::use_self)] // use `Self` in impl blocks instead of the concrete type name
+```
+
+**One existing violation to fix first**: `src/resilience/mod.rs:50-53` has `as u64` / `as f64` casts on `u128` values. Pedantic fires `cast_possible_truncation` and `cast_precision_loss` here. Easiest fix: add `#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]` on that function body, or (better) bound the `u128` values with `u64::try_from(...).unwrap_or(u64::MAX)` before casting.
+
+---
+
+## B. `.clippy.toml` additions
+
+Add to `/Users/gabe/Projects/michi/.clippy.toml`:
+
+```toml
+# Allow unwrap/expect in #[cfg(test)] code — idiomatic and saves hundreds of #[allow] attrs
+allow-unwrap-in-tests  = true
+allow-expect-in-tests  = true
+
+# Lower complexity threshold slightly from the default of 25
+cognitive-complexity-threshold = 20
+
+# Ban debug/print macros in library code (requires clippy::disallowed_macros, which is in restriction)
+# Add #![warn(clippy::disallowed_macros)] to src/lib.rs to activate this
+disallowed-macros = [
+    { path = "std::println", reason = "library code must not print; use structured output primitives" },
+    { path = "std::eprintln", reason = "library code must not print to stderr" },
+    { path = "std::dbg",     reason = "debug macro must not ship in library code" },
+]
+```
+
+Then add `#![warn(clippy::disallowed_macros)]` to the restriction section in `src/lib.rs`.
+
+---
+
+## C. NAPI crate (`packages/michi-node/src/lib.rs`)
+
+The key difference from the lib crate: a panic in NAPI code **crashes the Node.js process**, so panic-related lints are `deny`, not `warn`. The crate is thin glue, so pedantic isn't worth the cast noise from `i32 as usize` conversions.
+
+```rust
+#![deny(clippy::all)]
+
+// Panics crash the Node process — these are hard errors, not warnings
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![deny(clippy::panic)]
+#![deny(clippy::indexing_slicing)]
+
+// Style (warn, not deny)
+#![warn(clippy::use_self)]
+#![warn(clippy::string_to_string)]
+```
+
+**No `missing_docs`** — this crate is `publish = false`, it's internal glue. No `pedantic` — the `i32 as i64` / `i32 as usize` casts in the NAPI boundary are intentional and would produce noisy false positives.
+
+**NAPI-specific note on u64**: There's no clippy rule for this. napi-rs v3 simply won't compile if you put `u64` on an `#[napi]` export without the BigInt feature — the compiler catches it. Your existing code correctly uses `i32` throughout. No lint needed.
+
+---
+
+## D. oxlint setup
+
+Yes, oxlint is the right choice here. ESLint is massively over-engineered for a single `.mjs` test file. oxlint runs in milliseconds, zero config required, and its defaults cover the real bugs.
+
+**Install** (in `packages/michi-node/`):
+```
+pnpm add -D oxlint
+```
+
+**`package.json` script addition**:
+```json
+"lint": "oxlint --env node __test__/"
+```
+
+**Optional** `/Users/gabe/Projects/michi/packages/michi-node/.oxlintrc.json` — only needed if you want to override defaults:
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+  "env": { "node": true },
+  "rules": {
+    "eqeqeq": "error",
+    "no-console": "off"
+  }
+}
+```
+
+oxlint enables "correctness" rules by default, which covers `no-unused-vars`, `no-undef`, `no-constant-condition`, and similar real bugs. The only thing worth explicitly setting is `eqeqeq` (always `===`) and turning `no-console` off since test output is expected.
+
+**Don't** add ESLint, don't add Biome, don't add a TypeScript config — there's no TS source and the test file is simple enough that oxlint defaults are sufficient.
+
+---
+
+## E. CI impact
+
+**Already covered by the existing** `cargo clippy --workspace --all-features -- -D warnings` **step**:
+- All Rust lints above — `#![warn(...)]` in source + CI's `-D warnings` flag = errors in CI
+- `.clippy.toml` config is picked up automatically by the clippy step
+- The `disallowed-macros` check is activated the moment you add the `#![warn]` attr
+
+**New CI step needed** — add to `.github/workflows/ci.yml`, either as a new job or inside the existing `napi` job:
+
+```yaml
+  lint-js:
+    name: Lint (JS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/michi-node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: packages/michi-node/pnpm-lock.yaml
+      - run: pnpm install
+      - run: pnpm lint
+```
+
+**Nothing else needs a separate step** — deny, typos, coverage, and bench already have their own jobs.
+
+---
+
+## Implementation order
+
+1. `.clippy.toml` additions first (no source changes, non-breaking)
+2. Add restriction lints to `packages/michi-node/src/lib.rs` — should pass immediately
+3. Fix the resilience casts, then add the `src/lib.rs` crate attrs — run `cargo clippy --workspace --all-features` locally to see what breaks
+4. Add oxlint + CI step
+
+The pedantic enable will produce a small batch of violations on first run (mainly the resilience casts and possibly some `missing_errors_doc` gaps). Treat them as a one-time cleanup rather than a reason to skip pedantic.</result>
+<usage><subagent_tokens>32679</subagent_tokens><tool_uses>19</tool_uses><duration_ms>266704</duration_ms></usage>
+</task-notification>
