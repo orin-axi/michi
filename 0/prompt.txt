@@ -1,0 +1,1 @@
+Did we appropriately set clippy to 120 char? Did we set best practices lint rules for rust? Did we setup I test and oxlint for the TS code?
