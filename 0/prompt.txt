@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>ae4ce3b42c710f6e0</task-id>
+<tool-use-id>toolu_01SVVrKtQejViQgAzRxNXPGP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/ae4ce3b42c710f6e0.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec review Task 1: Repo scaffold" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All files verified. Here is the result:
+
+✅ **Spec compliant** — every checked item passes.
+
+Detailed findings:
+
+- **`napi` version**: `"3"` at `Cargo.toml:73` — correct.
+- **`divan` in dev-deps**: `"0.1"` at `Cargo.toml:80` — correct (`criterion` absent).
+- **`rust-version`**: `"1.96"` at `Cargo.toml:7` — correct.
+- **Feature flags**: all seven present (`pipeline`, `fuzzy`, `cache`, `cli`, `mcp`, `napi`, `full`) at `Cargo.toml:38-45`.
+- **`napi-build` optional**: `{ version = "2", optional = true }` at `Cargo.toml:77` — correct.
+- **Both `[[bench]]` entries**: `harness = false` on both `toon_render` and `kv_render` at `Cargo.toml:84-90`.
+- **Justfile recipes**: all required recipes present including `test-rust-all` (line 23) and `build-node-release` (line 14). Confirmed: `default`, `build`, `build-release`, `build-node`, `build-node-release`, `test`, `test-rust`, `test-rust-all`, `test-node`, `check`, `fmt`, `fmt-check`, `clippy`, `deny`, `typos`, `snapshots`, `bench`, `coverage`, `ci`.
+- **Clippy thresholds**: `too-many-arguments-threshold = 6`, `too-many-lines-threshold = 150` at `.clippy.toml:2-3` — correct.
+- **`.rustfmt.toml`**: `edition = "2021"`, `max_width = 120`, `use_small_heuristics = "Max"` — correct.
+- **`.typos.toml`**: `extend-exclude = ["*.snap", "Cargo.lock"]` — correct.
+- **`rust-toolchain.toml`**: `channel = "stable"` — correct.
+- **`build.rs`**: contains only `fn main() {}` — correct.
+- **`[workspace.package]`**: all five fields present with correct values including `authors = ["orin-axi"]`.
+- **`[workspace.dependencies]`**: `serde` (with `derive`), `serde_json`, `thiserror` — correct. Note: `thiserror = "2"` (version 2), spec didn't specify version so this is fine.
+- **`packages/michi-node/`**: placeholder `Cargo.toml` and `src/lib.rs` both present.
+- **`CLAUDE.md`**: commands table, non-negotiables, architecture, and module guide all present.</result>
+<usage><subagent_tokens>16561</subagent_tokens><tool_uses>11</tool_uses><duration_ms>26052</duration_ms></usage>
+</task-notification>
