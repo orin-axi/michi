@@ -1,0 +1,865 @@
+Some more context for you:
+
+# Agentic Pipeline Library — Rust Crate Spec
+## Pipeline Execution · Resilience · Fuzzy Matching · Caching
+> A surface-agnostic Rust library for building agentic workflows.  
+> Consumed by CLI binaries and MCP servers alike — neither surface leaks into core.
+---
+## Design Principles
+- **No surface assumptions in core.** Core modules have zero knowledge of TTYs, MCP protocol,
+  exit codes, or stdin/stdout. All surface concerns live in opt-in adapter modules.
+- **Trait-bounded I/O.** Output, disambiguation, and checkpoint persistence are injected via
+  traits. Consumers wire in the right implementation; core never calls `println!` or touches disk.
+- **Noop-safe defaults.** Every injected dependency has a zero-cost noop default so the library
+  is usable without configuring anything upfront.
+- **Typed events over callbacks.** The pipeline emits `AgentEvent` values to an `OutputSink`.
+  Surface adapters decide what to do with them — spinners, JSON lines, MCP response bodies, nothing.
+- **Phased telemetry.** `TelemetryProvider` is a trait with a `NoopProvider` default.
+  Real OTel is a 1-line swap when infrastructure exists.
+---
+## Crate Layout
+```
+src/
+  lib.rs
+  error.rs            — AgentError, Sensitive<T>
+  pipeline/
+    mod.rs
+    executor.rs       — PipelineExecutor, builder
+    step.rs           — Step, StepFn, StepStatus, SkipReason
+    graph.rs          — level assignment from depends_on edges, cycle detection
+    result.rs         — PipelineResult, RunStatus, FailedStep
+    checkpoint.rs     — Checkpoint type (pure data, no I/O)
+  resilience/
+    mod.rs
+    policy.rs         — ResiliencePolicy, with_resilience()
+    backoff.rs        — exponential backoff, Retry-After parsing
+    circuit.rs        — CircuitBreaker (opt-in)
+  fuzzy/
+    mod.rs
+    matcher.rs        — FuzzyMatcher, Match<T> (nucleo-matcher wrapper)
+    resolver.rs       — FuzzyResolver, Resolution<T>, Disambiguator trait
+  cache/
+    mod.rs
+    memory.rs         — moka async LRU tier
+    disk.rs           — file-based tier, LRU eviction, tag invalidation
+    policy.rs         — CachePolicy, TTL, stale-while-revalidate
+  telemetry/
+    mod.rs            — TelemetryProvider trait, Span trait
+    noop.rs           — NoopProvider (default)
+  sink/
+    mod.rs            — OutputSink trait, AgentEvent, NoopSink (default)
+  adapters/           — feature-gated, no surface deps in core
+    cli/
+      mod.rs
+      output.rs       — HumanWriter (indicatif), JsonWriter
+      signal.rs       — SIGINT → CancellationToken
+      checkpoint.rs   — DiskCheckpointStore
+      resolver.rs     — TtyDisambiguator (inquire::Select)
+    mcp/
+      mod.rs
+      output.rs       — McpSink (accumulates events into response body)
+      resolver.rs     — McpDisambiguator (returns candidates, no prompt)
+      checkpoint.rs   — MemoryCheckpointStore
+```
+---
+## `Cargo.toml`
+```toml
+[package]
+name = "agent-pipeline"   # placeholder — rename to taste
+version = "0.1.0"
+edition = "2021"
+[features]
+default  = []
+cli      = ["dep:indicatif", "dep:inquire", "dep:crossterm", "dep:ctrlc", "dep:atty"]
+mcp      = []             # pure logic — no extra deps
+full     = ["cli", "mcp"]
+[dependencies]
+tokio           = { version = "1",    features = ["full"] }
+tokio-util      = { version = "0.7",  features = ["rt"] }  # CancellationToken
+async-trait     = "0.1"
+serde           = { version = "1",    features = ["derive"] }
+serde_json      = "1"
+thiserror       = "1"
+uuid            = { version = "1",    features = ["v4"] }
+moka            = { version = "0.12", features = ["future"] }
+nucleo-matcher  = "0.3"
+sha2            = "0.10"
+# cli feature
+indicatif = { version = "0.17", optional = true }
+inquire   = { version = "0.7",  optional = true }
+crossterm = { version = "0.27", optional = true }
+ctrlc     = { version = "3",    optional = true }
+atty      = { version = "0.2",  optional = true }
+```
+---
+## 1. Error Model
+```rust
+// src/error.rs
+/// Wraps sensitive values so they are never printed in logs or debug output.
+pub struct Sensitive<T>(T);
+impl<T> Sensitive<T> {
+    pub fn new(value: T) -> Self { Self(value) }
+    pub fn expose(&self) -> &T { &self.0 }
+}
+impl<T> fmt::Debug   for Sensitive<T> { fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { f.write_str("[REDACTED]") } }
+impl<T> fmt::Display for Sensitive<T> { fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { f.write_str("[REDACTED]") } }
+/// Two-class error distinction.
+/// User errors are safe to surface verbatim. Internal errors log full context
+/// but show only a terse message to the consumer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ErrorClass {
+    /// Caused by caller input or expected external conditions (no-match, bad arg).
+    /// Surface the message. No stack trace.
+    User,
+    /// Caused by infrastructure: I/O, network, timeouts, cache corruption.
+    /// Log full context internally; show terse message externally.
+    Internal,
+}
+#[derive(Debug, thiserror::Error)]
+pub enum AgentError {
+    #[error("HTTP {status}: {message}")]
+    Http {
+        status: u16,
+        message: String,
+        retryable: bool,
+        retry_after: Option<Duration>,
+    },
+    #[error("Timeout after {elapsed:?}")]
+    Timeout { elapsed: Duration },
+    #[error("Step '{id}' failed: {source}")]
+    StepFailed { id: String, #[source] source: Box<AgentError> },
+    #[error("Circuit open for '{name}', retry after {retry_after:?}")]
+    CircuitOpen { name: String, retry_after: Duration },
+    #[error("No match for '{query}'")]
+    NoMatch { query: String },
+    #[error("Ambiguous match for '{query}': {count} candidates")]
+    AmbiguousMatch { query: String, count: usize },
+    #[error("Cycle detected in pipeline graph: {cycle:?}")]
+    CyclicDependency { cycle: Vec<String> },
+    #[error("Operation cancelled")]
+    Cancelled,
+    #[error("Cache: {0}")]
+    Cache(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+impl AgentError {
+    pub fn class(&self) -> ErrorClass {
+        match self {
+            Self::NoMatch { .. }
+            | Self::AmbiguousMatch { .. }
+            | Self::Cancelled            => ErrorClass::User,
+            _                            => ErrorClass::Internal,
+        }
+    }
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Http { retryable, .. } => *retryable,
+            Self::Timeout { .. }         => true,
+            _                            => false,
+        }
+    }
+    pub fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::Http { retry_after, .. }       => *retry_after,
+            Self::CircuitOpen { retry_after, .. } => Some(*retry_after),
+            _                                    => None,
+        }
+    }
+}
+```
+---
+## 2. Output Sink
+The surface-agnostic event bus. Core modules emit events; adapters handle them.
+```rust
+// src/sink/mod.rs
+#[derive(Debug)]
+pub enum AgentEvent {
+    StepStarted    { id: String, name: String, level: u32 },
+    StepCompleted  { id: String, duration: Duration },
+    StepSkipped    { id: String, reason: SkipReason },
+    StepFailed     { id: String, error: AgentError, retryable: bool },
+    RetryScheduled { label: String, attempt: u32, max: u32, wait: Duration },
+    CircuitOpened  { name: String, retry_after: Duration },
+    PipelineFinished(PipelineResult),
+    /// Generic structured payload — surface decides how to present it.
+    Data(serde_json::Value),
+    Warn(String),
+    Info(String),
+}
+pub trait OutputSink: Send + Sync {
+    fn emit(&self, event: AgentEvent);
+}
+/// Default: discard all events.
+pub struct NoopSink;
+impl OutputSink for NoopSink {
+    fn emit(&self, _: AgentEvent) {}
+}
+```
+---
+## 3. Telemetry
+```rust
+// src/telemetry/mod.rs
+pub trait Span: Send + Sync {
+    fn set_attr(&self, key: &str, value: &str);
+    fn set_error(&self, error: &AgentError);
+    fn finish(self: Box<Self>);
+}
+pub trait TelemetryProvider: Send + Sync {
+    fn start_span(&self, name: &str, attrs: &[(&str, &str)]) -> Box<dyn Span>;
+    fn counter(&self, name: &str, delta: u64, attrs: &[(&str, &str)]);
+    fn histogram(&self, name: &str, value: f64, attrs: &[(&str, &str)]);
+}
+// src/telemetry/noop.rs
+pub struct NoopProvider;
+pub struct NoopSpan;
+impl Span for NoopSpan {
+    fn set_attr(&self, _: &str, _: &str) {}
+    fn set_error(&self, _: &AgentError) {}
+    fn finish(self: Box<Self>) {}
+}
+impl TelemetryProvider for NoopProvider {
+    fn start_span(&self, _: &str, _: &[(&str, &str)]) -> Box<dyn Span> { Box::new(NoopSpan) }
+    fn counter(&self, _: &str, _: u64, _: &[(&str, &str)]) {}
+    fn histogram(&self, _: &str, _: f64, _: &[(&str, &str)]) {}
+}
+```
+---
+## 4. Pipeline Execution
+### Core types
+```rust
+// src/pipeline/step.rs
+pub type StepOutput = serde_json::Value;
+#[async_trait]
+pub trait StepFn: Send + Sync {
+    async fn run(&self, ctx: &StepContext) -> Result<StepOutput, AgentError>;
+}
+pub struct Step {
+    pub id: String,
+    pub name: String,
+    pub level: u32,                       // steps at same level run concurrently
+    pub depends_on: Vec<String>,          // level is derived from this if level=0
+    pub idempotency_key: Option<String>,  // cache hit → Skipped::Idempotent
+    pub best_effort: bool,                // failure → Skipped::BestEffortFailed, not Failed
+    pub run: Arc<dyn StepFn>,
+}
+pub struct StepContext {
+    pub run_id: Uuid,
+    pub step_id: String,
+    pub outputs: Arc<HashMap<String, StepOutput>>, // completed upstream step outputs
+    pub cancel: CancellationToken,
+}
+#[derive(Debug, Clone)]
+pub enum StepStatus {
+    Pending,
+    Running,
+    Completed { output: StepOutput, duration: Duration },
+    Skipped   { reason: SkipReason },
+    Failed    { error: String, retryable: bool, retry_with: Option<StepOutput> },
+}
+#[derive(Debug, Clone)]
+pub enum SkipReason {
+    Idempotent,          // idempotency_key hit cache
+    DependencyFailed,    // upstream step failed
+    BestEffortFailed,    // step.best_effort = true and step failed
+    Cancelled,           // cancellation token fired before step started
+}
+```
+```rust
+// src/pipeline/checkpoint.rs
+/// Pure data — no disk I/O in core.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Checkpoint {
+    pub pipeline_id: String,
+    pub run_id: Uuid,
+    pub created_at: u64,
+    pub completed: Vec<String>,
+    pub step_outputs: HashMap<String, StepOutput>,
+    pub failed: Vec<String>,
+}
+/// Injected persistence — core never touches disk.
+#[async_trait]
+pub trait CheckpointStore: Send + Sync {
+    async fn save(&self, checkpoint: &Checkpoint) -> Result<(), AgentError>;
+    async fn load(&self, pipeline_id: &str) -> Result<Option<Checkpoint>, AgentError>;
+    async fn clear(&self, pipeline_id: &str) -> Result<(), AgentError>;
+}
+pub struct NoopCheckpointStore;
+#[async_trait]
+impl CheckpointStore for NoopCheckpointStore {
+    async fn save(&self, _: &Checkpoint) -> Result<(), AgentError> { Ok(()) }
+    async fn load(&self, _: &str) -> Result<Option<Checkpoint>, AgentError> { Ok(None) }
+    async fn clear(&self, _: &str) -> Result<(), AgentError> { Ok(()) }
+}
+```
+```rust
+// src/pipeline/result.rs
+#[derive(Debug, Clone, PartialEq)]
+pub enum RunStatus {
+    Complete,   // all steps succeeded or best-effort-skipped
+    Partial,    // at least one step succeeded, at least one failed
+    Failed,     // all non-skipped steps failed, or fail_fast triggered
+}
+#[derive(Debug, Clone)]
+pub struct PipelineResult {
+    pub run_id: Uuid,
+    pub status: RunStatus,
+    pub completed: Vec<StepOutcome>,
+    pub skipped: Vec<StepOutcome>,
+    pub failed: Vec<FailedStep>,
+    pub checkpoint: Option<Checkpoint>,
+}
+#[derive(Debug, Clone)]
+pub struct StepOutcome {
+    pub id: String,
+    pub duration: Duration,
+}
+#[derive(Debug, Clone)]
+pub struct FailedStep {
+    pub id: String,
+    pub error: AgentError,
+    pub retry_with: Option<StepOutput>,
+}
+```
+### Executor
+```rust
+// src/pipeline/executor.rs
+pub struct PipelineExecutor {
+    pipeline_id: String,
+    steps: Vec<Step>,
+    policy: ResiliencePolicy,
+    cache: Arc<Cache>,
+    sink: Arc<dyn OutputSink>,
+    checkpoint_store: Arc<dyn CheckpointStore>,
+    telemetry: Arc<dyn TelemetryProvider>,
+    cancel: CancellationToken,
+    fail_fast: bool,
+}
+impl PipelineExecutor {
+    pub fn builder() -> PipelineExecutorBuilder { PipelineExecutorBuilder::default() }
+    pub async fn run(&self, ctx: &PipelineContext) -> PipelineResult {
+        // 1. assign_levels() resolves depends_on into level numbers
+        // 2. pre-populate idempotency cache from any loaded checkpoint
+        // 3. for each level (ascending):
+        //    a. filter steps whose deps are all Completed
+        //    b. check idempotency_key → emit StepSkipped::Idempotent
+        //    c. tokio::spawn each remaining step, race against cancel token
+        //    d. on best_effort failure → emit StepSkipped::BestEffortFailed
+        //    e. on hard failure + fail_fast → cancel remaining, persist checkpoint
+        //    f. join_all, collect into PipelineResult
+        // 4. emit PipelineFinished event
+        todo!()
+    }
+    pub async fn resume(
+        &self,
+        checkpoint: Checkpoint,
+        ctx: &PipelineContext,
+    ) -> PipelineResult {
+        // pre-populate idempotency cache from checkpoint.step_outputs
+        // then call self.run() — steps with cached keys are auto-skipped
+        todo!()
+    }
+}
+pub struct PipelineContext {
+    pub run_id: Uuid,
+    pub metadata: HashMap<String, String>,
+}
+impl Default for PipelineContext {
+    fn default() -> Self {
+        Self { run_id: Uuid::new_v4(), metadata: Default::default() }
+    }
+}
+```
+### Graph resolution
+```rust
+// src/pipeline/graph.rs
+/// Assigns level numbers from depends_on edges.
+/// Steps with no deps → level 0.
+/// A step's level = max(dep levels) + 1.
+/// Returns Err(CyclicDependency) if a cycle is detected.
+pub fn assign_levels(steps: &[Step]) -> Result<Vec<(u32, &Step)>, AgentError>;
+```
+---
+## 5. Resilience
+```rust
+// src/resilience/policy.rs
+#[derive(Debug, Clone)]
+pub struct ResiliencePolicy {
+    pub max_attempts: u32,              // default: 3
+    pub initial_backoff: Duration,      // default: 1s
+    pub max_backoff: Duration,          // default: 30s
+    pub backoff_multiplier: f64,        // default: 2.0
+    pub per_attempt_timeout: Duration,  // default: 30s
+    pub circuit: Option<CircuitBreakerConfig>,
+}
+impl Default for ResiliencePolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            initial_backoff: Duration::from_secs(1),
+            max_backoff: Duration::from_secs(30),
+            backoff_multiplier: 2.0,
+            per_attempt_timeout: Duration::from_secs(30),
+            circuit: None,
+        }
+    }
+}
+/// Surface-agnostic: emits RetryScheduled/CircuitOpened to sink rather than
+/// printing directly. The sink decides what to do with them.
+pub async fn with_resilience<T, F, Fut>(
+    policy: &ResiliencePolicy,
+    label: &str,
+    sink: &Arc<dyn OutputSink>,
+    cancel: CancellationToken,
+    f: F,
+) -> Result<T, AgentError>
+where
+    F: Fn() -> Fut + Send,
+    Fut: Future<Output = Result<T, AgentError>> + Send,
+{
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let result = tokio::select! {
+            r = tokio::time::timeout(policy.per_attempt_timeout, f()) => {
+                r.map_err(|_| AgentError::Timeout { elapsed: policy.per_attempt_timeout })
+                 .and_then(|inner| inner)
+            }
+            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+        };
+        match result {
+            Ok(v) => return Ok(v),
+            Err(e) if !e.is_retryable() || attempt >= policy.max_attempts => return Err(e),
+            Err(e) => {
+                let wait = e.retry_after().unwrap_or_else(|| {
+                    let base = policy.initial_backoff.as_secs_f64()
+                        * policy.backoff_multiplier.powi(attempt as i32 - 1);
+                    Duration::from_secs_f64(base.min(policy.max_backoff.as_secs_f64()))
+                });
+                sink.emit(AgentEvent::RetryScheduled {
+                    label: label.to_string(),
+                    attempt,
+                    max: policy.max_attempts,
+                    wait,
+                });
+                tokio::select! {
+                    _ = tokio::time::sleep(wait) => {}
+                    _ = cancel.cancelled()        => return Err(AgentError::Cancelled),
+                }
+            }
+        }
+    }
+}
+```
+```rust
+// src/resilience/circuit.rs
+#[derive(Debug, Clone)]
+pub struct CircuitBreakerConfig {
+    pub failure_threshold: u32,      // open after N consecutive failures
+    pub recovery_timeout: Duration,
+    pub half_open_probes: u32,       // allow N probes before closing
+}
+pub struct CircuitBreaker {
+    name: String,
+    config: CircuitBreakerConfig,
+    state: Arc<Mutex<CircuitState>>,
+    sink: Arc<dyn OutputSink>,
+}
+enum CircuitState {
+    Closed { consecutive_failures: u32 },
+    Open { opened_at: Instant },
+    HalfOpen { probes_sent: u32 },
+}
+impl CircuitBreaker {
+    pub async fn call<T, F, Fut>(&self, f: F) -> Result<T, AgentError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, AgentError>>;
+}
+```
+---
+## 6. Fuzzy Matching
+### Matcher (pure algorithm)
+```rust
+// src/fuzzy/matcher.rs
+pub struct FuzzyMatcher {
+    inner: nucleo_matcher::Matcher,
+    config: MatcherConfig,
+}
+#[derive(Debug, Clone)]
+pub struct MatcherConfig {
+    pub threshold: u32,          // nucleo raw score minimum; suggest 50 as default
+    pub max_candidates: usize,   // top N returned; suggest 8
+    pub case_sensitive: bool,    // default: false
+}
+impl Default for MatcherConfig {
+    fn default() -> Self {
+        Self { threshold: 50, max_candidates: 8, case_sensitive: false }
+    }
+}
+#[derive(Debug, Clone)]
+pub struct Match<T> {
+    pub item: T,
+    pub score: u32,
+    pub indices: Vec<u32>,  // matched character positions — for highlight rendering
+}
+impl FuzzyMatcher {
+    pub fn new(config: MatcherConfig) -> Self;
+    /// All matches above threshold, sorted by score descending.
+    pub fn match_all<'a, T: AsRef<str>>(
+        &mut self,
+        query: &str,
+        candidates: &'a [T],
+    ) -> Vec<Match<&'a T>>;
+    /// Best single match, or None if nothing clears threshold.
+    pub fn best<'a, T: AsRef<str>>(
+        &mut self,
+        query: &str,
+        candidates: &'a [T],
+    ) -> Option<Match<&'a T>>;
+}
+```
+### Disambiguator trait + resolver
+```rust
+// src/fuzzy/resolver.rs
+/// Injected disambiguation strategy.
+/// Core never knows whether this shows a TTY prompt, returns candidates to an
+/// LLM, logs a warning, or always returns None.
+#[async_trait]
+pub trait Disambiguator: Send + Sync {
+    async fn resolve<T: Clone + Send + Sync>(
+        &self,
+        query: &str,
+        candidates: Vec<Match<T>>,
+    ) -> Option<T>;
+}
+/// Always returns None — caller receives AmbiguousMatch and handles it.
+pub struct NoDisambiguator;
+#[async_trait]
+impl Disambiguator for NoDisambiguator {
+    async fn resolve<T: Clone + Send + Sync>(&self, _: &str, _: Vec<Match<T>>) -> Option<T> {
+        None
+    }
+}
+pub struct FuzzyResolver {
+    matcher: FuzzyMatcher,
+    disambiguator: Arc<dyn Disambiguator>,
+}
+#[derive(Debug, Clone)]
+pub enum Resolution<T> {
+    Exact(T),       // exact string match — no fuzzy cost
+    Resolved(T),    // single fuzzy match above threshold, auto-selected
+    Chosen(T),      // disambiguator returned a choice
+    NotFound,       // nothing cleared threshold
+}
+impl FuzzyResolver {
+    pub fn new(config: MatcherConfig, disambiguator: Arc<dyn Disambiguator>) -> Self;
+    /// Resolution algorithm:
+    /// 1. Exact match (case-insensitive ==)     → Exact
+    /// 2. Prefix match (starts_with)            → Exact
+    /// 3. match_all():
+    ///    a. 0 results                           → NotFound
+    ///    b. 1 result, score ≥ threshold         → Resolved (auto, no prompt)
+    ///    c. multiple or score borderline        → disambiguator.resolve()
+    ///       → Some(item)                        → Chosen
+    ///       → None                              → Err(AmbiguousMatch)
+    pub async fn resolve<T>(
+        &mut self,
+        query: &str,
+        candidates: &[T],
+        key_fn: impl Fn(&T) -> &str,
+    ) -> Result<Resolution<T>, AgentError>
+    where
+        T: Clone + Send + Sync;
+}
+```
+---
+## 7. Cache
+Two-tier: in-memory (moka async LRU) + optional disk. Tag-based partial invalidation.
+Stale-while-revalidate: serve stale immediately, revalidate in background via `tokio::spawn`.
+```rust
+// src/cache/policy.rs
+#[derive(Debug, Clone)]
+pub struct CachePolicy {
+    pub ttl: Duration,
+    pub stale_while_revalidate: Option<Duration>,
+    pub tags: Vec<String>,
+}
+impl Default for CachePolicy {
+    fn default() -> Self {
+        Self {
+            ttl: Duration::from_secs(300),
+            stale_while_revalidate: None,
+            tags: vec![],
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub struct CacheConfig {
+    pub memory_max_entries: u64,      // default: 1_000
+    pub disk: Option<DiskCacheConfig>,
+}
+#[derive(Debug, Clone)]
+pub struct DiskCacheConfig {
+    pub root: PathBuf,                // consumer sets this; no defaults in lib
+    pub max_bytes: u64,               // default: 50 * 1024 * 1024
+}
+```
+```rust
+// src/cache/mod.rs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheEntry {
+    pub value: serde_json::Value,
+    pub created_at: u64,
+    pub expires_at: Option<u64>,
+    pub tags: Vec<String>,
+}
+impl CacheEntry {
+    pub fn is_expired(&self) -> bool;
+    pub fn is_stale(&self, swr_window: Duration) -> bool;
+}
+pub struct Cache {
+    memory: moka::future::Cache<String, Arc<CacheEntry>>,
+    disk: Option<DiskCache>,
+    default_policy: CachePolicy,
+}
+impl Cache {
+    pub fn new(config: CacheConfig) -> Self;
+    /// Read-through: memory → disk. Returns None if expired.
+    pub async fn get(&self, key: &str) -> Option<Arc<CacheEntry>>;
+    /// Write-through: memory + disk (if enabled).
+    pub async fn set(&self, key: &str, value: serde_json::Value, policy: CachePolicy);
+    pub async fn invalidate(&self, key: &str);
+    pub async fn invalidate_tag(&self, tag: &str);
+    pub async fn clear(&self);
+    pub async fn size_bytes(&self) -> u64;
+}
+```
+```rust
+// src/cache/disk.rs
+pub(crate) struct DiskCache {
+    root: PathBuf,
+    max_bytes: u64,
+    index: Arc<tokio::sync::Mutex<DiskIndex>>,
+}
+// index.json at root — tracks (key_hash → DiskMeta) for LRU eviction
+struct DiskIndex {
+    // IndexMap preserves insertion order; LRU = front
+    entries: indexmap::IndexMap<String, DiskMeta>,
+    total_bytes: u64,
+}
+struct DiskMeta {
+    path: PathBuf,
+    size_bytes: u64,
+    last_accessed: u64,
+    tags: Vec<String>,
+}
+impl DiskCache {
+    // Key → path: SHA-256 hex → root/<first2>/<rest>.json
+    // Two-level sharding avoids large directories on case-insensitive filesystems
+    fn key_path(&self, key: &str) -> PathBuf;
+    pub async fn get(&self, key: &str) -> Option<CacheEntry>;
+    pub async fn set(&self, key: &str, entry: &CacheEntry) -> Result<(), AgentError>;
+    pub async fn invalidate(&self, key: &str);
+    pub async fn invalidate_tag(&self, tag: &str);
+    async fn evict_lru_if_needed(&self);
+}
+```
+---
+## 8. Surface Adapters
+### CLI adapter (`feature = "cli"`)
+```rust
+// src/adapters/cli/output.rs
+/// indicatif-backed sink. Spinner per in-flight step, summary table on finish.
+pub struct HumanWriter { multi: indicatif::MultiProgress }
+/// Newline-delimited JSON to stdout. One object per AgentEvent.
+pub struct JsonWriter { pretty: bool }
+impl OutputSink for HumanWriter { fn emit(&self, event: AgentEvent) { /* ... */ } }
+impl OutputSink for JsonWriter  { fn emit(&self, event: AgentEvent) { /* ... */ } }
+```
+```rust
+// src/adapters/cli/signal.rs
+/// Installs a SIGINT handler and returns a CancellationToken.
+/// The executor races all step futures against this token.
+pub fn install_ctrl_c_handler() -> CancellationToken;
+```
+```rust
+// src/adapters/cli/checkpoint.rs
+/// Persists to <root>/<pipeline_id>/checkpoint.json
+pub struct DiskCheckpointStore { root: PathBuf }
+#[async_trait]
+impl CheckpointStore for DiskCheckpointStore {
+    async fn save(&self, checkpoint: &Checkpoint) -> Result<(), AgentError>;
+    async fn load(&self, pipeline_id: &str) -> Result<Option<Checkpoint>, AgentError>;
+    async fn clear(&self, pipeline_id: &str) -> Result<(), AgentError>;
+}
+```
+```rust
+// src/adapters/cli/resolver.rs
+/// Presents an inquire::Select prompt when candidates are ambiguous.
+/// Falls back to NoDisambiguator when not a TTY (CI / piped).
+pub struct TtyDisambiguator;
+#[async_trait]
+impl Disambiguator for TtyDisambiguator {
+    async fn resolve<T: Clone + Send + Sync>(
+        &self,
+        query: &str,
+        candidates: Vec<Match<T>>,
+    ) -> Option<T> {
+        if !atty::is(atty::Stream::Stdin) { return None; }
+        // inquire::Select::new(query, display_names).prompt() → map back to T
+        todo!()
+    }
+}
+```
+**Exit code convention** — lives in the CLI binary, not in the library:
+| Code | Meaning |
+|---|---|
+| 0 | `RunStatus::Complete` |
+| 1 | `RunStatus::Partial` |
+| 2 | `RunStatus::Failed` |
+| 130 | Cancelled via SIGINT (checkpoint saved) |
+```rust
+// In the binary, not in the lib:
+impl PipelineResult {
+    pub fn exit_code(&self) -> i32 { ... }
+}
+// Or just match on result.status in main().
+```
+### MCP adapter (`feature = "mcp"`)
+```rust
+// src/adapters/mcp/output.rs
+/// Accumulates AgentEvent into a structured response value.
+/// The MCP tool handler serializes this into its tool response body.
+pub struct McpSink {
+    events: Arc<Mutex<Vec<AgentEvent>>>,
+}
+impl McpSink {
+    pub fn new() -> Self;
+    /// Drain accumulated events into a JSON summary for the tool response.
+    pub fn into_response_body(self) -> serde_json::Value;
+}
+impl OutputSink for McpSink { fn emit(&self, event: AgentEvent) { /* append */ } }
+```
+```rust
+// src/adapters/mcp/resolver.rs
+/// Returns None — the MCP surface layer formats candidates from AmbiguousMatch
+/// into response hints for the LLM to retry with a more specific query.
+pub struct McpDisambiguator;
+#[async_trait]
+impl Disambiguator for McpDisambiguator {
+    async fn resolve<T: Clone + Send + Sync>(&self, _: &str, _: Vec<Match<T>>) -> Option<T> {
+        None  // surface layer reads the error and formats candidates into hints
+    }
+}
+```
+```rust
+// src/adapters/mcp/checkpoint.rs
+/// In-memory only — survives within a long-running tool handler but not
+/// across MCP server restarts. Good enough for multi-op tool handlers.
+pub struct MemoryCheckpointStore {
+    inner: Mutex<HashMap<String, Checkpoint>>,
+}
+```
+---
+## 9. Wiring Examples
+**CLI binary:**
+```rust
+use agent_pipeline::{
+    pipeline::{PipelineExecutor, PipelineContext},
+    resilience::ResiliencePolicy,
+    cache::{Cache, CacheConfig},
+    telemetry::noop::NoopProvider,
+    adapters::cli::{HumanWriter, DiskCheckpointStore, TtyDisambiguator, install_ctrl_c_handler},
+};
+let cancel = install_ctrl_c_handler();
+let executor = PipelineExecutor::builder()
+    .pipeline_id("my-pipeline")
+    .steps(steps)
+    .policy(ResiliencePolicy::default())
+    .cache(Arc::new(Cache::new(CacheConfig { .. })))
+    .sink(Arc::new(HumanWriter::new()))
+    .checkpoint(Arc::new(DiskCheckpointStore::new(state_dir)))
+    .telemetry(Arc::new(NoopProvider))
+    .cancel(cancel)
+    .build();
+let result = executor.run(&PipelineContext::default()).await;
+std::process::exit(match result.status {
+    RunStatus::Complete => 0,
+    RunStatus::Partial  => 1,
+    RunStatus::Failed   => 2,
+});
+```
+**MCP tool handler:**
+```rust
+use agent_pipeline::{
+    pipeline::{PipelineExecutor, PipelineContext},
+    adapters::mcp::{McpSink, McpDisambiguator, MemoryCheckpointStore},
+};
+let sink = Arc::new(McpSink::new());
+let executor = PipelineExecutor::builder()
+    .pipeline_id(&tool_call_id)
+    .steps(steps)
+    .sink(Arc::clone(&sink))
+    .checkpoint(Arc::new(MemoryCheckpointStore::new()))
+    .cancel(request_cancel_token)
+    .build();
+let result = executor.run(&PipelineContext::default()).await;
+// Surface layer decides how to format PipelineResult + McpSink events
+let body = assemble_tool_response(result, sink.into_response_body());
+```
+---
+## 10. Public API (`src/lib.rs`)
+```rust
+pub use error::{AgentError, ErrorClass, Sensitive};
+pub use pipeline::{
+    PipelineExecutor, PipelineExecutorBuilder,
+    PipelineContext, PipelineResult, RunStatus,
+    Step, StepFn, StepContext, StepStatus, StepOutput,
+    SkipReason, FailedStep, StepOutcome,
+    Checkpoint, CheckpointStore, NoopCheckpointStore,
+};
+pub use resilience::{ResiliencePolicy, with_resilience};
+pub use resilience::circuit::{CircuitBreaker, CircuitBreakerConfig};
+pub use fuzzy::{FuzzyMatcher, FuzzyResolver, MatcherConfig, Match, Resolution};
+pub use fuzzy::resolver::{Disambiguator, NoDisambiguator};
+pub use cache::{Cache, CacheConfig, CachePolicy, CacheEntry};
+pub use cache::disk::DiskCacheConfig;
+pub use sink::{OutputSink, AgentEvent, NoopSink};
+pub use telemetry::{TelemetryProvider, Span};
+pub use telemetry::noop::NoopProvider;
+// Feature-gated re-exports
+#[cfg(feature = "cli")]
+pub mod cli {
+    pub use crate::adapters::cli::{
+        HumanWriter, JsonWriter,
+        DiskCheckpointStore,
+        TtyDisambiguator,
+        install_ctrl_c_handler,
+    };
+}
+#[cfg(feature = "mcp")]
+pub mod mcp {
+    pub use crate::adapters::mcp::{
+        McpSink,
+        McpDisambiguator,
+        MemoryCheckpointStore,
+    };
+}
+```
+---
+## Open Questions
+1. **Crate name.** `agent-pipeline`is a placeholder. Should reflect that it's pipeline execution
+   + resilience + fuzzy + cache — not just a pipeline runner.
+2. **`PipelineResult` MCP serialization.** The `status/completed/failed` shape maps cleanly to
+   a tool response body but the exact schema (field names, error format) should be decided by
+   the consumer, not the library. A `PipelineResult::to_json()` helper risks encoding opinions.
+   Leave serialization to the adapter layer.
+3. **Real OTel provider.** The `TelemetryProvider` trait is intentionally minimal. A real
+   `OtelProvider` wrapping `opentelemetry` SDK belongs in an optional `telemetry` feature or a
+   separate companion crate — keeps the core dep tree clean.
+4. **Circuit breaker day-one scope.** The `CircuitBreakerConfig` is in the type signature but
+   the impl can ship as `todo!()` in v0.1. The field is `Option<>` so it's a non-breaking add.
+5. **`DiskCacheConfig.root`** has no default — the library doesn't know where the consumer
+   wants to write. CLI adapter can default to an XDG-aware path; MCP servers will typically
+   leave disk caching off (`disk: None`).
