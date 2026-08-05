@@ -1,0 +1,3 @@
+Do we have any hardcoded values, stubs or missing functionality that we missed? You have a habit of considering only the happy path and missing the full functionality so I feel like a bug hunt and adversarial analysis with agent teams + workflows leveraging the most appropriate model & effort is still in order. Might need a few rounds of those to feel confident we're not shipping faulty code.
+
+Use the output of each round to learn patterns and feed it into the next round to refine our process and our codebase. Report your findings at the end of multiple rounds and help understand how we can improve the process of writing our code and managing the codebase with AI assistance
