@@ -1,0 +1,1 @@
+We should consider that others might install part of our system and augment. Say if they don't use GH projects + issues, instead have Jira. They could build the thing that best fits their tool but allows to reuse the rest
