@@ -1,0 +1,1 @@
+Our spec is designed around MCP v2 and TOON + AXI best practices
