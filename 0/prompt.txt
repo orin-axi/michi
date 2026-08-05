@@ -1,0 +1,20 @@
+<task-notification>
+<task-id>a927191c26a832636</task-id>
+<tool-use-id>toolu_01KKG2QpEEFGqedLnnnxJjVf</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/3bb5bd40-bcf1-44f3-afc5-3b8ba770a7d6/tasks/a927191c26a832636.output</output-file>
+<status>completed</status>
+<summary>Agent "Assess headroom for michi-benefit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: depth=50 is a stack-safety cap, not a compression strategy — at the cap, the value is returned as-is (untouched), not dropped or summarized. That closes out all three sub-questions with direct evidence.
+
+## Answer (&lt; 200 words)
+
+No. Everything is flat-collection statistical sampling; nothing traverses actual graph/tree structure as a truncation strategy.
+
+1. **"Structural outlier" is flat schema-shape, not graph structure.** `detect_structural_outliers` (`crates/headroom-core/src/transforms/smart_crusher/outliers.rs:52-53,60-69`) operates on `items: &amp;[Value]`, a flat array, and flags "rare-field outliers" — items whose field appears in &lt;20% of sibling records — plus rare categorical values. It's per-array cross-record comparison, never node-to-node graph/parent-child traversal.
+
+2. **No BFS/hop-limited truncation.** `grep` for `depth|BFS|parent|child|subtree|graph|hop` across `smart_crusher/*.rs` returns nothing relevant. There *is* recursion — `DocumentCompactor::walk` (`compaction/walker.rs:99-135`) descends into nested objects/arrays, and `crusher.rs:471-486` uses a `depth` counter — but it's a stack-safety cap (`MAX_PROCESS_DEPTH = 50`, `crusher.rs:458-460,485-487`): past it, the value is returned unmodified (`value.clone()`), not dropped or hop-truncated. Every depth level independently applies the same flat row-sampling.
+
+3. **No subtree collapse/summarization.** At max depth or otherwise, nested values pass through untouched or get array-level crushing at that level — no evidence of summarizing a whole subtree in place of dropping it.</result>
+<usage><subagent_tokens>57527</subagent_tokens><tool_uses>4</tool_uses><duration_ms>32168</duration_ms></usage>
+</task-notification>
