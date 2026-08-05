@@ -1,0 +1,1 @@
+We want CLIs to allow for agent or human output too right? and helpers to ease building those
