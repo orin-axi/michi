@@ -1,0 +1,38 @@
+<task-notification>
+<task-id>aea87adaa534836f3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8a92c71e-957a-4050-a2ff-393f6bf64072/tasks/aea87adaa534836f3.output</output-file>
+<status>completed</status>
+<summary>Agent "Spec review Task 3: toon public API" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All three files read. Here is the verification against each spec requirement:
+
+**`src/toon/mod.rs`**
+- `pub use render::Value;` re-export — present at line 4 ✅
+- `#[derive(Debug, Clone)]` on `ToonOptions` — present at line 11 ✅
+- All 5 fields present, all `pub`, all with doc comments:
+  - `type_name: String` (line 14) ✅
+  - `fields: Vec&lt;String&gt;` (line 16) ✅
+  - `rows: Vec&lt;Vec&lt;Value&gt;&gt;` (line 18) ✅
+  - `total_count: Option&lt;usize&gt;` (line 21) ✅
+  - `hints: Vec&lt;String&gt;` (line 23) ✅
+- `pub fn render_toon(opts: &amp;ToonOptions) -&gt; String` with doc comment (lines 26–40) ✅
+- Calls `render::render(...)` passing all 5 opts fields in correct order ✅
+- No `#[allow(dead_code)]` attributes present ✅
+
+**`src/toon/render.rs`**
+- `Value` enum is `pub` (not `pub(crate)`) at line 5 ✅
+- No `#[allow(dead_code)]` attributes present ✅
+
+**`tests/toon_integration.rs`** — all 7 tests present with correct names and assertions:
+1. `renders_basic_list` — 2 rows, totalCount 47, 1 hint, exact full-string `assert_eq!` ✅
+2. `renders_empty_state` — 0 rows, totalCount 0, 1 hint, exact full-string `assert_eq!` ✅
+3. `escapes_comma_in_value` — comma in field, checks `r#""Update deps, bump major""#` ✅
+4. `null_value_renders_as_empty_field` — checks `"  x,\n"` ✅
+5. `bool_values_render_as_true_false` — checks `"  true,false\n"` ✅
+6. `no_total_count_when_none` — asserts `!out.contains("totalCount")` ✅
+7. `multiple_hints_render_correctly` — checks `"help[2]:\n  hint one\n  hint two\n"` ✅
+
+**Verdict: ✅ Spec compliant.** All requirements are satisfied with no issues found.</result>
+<usage><subagent_tokens>15254</subagent_tokens><tool_uses>3</tool_uses><duration_ms>32259</duration_ms></usage>
+</task-notification>
