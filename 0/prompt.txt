@@ -1,0 +1,18 @@
+Plan complete and saved to docs/superpowers/plans/2026-07-08-spec-parity.md (3,644 lines, 24 tasks across 11 phases).
+
+Summary of what it covers:
+- Design Decisions table up front — 9 places where the spec's literal text is deliberately not what gets implemented (napi v3, divan, zero-dep architecture, jitter_factor: f64, FNV-1a instead of SHA-256, etc.), each with a stated reason, so this doesn't quietly drift again.
+- Phases 1-2: toon/truncate/resilience — additive gaps and one real bug fix (HTTP 500 was wrongly retryable).
+- Phases 3-6: full redesigns of recovery, kv, status, error, idempotency — these change public shape, not just add fields.
+- Phase 7-8: the big one — AgentResponse rewritten as the routing builder spec describes, plus the NAPI JsAgentResponse using the Option+take() pattern spec already worked out. This is the same piece that answers "what does michi need for MCP v2" from earlier — it lands here.
+- Phase 9-10: property tests (a proptest dependency that's been sitting unused this whole time), snapshot refreshes, a CI version-sync check, and fixing the linux-x64-musl CI gap flagged earlier this session but never actioned.
+- Phase 11: updates docs/01-spec.md itself so it stops being a historical artifact and starts being accurate again.
+- Self-review pass caught 4 real gaps in my own first draft (crate-root re-exports, the musl CI target, two undocumented deviations) and fixed them before calling this done.
+
+Two execution options:
+
+1. Subagent-Driven (recommended) — I dispatch a fresh subagent per task, review between tasks, fast iteration
+
+2. Inline Execution — Execute tasks in this session using executing-plans, batch execution with checkpoints
+
+Let's run the subagent
