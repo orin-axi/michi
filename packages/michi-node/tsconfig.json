@@ -12,5 +12,5 @@
     "exactOptionalPropertyTypes": true,
     "types": ["node"]
   },
-  "include": []
+  "include": ["**/*.ts"]
 }

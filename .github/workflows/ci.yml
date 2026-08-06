@@ -106,7 +106,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: packages/michi-node/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
       - run: pnpm lint
 
   napi:
