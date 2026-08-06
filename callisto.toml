@@ -1,0 +1,27 @@
+# callisto configuration
+
+[changesets]
+dir = ".changeset"
+
+[cascade]
+mode = "out-of-range"
+bump-severity = "patch"
+peer-escalation = true
+preserve-npm-ranges = true
+
+# Rust library crates — published to crates.io
+[[package-set]]
+match = "crates/*"
+publish-to = ["cratesIo"]
+release-trigger = "changeset"
+
+# Root crate (not captured by any glob)
+[[package]]
+match = "."
+publish-to = ["cratesIo"]
+release-trigger = "changeset"
+
+# michi-node: NAPI cdylib + npm package, not yet published
+[[package]]
+match = "packages/michi-node"
+publish-to = []

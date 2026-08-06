@@ -3,6 +3,9 @@ $schema: "https://moonrepo.dev/schemas/project.json"
 language: typescript
 
 tasks:
+  publish:
+    script: "echo 'michi-node npm publish not yet configured'"
+
   build:
     command: just build-node
     inputs:

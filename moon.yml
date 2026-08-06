@@ -45,6 +45,14 @@ tasks:
       - "Cargo.lock"
       - "Cargo.toml"
 
+  publish:
+    script: "cargo publish -p michi --no-verify"
+    inputs:
+      - "src/**/*"
+      - "Cargo.toml"
+    deps:
+      - "michi-core:publish"
+
   check-wasm:
     script: "cargo check -p michi-truncate -p michi-resilience -p michi-toon -p michi-core --target wasm32-unknown-unknown"
     inputs:

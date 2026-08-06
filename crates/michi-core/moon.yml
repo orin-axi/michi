@@ -18,3 +18,8 @@ tasks:
     inputs:
       - "src/**/*"
       - "Cargo.toml"
+  publish:
+    deps:
+      - "michi-toon:publish"
+      - "michi-truncate:publish"
+      - "michi-resilience:publish"

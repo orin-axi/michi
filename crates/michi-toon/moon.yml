@@ -18,3 +18,5 @@ tasks:
     inputs:
       - "src/**/*"
       - "Cargo.toml"
+  publish:
+    # No internal workspace deps — publishes first.
