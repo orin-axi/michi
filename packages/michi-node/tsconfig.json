@@ -12,8 +12,5 @@
     "exactOptionalPropertyTypes": true,
     "types": ["node"]
   },
-  "include": [
-    "__test__/**/*",
-    "index.d.ts"
-  ]
+  "include": []
 }

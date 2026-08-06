@@ -24,10 +24,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
       - name: Run Callisto Release Action
         uses: orin-dx/callisto/.github/actions/callisto-action@main
         with:
