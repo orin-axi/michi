@@ -1,0 +1,91 @@
+Is our git history good enough to push up? Nothing embarassing that should be cleaned up?
+
+---
+
+we hve a GH repo in orin-axi that we should sync with
+
+---
+
+Shall we commit and push?
+
+---
+
+/proof
+
+---
+
+We have a published and working version of callisto, can we set it up for moon publishing
+
+---
+
+What are you writing???? WTF
+
+---
+
+Callisto publishes itself with callisto, why are you touching their repo?
+
+---
+
+The whole point is callisto publishes for us, are you fucking dumb?
+
+---
+
+Are you confident this would publish using changeset? Did you read the callisto docs? Their setup for the example???
+
+---
+
+Let's create a changeset that is succint, meaninful, friendly, feature focused without AI slop, word salad and filler words. Consider this goes into a changelog
+
+---
+
+CI and release failed
+
+---
+
+We don’t need to compile for macOS intel
+
+---
+
+Is it running?
+
+---
+
+Done?
+
+---
+
+That is not true, it's been more than 8 hrs
+
+---
+
+<task-notification>
+<task-id>bhmib10ya</task-id>
+<tool-use-id>toolu_01TTtjL5CeRxsVCW1XtSax9R</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/bhmib10ya.output</output-file>
+<status>killed</status>
+<summary>Background command "Watch the manually triggered CI run" was stopped</summary>
+</task-notification>
+
+---
+
+I've cancelled everything, check the ones that ran and see what's wrong
+
+---
+
+<task-notification>
+<task-id>byeqe0jp5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/byeqe0jp5.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for new CI run to appear then show status" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bl8xsjcx1</task-id>
+<tool-use-id>toolu_01DqzSScy8KKSG9As6C9ZsaT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/bl8xsjcx1.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI run on b38fc79 to complete" completed (exit code 0)</summary>
+</task-notification>
