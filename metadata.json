@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.9.1-nightly.202608050700.76dff6a81",
+  "checkpoint_id": "01KZAGY2JS3PV1TKW2G6YFXHYA",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".changeset/.gitkeep",
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+    ".moon/tasks/rust.yml",
+    "callisto.toml",
+    "crates/michi-core/moon.yml",
+    "crates/michi-resilience/moon.yml",
+    "crates/michi-toon/moon.yml",
+    "crates/michi-truncate/moon.yml",
+    "moon.yml",
+    "packages/michi-node/moon.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 128838,
+    "cache_creation_tokens": 15845778,
+    "cache_read_tokens": 630164930,
+    "output_tokens": 1570839,
+    "api_call_count": 1920
+  }
+}
