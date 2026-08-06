@@ -1,0 +1,13 @@
+Is our git history good enough to push up? Nothing embarassing that should be cleaned up?
+
+---
+
+we hve a GH repo in orin-axi that we should sync with
+
+---
+
+Shall we commit and push?
+
+---
+
+/proof
