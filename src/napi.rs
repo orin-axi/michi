@@ -287,6 +287,11 @@ pub fn next_retry_delay(
         if !val.is_finite() || val < 0.0 {
             return Err(napi::Error::from_reason(format!("{name} must be a finite non-negative number, got {val}")));
         }
+        // Duration::from_secs_f64 panics on values > ~1.8e19s; reject here so
+        // catch_unwind never has to catch a panic from untrusted JS input.
+        if val / 1000.0 > u64::MAX as f64 {
+            return Err(napi::Error::from_reason(format!("{name} is too large to convert to a Duration, got {val}")));
+        }
     }
     for (name, val) in [("jitter_factor", jitter_factor), ("jitter_seed", jitter_seed)] {
         if !val.is_finite() {

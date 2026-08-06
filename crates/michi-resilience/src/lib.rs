@@ -123,6 +123,7 @@ pub fn next_retry_delay(
     if attempt >= config.max_retries {
         return None;
     }
+    let jitter_seed = if jitter_seed.is_finite() { jitter_seed.clamp(0.0, 1.0) } else { 0.0 };
     let exp = 2u64.saturating_pow(attempt);
     let base_ms = u64::try_from(config.base_delay.as_millis()).unwrap_or(u64::MAX);
     let max_ms = u64::try_from(config.max_delay.as_millis()).unwrap_or(u64::MAX);
