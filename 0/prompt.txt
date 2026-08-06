@@ -35,3 +35,7 @@ Are you confident this would publish using changeset? Did you read the callisto 
 ---
 
 Let's create a changeset that is succint, meaninful, friendly, feature focused without AI slop, word salad and filler words. Consider this goes into a changelog
+
+---
+
+CI and release failed
