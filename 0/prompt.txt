@@ -1,0 +1,57 @@
+Is our git history good enough to push up? Nothing embarassing that should be cleaned up?
+
+---
+
+we hve a GH repo in orin-axi that we should sync with
+
+---
+
+Shall we commit and push?
+
+---
+
+/proof
+
+---
+
+We have a published and working version of callisto, can we set it up for moon publishing
+
+---
+
+What are you writing???? WTF
+
+---
+
+Callisto publishes itself with callisto, why are you touching their repo?
+
+---
+
+The whole point is callisto publishes for us, are you fucking dumb?
+
+---
+
+Are you confident this would publish using changeset? Did you read the callisto docs? Their setup for the example???
+
+---
+
+Let's create a changeset that is succint, meaninful, friendly, feature focused without AI slop, word salad and filler words. Consider this goes into a changelog
+
+---
+
+CI and release failed
+
+---
+
+We don’t need to compile for macOS intel
+
+---
+
+Is it running?
+
+---
+
+Done?
+
+---
+
+That is not true, it's been more than 8 hrs
