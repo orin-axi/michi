@@ -27,3 +27,7 @@ Callisto publishes itself with callisto, why are you touching their repo?
 ---
 
 The whole point is callisto publishes for us, are you fucking dumb?
+
+---
+
+Are you confident this would publish using changeset? Did you read the callisto docs? Their setup for the example???
