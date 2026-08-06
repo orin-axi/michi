@@ -288,6 +288,11 @@ pub fn next_retry_delay(
             return Err(napi::Error::from_reason(format!("{name} must be a finite non-negative number, got {val}")));
         }
     }
+    for (name, val) in [("jitter_factor", jitter_factor), ("jitter_seed", jitter_seed)] {
+        if !val.is_finite() {
+            return Err(napi::Error::from_reason(format!("{name} must be a finite number in [0.0, 1.0], got {val}")));
+        }
+    }
     if let Some(ms) = retry_after_ms {
         if !ms.is_finite() || ms < 0.0 {
             return Err(napi::Error::from_reason(format!("retry_after_ms must be finite and non-negative, got {ms}")));
@@ -1111,5 +1116,21 @@ mod tests {
             health: Some("degraded".into()), // missing colon and reason
         }];
         assert!(render_status("t".into(), "d".into(), items, None).is_err());
+    }
+
+    #[test]
+    fn next_retry_delay_rejects_nan_jitter_factor() {
+        let err = next_retry_delay(3, 100.0, 30_000.0, f64::NAN, 0.5, 0, None)
+            .expect_err("NaN jitter_factor must be rejected");
+        assert!(err.reason.contains("jitter_factor"), "got: {}", err.reason);
+        assert!(err.reason.contains("finite"), "got: {}", err.reason);
+    }
+
+    #[test]
+    fn next_retry_delay_rejects_nan_jitter_seed() {
+        let err =
+            next_retry_delay(3, 100.0, 30_000.0, 0.5, f64::NAN, 0, None).expect_err("NaN jitter_seed must be rejected");
+        assert!(err.reason.contains("jitter_seed"), "got: {}", err.reason);
+        assert!(err.reason.contains("finite"), "got: {}", err.reason);
     }
 }

@@ -74,7 +74,7 @@ impl RetryConfig {
     ) -> Self {
         let max_delay = max_delay.max(std::time::Duration::from_millis(1));
         let base_delay = base_delay.min(max_delay);
-        let jitter_factor = jitter_factor.clamp(0.0, 1.0);
+        let jitter_factor = if jitter_factor.is_finite() { jitter_factor.clamp(0.0, 1.0) } else { 0.0 };
         Self { max_retries, base_delay, max_delay, jitter_factor }
     }
 
@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn second_retry_doubles() {
         let config = RetryConfig { jitter_factor: 0.0, ..Default::default() };
-        let delay = next_retry_delay(&config, 1, 0.0, None).unwrap();
+        let delay = next_retry_delay(&config, 1, 0.0, None).expect("attempt 1 is within max_retries");
         assert_eq!(delay, config.base_delay * 2);
     }
 
@@ -354,7 +354,7 @@ mod tests {
             jitter_factor: 0.0,
             max_retries: 10,
         };
-        let delay = next_retry_delay(&config, 5, 0.0, None).unwrap();
+        let delay = next_retry_delay(&config, 5, 0.0, None).expect("attempt 5 is within max_retries=10");
         assert_eq!(delay, Duration::from_secs(5));
     }
 
@@ -372,8 +372,9 @@ mod tests {
             max_delay: Duration::from_secs(30),
             max_retries: 3,
         };
-        let no_jitter = next_retry_delay(&RetryConfig { jitter_factor: 0.0, ..config.clone() }, 0, 0.0, None).unwrap();
-        let with_jitter = next_retry_delay(&config, 0, 1.0, None).unwrap();
+        let no_jitter = next_retry_delay(&RetryConfig { jitter_factor: 0.0, ..config.clone() }, 0, 0.0, None)
+            .expect("attempt 0 within max_retries");
+        let with_jitter = next_retry_delay(&config, 0, 1.0, None).expect("attempt 0 within max_retries");
         assert!(with_jitter > no_jitter, "jitter seed 1.0 should produce longer delay");
     }
 
@@ -385,7 +386,7 @@ mod tests {
             jitter_factor: 1.0,
             max_retries: 10,
         };
-        let delay = next_retry_delay(&config, 5, 1.0, None).unwrap();
+        let delay = next_retry_delay(&config, 5, 1.0, None).expect("attempt 5 within max_retries=10");
         assert!(delay <= config.max_delay, "delay {delay:?} exceeded max_delay {:?}", config.max_delay);
     }
 
@@ -393,42 +394,47 @@ mod tests {
     fn extreme_duration_saturates_instead_of_wrapping() {
         let huge = Duration::from_secs(18_446_744_073_709_552);
         let config = RetryConfig { base_delay: huge, max_delay: huge, jitter_factor: 0.0, max_retries: 10 };
-        let delay = next_retry_delay(&config, 0, 0.0, None).unwrap();
+        let delay = next_retry_delay(&config, 0, 0.0, None).expect("attempt 0 within max_retries");
         assert!(delay.as_millis() > 1_000_000_000_000, "delay {delay:?} wrapped to a tiny value");
     }
 
     #[test]
     fn retry_after_wins_when_larger_than_backoff() {
         let config = RetryConfig { jitter_factor: 0.0, ..Default::default() };
-        let delay = next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(5))).unwrap();
+        let delay =
+            next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(5))).expect("attempt 0 within max_retries");
         assert_eq!(delay, Duration::from_secs(5));
     }
 
     #[test]
     fn backoff_wins_when_larger_than_retry_after() {
         let config = RetryConfig { jitter_factor: 0.0, base_delay: Duration::from_secs(10), ..Default::default() };
-        let delay = next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(1))).unwrap();
+        let delay =
+            next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(1))).expect("attempt 0 within max_retries");
         assert_eq!(delay, Duration::from_secs(10));
     }
 
     #[test]
     fn retry_after_still_capped_at_max_delay() {
         let config = RetryConfig { jitter_factor: 0.0, max_delay: Duration::from_secs(5), ..Default::default() };
-        let delay = next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(999))).unwrap();
+        let delay =
+            next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(999))).expect("attempt 0 within max_retries");
         assert_eq!(delay, Duration::from_secs(5), "retry_after must not bypass max_delay");
     }
 
     #[test]
     fn retry_after_wins_over_backoff_with_jitter_applied() {
         let config = RetryConfig { jitter_factor: 1.0, base_delay: Duration::from_secs(1), ..Default::default() };
-        let delay = next_retry_delay(&config, 0, 1.0, Some(Duration::from_secs(5))).unwrap();
+        let delay =
+            next_retry_delay(&config, 0, 1.0, Some(Duration::from_secs(5))).expect("attempt 0 within max_retries");
         assert_eq!(delay, Duration::from_secs(5));
     }
 
     #[test]
     fn jittered_backoff_wins_over_smaller_retry_after() {
         let config = RetryConfig { jitter_factor: 1.0, base_delay: Duration::from_secs(1), ..Default::default() };
-        let delay = next_retry_delay(&config, 0, 1.0, Some(Duration::from_millis(500))).unwrap();
+        let delay =
+            next_retry_delay(&config, 0, 1.0, Some(Duration::from_millis(500))).expect("attempt 0 within max_retries");
         assert_eq!(delay, Duration::from_secs(2));
     }
 
