@@ -26,3 +26,8 @@ release-trigger = "changeset"
 match = "packages/michi-node"
 publish-to = ["npm"]
 release-trigger = "changeset"
+
+# Keep michi crate and npm wrapper versioned in lockstep
+[[fixed-group]]
+name = "michi-and-node"
+members = ["michi", "@orin-axi/michi"]
