@@ -4,5 +4,6 @@
   "description": "Root tooling for the michi repo — markdown formatting only. See packages/michi-node for the published package.",
   "devDependencies": {
     "oxfmt": "^0.60.0"
-  }
+  },
+  "version": "0.1.1"
 }
