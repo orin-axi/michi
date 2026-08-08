@@ -21,7 +21,8 @@ match = "."
 publish-to = ["cratesIo"]
 release-trigger = "changeset"
 
-# michi-node: NAPI cdylib + npm package, not yet published
+# michi-node: NAPI cdylib + npm package
 [[package]]
 match = "packages/michi-node"
-publish-to = []
+publish-to = ["npm"]
+release-trigger = "changeset"
