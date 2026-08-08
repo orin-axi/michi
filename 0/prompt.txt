@@ -133,3 +133,7 @@ We should have the NPM token setup in GH org no>
 ---
 
 I set the tokens, check
+
+---
+
+Yes
