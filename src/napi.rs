@@ -98,7 +98,11 @@ fn js_value_to_rust(v: JsToonValue) -> michi_toon::Value {
 /// exceeds this module's hard size limits (`MAX_ROWS`, `MAX_FIELDS`,
 /// `MAX_HINTS`) — an unbounded caller-supplied collection here would let a
 /// single JS call force unbounded synchronous allocation on Node's event
-/// loop, which `#[napi(catch_unwind)]` alone does not guard against.
+/// loop, which `#[napi(catch_unwind)]` alone does not guard against. Also
+/// returns an error if `ToonOptions::validate()` rejects the input — a row
+/// whose value count differs from `fields.len()`, or a structural character
+/// (`[`, `]`, `{`, `}`, `,`, `\n`, `\r`) in `type_name` or any field name.
+/// The error `reason` is the `ToonError` Display text verbatim.
 #[napi(catch_unwind)]
 pub fn render_toon(opts: JsToonOptions) -> napi::Result<String> {
     if opts.rows.len() > MAX_ROWS {
@@ -131,6 +135,8 @@ pub fn render_toon(opts: JsToonOptions) -> napi::Result<String> {
     let toon_opts = michi_toon::ToonOptions::new(opts.type_name, opts.fields, rows)
         .total_count(opts.total_count.map(usize::try_from).and_then(Result::ok))
         .hints(opts.hints);
+
+    toon_opts.validate().map_err(|e| napi::Error::from_reason(e.to_string()))?;
 
     Ok(michi_toon::render_toon(&toon_opts))
 }
@@ -803,6 +809,45 @@ mod tests {
         };
         let out = render_toon(opts).expect("valid input renders");
         assert_eq!(out, "t[1]{a}:\n  1755000000000\n");
+    }
+
+    #[test]
+    fn render_toon_rejects_row_length_mismatch() {
+        let opts = JsToonOptions {
+            type_name: "t".to_string(),
+            fields: vec!["a".to_string(), "b".to_string()],
+            rows: vec![vec![JsToonValue { str_val: Some("x".to_string()), ..value("str") }]],
+            total_count: None,
+            hints: vec![],
+        };
+        let err = render_toon(opts).expect_err("mismatched row must be rejected");
+        assert_eq!(err.reason, "row 0 has 1 values but 2 fields declared");
+    }
+
+    #[test]
+    fn render_toon_rejects_structural_char_in_type_name() {
+        let opts = JsToonOptions {
+            type_name: "a[b]".to_string(),
+            fields: vec!["x".to_string()],
+            rows: vec![vec![JsToonValue { str_val: Some("v".to_string()), ..value("str") }]],
+            total_count: None,
+            hints: vec![],
+        };
+        let err = render_toon(opts).expect_err("structural type_name must be rejected");
+        assert_eq!(err.reason, "type_name \"a[b]\" contains a structural character");
+    }
+
+    #[test]
+    fn render_toon_rejects_structural_char_in_field_name() {
+        let opts = JsToonOptions {
+            type_name: "t".to_string(),
+            fields: vec!["a,b".to_string()],
+            rows: vec![vec![JsToonValue { str_val: Some("v".to_string()), ..value("str") }]],
+            total_count: None,
+            hints: vec![],
+        };
+        let err = render_toon(opts).expect_err("structural field name must be rejected");
+        assert_eq!(err.reason, "field \"a,b\" contains a structural character");
     }
 
     #[test]
