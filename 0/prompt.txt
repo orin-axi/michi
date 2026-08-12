@@ -1,0 +1,345 @@
+Is our git history good enough to push up? Nothing embarassing that should be cleaned up?
+
+---
+
+we hve a GH repo in orin-axi that we should sync with
+
+---
+
+Shall we commit and push?
+
+---
+
+/proof
+
+---
+
+We have a published and working version of callisto, can we set it up for moon publishing
+
+---
+
+What are you writing???? WTF
+
+---
+
+Callisto publishes itself with callisto, why are you touching their repo?
+
+---
+
+The whole point is callisto publishes for us, are you fucking dumb?
+
+---
+
+Are you confident this would publish using changeset? Did you read the callisto docs? Their setup for the example???
+
+---
+
+Let's create a changeset that is succint, meaninful, friendly, feature focused without AI slop, word salad and filler words. Consider this goes into a changelog
+
+---
+
+CI and release failed
+
+---
+
+We don’t need to compile for macOS intel
+
+---
+
+Is it running?
+
+---
+
+Done?
+
+---
+
+That is not true, it's been more than 8 hrs
+
+---
+
+<task-notification>
+<task-id>bhmib10ya</task-id>
+<tool-use-id>toolu_01TTtjL5CeRxsVCW1XtSax9R</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/bhmib10ya.output</output-file>
+<status>killed</status>
+<summary>Background command "Watch the manually triggered CI run" was stopped</summary>
+</task-notification>
+
+---
+
+I've cancelled everything, check the ones that ran and see what's wrong
+
+---
+
+<task-notification>
+<task-id>byeqe0jp5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/byeqe0jp5.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for new CI run to appear then show status" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bl8xsjcx1</task-id>
+<tool-use-id>toolu_01DqzSScy8KKSG9As6C9ZsaT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/bl8xsjcx1.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI run on b38fc79 to complete" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b16v10paq</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/b16v10paq.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for runs on 83e2d9f to appear" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+You got interuptted?
+
+---
+
+<task-notification>
+<task-id>bq1mi03u8</task-id>
+<tool-use-id>toolu_01DzvJiLRrTdyrQdju3SvoUC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/bq1mi03u8.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for Release rerun to complete and show result" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+CI Failed in that release build, why? Find the root cause, consider it and propose solution
+
+---
+
+we should be publishing michi-node right?
+
+---
+
+Yeah
+
+---
+
+We should have the NPM token setup in GH org no>
+
+---
+
+I set the tokens, check
+
+---
+
+Yes
+
+---
+
+CI still failed
+
+---
+
+No but making the change should result in an update no???
+
+---
+
+Don’t rush, think through all of it first and plan
+
+---
+
+Is this well documented in Callisto? What should we give as a prompt to improve it?
+
+---
+
+Yes
+
+---
+
+Can you give me the details of what’s wrong and what needs to be fixed in Callisto?
+
+---
+
+Give me all as a prompt for the Callisto agent
+
+---
+
+Some of it was outside the md block, I can’t copy it like that
+
+---
+
+Tackling it for the next release of Callisto
+
+---
+
+I thought you did the fixed group already
+
+---
+
+Take a look at the ~/Projects/plugin-agents repo to understand our new SDD + semantic model way of coding + examples of our specs in the ~/Projects/callisto repo. We would like to comprehensively review our current codebase in the context of our goals to formulate specs and validate against those.
+
+We want to make sure we're thinking about the entire library of crates across the entire repo when considering changes. Considering comphrehensively how our code is modeled and works together. We want to semantically model our architecture and address any issues/bugs within that semantic model view.
+
+---
+
+Take a look at the ~/Projects/plugin-agents repo to understand our new SDD + semantic model way of coding + examples of our specs in the ~/Projects/callisto repo. We would like to comprehensively review our current codebase in the context of our goals to formulate specs and validate against those.
+
+We want to make sure we're thinking about the entire library of crates across the entire repo when considering changes. Considering comphrehensively how our code is modeled and works together. We want to semantically model our architecture and address any issues/bugs within that semantic model view.
+
+---
+
+<task-notification>
+<task-id>werexvnda</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/werexvnda.output</output-file>
+<status>completed</status>
+<summary>Dynamic workflow "Comprehensive semantic model + spec@1 characterization + bug audit across the michi Rust workspace" completed</summary>
+<result>{"semanticModel":{"invariants":[{"statement":"No unwrap()/expect() in lib code (tests OK with message)","source":"CLAUDE.md:15","enforced":false,"enforcement_evidence":"No [lints] table in any Cargo.toml, no clippy.toml, no clippy::unwrap_used/expect_used or disallowed_methods lint anywhere. All unwrap()/expect() occurrences found via grep (crates/michi-resilience/src/lib.rs, src/napi.rs, crates/michi-core/src/kv/mod.rs, crates/michi-truncate/src/lib.rs) sit after each file's #[cfg(test)] marker -- true today by inspection only, not machine-guarded against a future non-test violation."},{"statement":"No unsafe outside napi boundary","source":"CLAUDE.md:16","enforced":true,"enforcement_evidence":"#![deny(unsafe_code)] present in all 5 crate roots (src/lib.rs, crates/michi-core/src/lib.rs, crates/michi-resilience/src/lib.rs, crates/michi-toon/src/lib.rs, crates/michi-truncate/src/lib.rs). src/napi.rs carries a module-level #![allow(unsafe_code)] override with a justifying doc comment -- a real compile-time boundary. Gap: packages/michi-node/src/lib.rs (the cdylib shim) has no #![deny(unsafe_code)] of its own, so it is not covered by this compiler guard even though it currently contains no unsafe."},{"statement":"BTreeMap for output maps, HashMap for internal state only","source":"CLAUDE.md:17","enforced":false,"enforcement_evidence":"grep for BTreeMap and HashMap across src/, crates/*/src/, packages/michi-node/src/ returns zero matches anywhere in the codebase. The rule is currently vacuous (never exercised in either direction) and unprotected: no clippy::disallowed_types or similar lint exists to catch a future HashMap landing in output-rendering code."},{"statement":"Pre-allocate strings with String::with_capacity","source":"CLAUDE.md:18","enforced":false,"enforcement_evidence":"with_capacity is used broadly across 14 files spanning all layers (src/napi.rs; crates/michi-toon/src/{lib,escape,render}.rs; crates/michi-core/src/{empty,status,error,hints,pipeline/mod,idempotency,response,kv/mod,recovery}.rs; crates/michi-resilience/src/lib.rs; crates/michi-truncate/src/lib.rs), but no clippy lint or CI check enforces it -- a new String::new() + push_str pattern would compile and pass CI."},{"statement":"Truncation uses char boundaries (floor_char_boundary)","source":"CLAUDE.md:19","enforced":true,"enforcement_evidence":"The safety property is tested: crates/michi-truncate/src/lib.rs test `truncation_respects_char_boundaries` (line 119) asserts std::str::from_utf8(...).is_ok() on truncated output, gated by CI's `cargo nextest run`. However, the implementation never calls floor_char_boundary (an unstable/nightly-only std API) -- it uses content.char_indices().nth(keep_chars) (lines 59, 68) instead, a different but equivalent stable technique. Documentation names an API that does not appear anywhere in the codebase; the underlying safety property is verified, the specific named mechanism is not."},{"statement":"Every pub item has a doc comment","source":"CLAUDE.md:20","enforced":true,"enforcement_evidence":"#![warn(missing_docs)] present in all 5 crate roots. .github/workflows/ci.yml `lint` job runs `cargo clippy --workspace --all-features -- -D warnings`, which promotes every warning surfaced during that invocation -- including the missing_docs rustc lint, not only clippy:: lints -- to a hard CI-failing error."},{"statement":"NAPI version = \"3\"","source":"CLAUDE.md:21","enforced":false,"enforcement_evidence":"Declared in root Cargo.toml (napi = { version = \"3\", ... }) and packages/michi-node/Cargo.toml (napi = { version = \"3\", ... }). This is a manually maintained semver pin with no CI check or test asserting the major version stays 3; editing it would pass CI as long as the code still compiles against whatever version resolves."},{"statement":"#[napi(catch_unwind)] on every export","source":"CLAUDE.md:21","enforced":false,"enforcement_evidence":"Verified by direct inspection: all 28 function/method-level #[napi(...)] attributes in src/napi.rs carry catch_unwind, zero exceptions found via grep. True today, but no test, lint, or CI script asserts this programmatically -- a future export that forgets catch_unwind would compile and pass CI silently."},{"statement":"Benchmarks use divan, not criterion","source":"CLAUDE.md:22","enforced":false,"enforcement_evidence":"Root Cargo.toml [dev-dependencies] has divan = \"0.1\"; criterion appears in no Cargo.toml in the workspace; benches/{kv_render,toon_render}.rs use harness = false consistent with divan. True today but structurally unguarded -- nothing bans adding criterion as a dev-dependency in the future."},{"statement":"Tests run via cargo nextest run, not cargo test","source":"CLAUDE.md:23","enforced":true,"enforcement_evidence":".github/workflows/ci.yml `test` job runs `cargo nextest run --workspace` and `--workspace --all-features` exclusively; cargo test is never invoked in the required CI pipeline. Enforced at the pipeline-definition level. Gap: nextest does not execute doctests, and no CI job runs `cargo test --doc` or `cargo doc` either, so doctests are unexercised by the required gate despite invariant #6 requiring doc comments on every pub item."},{"statement":"src/ is a pure sync rendering library; default features have zero runtime dependencies","source":"CLAUDE.md:31 (compare README.md:111: \"zero runtime dependencies beyond thiserror\")","enforced":false,"enforcement_evidence":"Contradicted by the actual dependency graph. `cargo tree -p michi --no-default-features -e normal` shows the default build resolves thiserror AND compact_str (plus compact_str's transitive tree: castaway, cfg-if, itoa, ryu, static_assertions, and -- because crates/michi-toon/Cargo.toml hardcodes compact_str = { workspace = true, features = [\"serde\"] } with no optional = true -- serde, serde_derive, proc-macro2, quote, syn, unicode-ident unconditionally, regardless of whether michi's own serde feature is enabled). michi-toon is an unconditional dependency of michi-core, which is unconditional in the root facade, so this is unavoidable in the default build. README's weaker claim (zero beyond thiserror) is also inaccurate since it omits compact_str entirely. No CI check or cargo-deny rule catches this drift; it was found only by direct cargo tree inspection."},{"statement":"packages/michi-node is a thin NAPI cdylib shim","source":"CLAUDE.md:32, ARCHITECTURE.md:72-78","enforced":false,"enforcement_evidence":"True today by inspection: packages/michi-node/src/lib.rs is exactly `pub use michi::napi::*;` (one statement plus doc comments, 11 lines total). No test or CI check would fail if real logic were added there in the future."},{"statement":"Feature flags limited to napi/serde/schemars/miette in the root crate; Plan 2 (pipeline/fuzzy/cache/cli) lands as separate crates, never as features here","source":"CLAUDE.md:33","enforced":true,"enforcement_evidence":"Root Cargo.toml [features] = default, napi, serde, schemars, miette -- no pipeline/fuzzy/cache/cli feature exists today (verified by reading the file). crates/michi-core/src/lib.rs declares `pub mod pipeline;` unconditionally (data/render only, matching the module guide's 'execution in Plan 2' note), with no new feature flag added. True today by direct inspection; not protected by any cargo-deny rule or CI check against a future PR adding such a feature."},{"statement":"mcp module is always compiled, no feature gate","source":"CLAUDE.md module guide table","enforced":true,"enforcement_evidence":"crates/michi-core/src/lib.rs declares `pub mod mcp;` with no #[cfg(feature = ...)] attribute -- compiles unconditionally in every build, confirmed by reading the module declaration list directly."},{"statement":"telemetry module is a no-op provider, zero-cost default, always compiled","source":"CLAUDE.md module guide table","enforced":true,"enforcement_evidence":"crates/michi-core/src/lib.rs declares `pub mod telemetry;` unconditionally, same as the mcp module -- no feature ga
+... (truncated 175394 chars, full result in /private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/werexvnda.output)</result>
+<diagnostics>Per-agent results: /Users/gabe/.claude/projects/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904/subagents/workflows/wf_f32441f2-61d/journal.jsonl — one {"type":"result",...} line per completed agent with its full return value.
+If the result above is empty or unexpected, Read this file BEFORE diagnosing — do not assume agents returned non-empty results.
+To re-run with edited post-processing: Workflow({scriptPath: '/Users/gabe/.claude/projects/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904/workflows/scripts/michi-semantic-model-audit-wf_f32441f2-61d.js', resumeFromRunId: 'wf_f32441f2-61d'}) — agents whose (prompt, opts) are unchanged replay from cache.</diagnostics>
+<usage><agent_count>107</agent_count><agents_done>107</agents_done><agents_error>0</agents_error><agents_skipped>0</agents_skipped><agents_empty_result>0</agents_empty_result><subagent_tokens>5080298</subagent_tokens><tool_uses>1224</tool_uses><duration_ms>2018342</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a9995eded0ed19acb</task-id>
+<tool-use-id>toolu_01TjRPVum8T3J18HKHj6J2f2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/a9995eded0ed19acb.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit SPEC-NAPI-POINTFIX-001 for quality issues" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Complete Audit Findings — SPEC-NAPI-POINTFIX-001
+
+Verified against live source: `/Users/gabe/Projects/michi/src/napi.rs`, `crates/michi-toon/src/lib.rs`, `crates/michi-toon/src/render.rs`, `crates/michi-toon/src/escape.rs`, `crates/michi-core/src/response.rs`, `docs/spec/04-mcp-and-napi.md`, and napi-rs 3.10.3 source.
+
+**overall: fail**
+
+---
+
+### Issue 1 — Missing error case: `validate()` also enforces name checks, not just row length
+
+**Affects**: `scope` (the `render_toon` fix description), `AC-004`, `AC-008`. Type: `missing-error-case` (with an `ambiguous` component in AC-004/AC-008's wording).
+
+**Problem**: `ToonOptions::validate()` (`crates/michi-toon/src/lib.rs:130-152`) performs three checks, not one:
+1. `InvalidTypeName` — `type_name` contains a structural character (`[`, `]`, `{`, `}`, `,`, `\n`, `\r`)
+2. `InvalidFieldName` — any field name contains a structural character
+3. `RowLengthMismatch` — a row's length doesn't equal `fields.len()`
+
+The spec's purpose and scope frame this fix entirely in terms of check #3 ("row/field validation" is used loosely to mean row-length checking). But the scope directs calling `validate()` unconditionally, which wires in checks #1 and #2 as a side effect.
+
+Today, without `validate()`, `render_toon` doesn't reject structural characters in `type_name`/field names — it silently sanitizes them. Confirmed at `crates/michi-toon/src/escape.rs:77-79` (`sanitize_header_token`): any of `[`, `]`, `{`, `}`, `,`, `\n`, `\r` in a header token is replaced with `_`, and rendering succeeds.
+
+**Concrete failure scenario**: `renderToon({ typeName: 'a[b]', fields: ['x'], rows: [['v']] })`.
+- Before the fix: succeeds, renders with `typeName` sanitized to `a_b`.
+- After the fix (per scope, `validate()` called unconditionally): throws a new `napi::Error` for `InvalidTypeName` — behavior that previously succeeded now fails.
+
+This directly conflicts with two existing criteria:
+- **AC-004** says: "Calling renderToon with valid input where every row length equals fields.length continues to succeed with no new rejection." — "valid input" is undefined with respect to type_name/field-name content, so this criterion is ambiguous about whether `a[b]` counts as "valid," and as literally read it's simply false post-fix.
+- **AC-008** says: "Existing Node test suite and insta snapshots produce the same pass/fail outcome after the fix for every pre-existing case." — if any existing test (or any future caller) passes a structural character in `type_name`/fields, this guarantee breaks.
+
+No acceptance criterion in the spec exercises the new `InvalidTypeName`/`InvalidFieldName` rejection at all.
+
+**Suggested fix**:
+
+Add to `scope`, after the existing `render_toon` fix description:
+&gt; `toon_opts.validate()` also enforces `ToonError::InvalidTypeName` and `ToonError::InvalidFieldName`. Any existing caller passing a `type_name` or field name containing one of the structural characters `[`, `]`, `{`, `}`, `,`, `\n`, `\r` will change from succeeding (character silently replaced with `_` via `sanitize_header_token`) to throwing a `napi::Error`. This is an intentional, in-scope consequence of calling `validate()` unconditionally, not an out-of-scope side effect.
+
+Add two new acceptance criteria:
+- **AC-010** (`is_error_case: true`): "Calling `renderToon` with `typeName: 'a[b]'`, `fields: ['x']`, `rows: [['v']]` (row length matches field count, but `typeName` contains a structural character) throws/rejects a JS error whose message contains `type_name` and the literal offending string `\"a[b]\"`, in both debug and release builds."
+- **AC-011** (`is_error_case: true`): "Calling `renderToon` with `fields: ['a,b']`, `rows: [['v']]` (a field name containing a comma) throws/rejects a JS error whose message contains `field` and the literal offending string `\"a,b\"`, in both debug and release builds."
+
+Rewrite **AC-004** to:
+&gt; "Calling `renderToon` with a `typeName` and every field name containing none of the structural characters `[`, `]`, `{`, `}`, `,`, `\n`, `\r`, and every row length equal to `fields.length`, continues to succeed with no new rejection, producing byte-identical output to the pre-fix behavior."
+
+Rewrite **AC-008** to add an explicit carve-out (or confirm and state the carve-out is empty):
+&gt; "The existing Node test suite and insta snapshots produce the same pass/fail outcome after the fix for every pre-existing case, with the sole exception of any case (if any exist) that passes a structural character in `typeName` or a field name — confirmed by grep of the existing test suite that no such pre-existing case exists / [or: enumerate the N cases that change and their new expected outcome]."
+
+---
+
+### Issue 2 — Ambiguous: exact error-message construction unspecified, but AC-007 requires an exact match
+
+**Affects**: `api_surface` entry for `render_toon`, `AC-007`. Type: `ambiguous`.
+
+**Problem**: The scope/api_surface text says only: "on `Err(e)` return `napi::Error::from_reason(...)`" — the ellipsis leaves unspecified what string is actually passed to `from_reason`. Meanwhile **AC-007** requires: "The error from AC-005/AC-006 has a message containing 'row', the mismatched row index, expected field count, and actual value count, matching `ToonError::RowLengthMismatch`'s Display format."
+
+I confirmed the exact `Display` impl at `crates/michi-toon/src/lib.rs:58-60`:
+```rust
+Self::RowLengthMismatch { row_index, expected, actual } =&gt; {
+    write!(f, "row {row_index} has {actual} values but {expected} fields declared")
+}
+```
+
+Two implementations both satisfy the literal scope text:
+- `napi::Error::from_reason(e.to_string())` → produces exactly `"row 0 has 1 values but 2 fields declared"`, satisfying AC-007.
+- `napi::Error::from_reason(format!("row/field validation failed: {e:?}"))` → also satisfies the loose scope wording ("return napi::Error::from_reason(...) on Err(e)") but fails AC-007's exact-content requirement.
+
+A developer implementing strictly from the `scope`/`api_surface` text as written has no way to know which is required — the criterion that pins it down (AC-007) and the implementation instruction (`api_surface`) are in two different, disconnected places, and only one of them is precise.
+
+**Suggested fix**: Pin the exact code in `api_surface`, replacing the current `render_toon` entry's description with:
+&gt; "Calls `toon_opts.validate()` immediately before `michi_toon::render_toon(&amp;toon_opts)`. On `Err(e)`, returns `Err(napi::Error::from_reason(e.to_string()))` before any rendering occurs — the JS-visible thrown error's `.message` is exactly `ToonError`'s `Display` output, e.g. for a row-length mismatch: `\"row 0 has 1 values but 2 fields declared\"`; for an invalid type_name: `\"type_name \\\"a[b]\\\" contains a structural character\"`."
+
+This single rewrite also resolves AC-007's "OVERFITTED" grounding concern raised separately — once the exact code is specified in scope, matching the Display format stops being an implementer's unstated assumption and becomes a deliberate, spec-mandated contract.
+
+---
+
+### Issue 3 — Incomplete: the spec leaves its own cited contract document stale
+
+**Affects**: `purpose` (which cites `docs/spec/04-mcp-and-napi.md:157`), no corresponding entry in `scope` or `non_goals`. Type: `incomplete`.
+
+**Problem**: The spec's `purpose` field says this fix "brings `src/napi.rs` into compliance with the existing error-handling contract stated in `docs/spec/04-mcp-and-napi.md:157`." I confirmed line 157:
+&gt; "Wrap fallible conversions (row shape mismatches, oversized inputs) in `Result` and surface them as `napi::Error::from_reason(...)`."
+
+That's accurate and well-grounded. But the same document, a few lines later (the "Numeric boundary" section, ~line 161-166), states:
+&gt; "`total_count` is `usize` in Rust, and the NAPI boundary narrows further to a plain `i32`... JavaScript numbers are 64-bit floats with a max safe integer of 2^53, so `i32` is comfortably within the safe range — **no need for an `i64`-as-`number` mapping or `BigInt`**."
+
+That claim was written specifically about `total_count`, but it reads as a general boundary policy. Once `JsToonValue.int_val` becomes `Option&lt;i64&gt;` (this spec's entire point), the doc — the very file this spec cites as its authoritative contract — will contain a statement that a future reader will reasonably interpret as directly contradicted by the shipped code, with no note explaining the distinction. The spec neither updates this section nor lists it under `non_goals`, so it's simply unaddressed.
+
+**Suggested fix**: Add to `scope`:
+&gt; "Update the 'Numeric boundary' section of `docs/spec/04-mcp-and-napi.md` to scope its 'no `i64`-as-`number` mapping needed' claim explicitly to `total_count`/count-like fields, and add a sentence documenting that `JsToonValue.int_val` (and any KV int value routed through `js_kv_value_to_rust`) is now `i64`-as-JS-`number` via `napi_get_value_int64`/`napi_create_int64`, safe and lossless up to `Number.MAX_SAFE_INTEGER` (2^53 − 1), with values beyond that silently losing precision per Node's N-API coercion behavior."
+
+If the intent is instead to defer this doc update to a follow-up, make that explicit rather than silent — add to `non_goals`:
+&gt; "Updating the 'Numeric boundary' section of `docs/spec/04-mcp-and-napi.md` to reflect the new `int_val: i64` field is out of scope for this point fix and is tracked separately as [ticket/spec ID]."
+
+---
+
+### Not flagged as defects (reviewed and dismissed)
+
+- **AC-002** (negative-value wraparound) and **AC-009** (non-integer `intVal` behavior pinned unchanged) — canon-verifier flagged these as "UNSUPPORTED" relative to the source requirement's literal wording. I confirmed both are concrete, unambiguous, testable propositions correctly grounded in actual code (`Value::Int`'s `Display` correctly formats negative `i64`; `napi_get_value_int64` and `napi_get_value_int32` both truncate non-integer JS numbers the same way, so AC-009's "unchanged behavior" claim is accurate). These are requirement-grounding/scope-breadth judgment calls, not spec-quality defects under the five audit dimensions — I did not raise them as issues.
+- **`Option&lt;i64&gt;` as a `#[napi(object)]` field type** — explicitly asked about; confirmed technically valid. napi-rs 3.10.3 (`bindgen_runtime/js_values/number.rs`) maps `i64` via `napi_get_value_int64`/`napi_create_int64` to `ValueType::Number`, i.e., a plain JS `number` — not `BigInt`. The `api_surface` entry for `int_val` is accurate as written; no fix needed.</result>
+<usage><subagent_tokens>62818</subagent_tokens><tool_uses>0</tool_uses><duration_ms>38741</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a10a0e5aae081bd30</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/8d4c6337-231f-4089-8c21-3efca50f628c/tasks/a10a0e5aae081bd30.output</output-file>
+<status>completed</status>
+<summary>Agent "Plan SPEC-NAPI-POINTFIX-001 implementation" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+The complete `plan@1` is above (also on disk at `/private/tmp/claude-501/-Users-gabe-Projects-michi/e7a8609a-874c-4e5a-bfea-81d33b8e2904/scratchpad/plan-napi-pointfix-v2.json`), validated against `/Users/gabe/.claude/plugins/marketplaces/orin-dx-agent-plugins/shared/schemas/plan@1.json`.
+
+Coverage check: spec `SPEC-NAPI-POINTFIX-001` at `/Users/gabe/Projects/michi/.claude/specs/napi-boundary-point-fixes.json` defines AC-001 through AC-011; all 11 appear in exactly the tasks that make them true (verified programmatically, no orphans either direction).
+
+Six tasks, TDD-ordered so every red phase is genuine (tests are written and red-run against the *current*, unfixed source before the fix that turns them green, rather than the fix landing first and the test's "red" being an accidental stale-binary artifact):
+
+- TASK-001 — add failing Node tests for AC-001/002/003/008 against the current i32-truncating source (red).
+- TASK-002 — widen `JsToonValue.int_val` to `i64`, drop the two redundant `i64::from(...)` casts at `src/napi.rs:86` and `:229` (green; covers AC-001/002/003/008).
+- TASK-003 — add failing Node `assert.throws` tests with the exact spec error strings for AC-005/006/009/010 (red).
+- TASK-004 — wire `toon_opts.validate().map_err(|e| napi::Error::from_reason(e.to_string()))?` into `render_toon` (green; covers AC-004/005/006/009/010 — AC-004 via the pre-existing test at `packages/michi-node/__test__/index.test.mjs:21-38`, not a duplicate).
+- TASK-005 — full workspace + Node regression run, plus a `git diff $BASE..HEAD | grep '^-[^-]'` check that actually proves no pre-existing test/snapshot line was touched (covers AC-007).
+- TASK-006 — final docs edit to `docs/spec/04-mcp-and-napi.md`, scoping the safe-range claim to `total_count` and documenting the `i64` `intVal` mapping (covers AC-011).
+
+This corrects a first draft that an adversarial review (vector-challenger) failed on: it didn't conform to the plan@1 schema (missing `goal`/`architecture`/`tech_stack`/`steps`, wrong `files` shape), ordered the Rust fix before the tests that observe it (fake red phase), only asserted Rust-side `err.reason` instead of the JS-facing `.message` the spec actually requires, needed an unnecessary multi-minute `--release` compile, duplicated an existing AC-004 test, and used a no-op `git diff --stat` for the AC-007 check. All of those are fixed in this version.</result>
+<usage><subagent_tokens>90991</subagent_tokens><tool_uses>4</tool_uses><duration_ms>169523</duration_ms></usage>
+</task-notification>
