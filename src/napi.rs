@@ -22,6 +22,10 @@
 
 use napi_derive::napi;
 
+/// Validating newtypes for the NAPI numeric boundary (shared kernel for
+/// both the rendering and resilience domains).
+pub mod num;
+
 /// Maximum row count accepted for a single call's `rows`: [`render_toon`]'s
 /// `opts.rows` and [`JsAgentResponse::items`]'s `rows`.
 const MAX_ROWS: usize = 100_000;
