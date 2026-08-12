@@ -163,8 +163,9 @@ Any `#[napi]` function returning `napi::Result<T>` throws a JS `Error` on `Err`.
 
 `total_count` is `usize` in Rust, and the NAPI boundary narrows further to a plain `i32` (`JsToonOptions.total_count`, `JsAgentResponse::total_count`), clamped non-negative (`n.max(0) as usize`) on the way in.
 
-- JavaScript numbers are 64-bit floats with a max safe integer of 2^53, so `i32` is comfortably within the safe range — no need for an `i64`-as-`number` mapping or `BigInt`.
+- For `total_count` specifically: JavaScript numbers are 64-bit floats with a max safe integer of 2^53, so `i32` is comfortably within the safe range for this field — no need for an `i64`-as-`number` mapping or `BigInt`.
 - Counts beyond `i32::MAX` aren't a realistic concern for agent list responses.
+- `JsToonValue.intVal` (and any KV int value routed through `js_kv_value_to_rust`) is `i64`, mapped to a JS `number` via `napi_get_value_int64`/`napi_create_int64`. This is safe and lossless up to `Number.MAX_SAFE_INTEGER` (2^53 minus 1); values beyond that silently lose precision per Node's N-API coercion behavior.
 
 ### Platform binary loading (`index.js`)
 
