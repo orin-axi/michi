@@ -160,4 +160,14 @@ mod tests {
             assert_eq!(err, format!("expected an integer in [-9007199254740991, 9007199254740991], got {v}"));
         }
     }
+
+    #[test]
+    fn js_count_type_name_is_js_count() {
+        assert_eq!(JsCount::type_name(), "JsCount");
+    }
+
+    #[test]
+    fn js_int_type_name_is_js_int() {
+        assert_eq!(JsInt::type_name(), "JsInt");
+    }
 }
