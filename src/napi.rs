@@ -50,7 +50,7 @@ pub struct JsToonValue {
     pub str_val: Option<String>,
     /// The value when `type` is `"int"`.
     #[napi(js_name = "intVal")]
-    pub int_val: Option<i32>,
+    pub int_val: Option<i64>,
     /// The value when `type` is `"float"`.
     #[napi(js_name = "floatVal")]
     pub float_val: Option<f64>,
@@ -83,7 +83,7 @@ pub struct JsToonOptions {
 fn js_value_to_rust(v: JsToonValue) -> michi_toon::Value {
     match v.r#type.as_str() {
         "str" => michi_toon::Value::Str(v.str_val.unwrap_or_default().into()),
-        "int" => michi_toon::Value::Int(i64::from(v.int_val.unwrap_or(0))),
+        "int" => michi_toon::Value::Int(v.int_val.unwrap_or(0)),
         "float" => michi_toon::Value::Float(v.float_val.unwrap_or(0.0)),
         "bool" => michi_toon::Value::Bool(v.bool_val.unwrap_or(false)),
         _ => michi_toon::Value::Null,
@@ -226,7 +226,7 @@ pub struct JsKvItem {
 fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
     match v.r#type.as_str() {
         "str" => crate::kv::KvValue::Text(v.str_val.unwrap_or_default()),
-        "int" => crate::kv::KvValue::Int(i64::from(v.int_val.unwrap_or(0))),
+        "int" => crate::kv::KvValue::Int(v.int_val.unwrap_or(0)),
         "float" => {
             let decimals = v.decimals_val.unwrap_or(6).clamp(0, 20) as u8;
             crate::kv::KvValue::Float(v.float_val.unwrap_or(0.0), decimals)
@@ -790,6 +790,19 @@ mod tests {
             hints: vec![],
         };
         assert!(render_toon(opts).is_err());
+    }
+
+    #[test]
+    fn render_toon_renders_int_beyond_i32_range() {
+        let opts = JsToonOptions {
+            type_name: "t".to_string(),
+            fields: vec!["a".to_string()],
+            rows: vec![vec![JsToonValue { int_val: Some(1_755_000_000_000), ..value("int") }]],
+            total_count: None,
+            hints: vec![],
+        };
+        let out = render_toon(opts).expect("valid input renders");
+        assert_eq!(out, "t[1]{a}:\n  1755000000000\n");
     }
 
     #[test]

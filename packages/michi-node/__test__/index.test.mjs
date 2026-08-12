@@ -266,3 +266,25 @@ void describe('renderFor / hasHumanContent', () => {
     assert.throws(() => r.renderFor('nonsense'), /nonsense/)
   })
 })
+
+void describe('int64 boundary (SPEC-NAPI-POINTFIX-001)', () => {
+  void it('AC-001 renders a positive int beyond i32::MAX losslessly', () => {
+    const out = renderToon({ typeName: 't', fields: ['a'], rows: [[{ type: 'int', intVal: 1755000000000 }]], hints: [] })
+    assert.strictEqual(out, 't[1]{a}:\n  1755000000000\n')
+  })
+  void it('AC-002 renders a negative int beyond i32::MIN losslessly', () => {
+    const out = renderToon({ typeName: 't', fields: ['a'], rows: [[{ type: 'int', intVal: -1755000000000 }]], hints: [] })
+    assert.strictEqual(out, 't[1]{a}:\n  -1755000000000\n')
+  })
+  void it('AC-003 renderKv renders an int beyond i32::MAX losslessly', () => {
+    const out = renderKv([{ key: 'id', value: { type: 'int', intVal: 1755000000000 } }], null, [])
+    assert.strictEqual(out, 'id: 1755000000000\n')
+  })
+  void it('AC-008 truncates a non-integer intVal toward zero with no error', () => {
+    let out
+    assert.doesNotThrow(() => {
+      out = renderToon({ typeName: 't', fields: ['a'], rows: [[{ type: 'int', intVal: 1.5 }]], hints: [] })
+    })
+    assert.strictEqual(out, 't[1]{a}:\n  1\n')
+  })
+})
