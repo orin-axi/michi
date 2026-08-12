@@ -116,6 +116,126 @@ impl ToNapiValue for JsInt {
     }
 }
 
+/// The shared kernel type for every bounded-integer position on the NAPI
+/// boundary, in either domain. Accepts a JS number only when it is finite,
+/// has no fractional part, and satisfies `MIN <= v <= MAX`. Generic and
+/// reusable — not specialized to any single domain's bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsRanged<const MIN: i64, const MAX: i64>(i64);
+
+impl<const MIN: i64, const MAX: i64> JsRanged<MIN, MAX> {
+    const U8_FITS: () = assert!(MIN >= 0 && MAX <= u8::MAX as i64, "JsRanged bounds do not fit in u8");
+
+    /// Returns the validated integer.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+
+    /// Returns the validated integer narrowed to `u8`. Only valid when
+    /// `MIN >= 0 && MAX <= u8::MAX`; instantiating this function with
+    /// bounds that don't fit `u8` is a compile error (`E0080`) via
+    /// `U8_FITS`.
+    // NOT `const fn`: `u8::try_from` cannot be called inside a const fn on
+    // this workspace's pinned rustc 1.96 (E0658 — `TryFrom` is not yet a
+    // const trait).
+    pub fn get_u8(self) -> u8 {
+        let () = Self::U8_FITS;
+        u8::try_from(self.0).unwrap_or(u8::MAX)
+    }
+}
+
+impl<const MIN: i64, const MAX: i64> TryFrom<f64> for JsRanged<MIN, MAX> {
+    type Error = String;
+
+    fn try_from(v: f64) -> Result<Self, Self::Error> {
+        if v.is_finite() && v.fract() == 0.0 && v >= MIN as f64 && v <= MAX as f64 {
+            Ok(Self(v as i64))
+        } else {
+            Err(format!("expected an integer in [{MIN}, {MAX}], got {v}"))
+        }
+    }
+}
+
+impl<const MIN: i64, const MAX: i64> TypeName for JsRanged<MIN, MAX> {
+    fn type_name() -> &'static str {
+        "JsRanged"
+    }
+
+    fn value_type() -> napi::ValueType {
+        napi::ValueType::Number
+    }
+}
+
+impl<const MIN: i64, const MAX: i64> ValidateNapiValue for JsRanged<MIN, MAX> {}
+
+impl<const MIN: i64, const MAX: i64> FromNapiValue for JsRanged<MIN, MAX> {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let v = unsafe { f64::from_napi_value(env, napi_val)? };
+        Self::try_from(v).map_err(|msg| napi::Error::new(napi::Status::InvalidArg, msg))
+    }
+}
+
+impl<const MIN: i64, const MAX: i64> ToNapiValue for JsRanged<MIN, MAX> {
+    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
+        unsafe { f64::to_napi_value(env, val.0 as f64) }
+    }
+}
+
+/// The rendering-domain alias used at `JsToonValue.decimalsVal`. Consumed
+/// via `get_u8()`, which compiles because `[0, 20]` fits `u8`.
+pub type JsDecimals = JsRanged<0, 20>;
+
+/// A JavaScript number accepted only when `f64::is_finite` holds — `NaN`,
+/// `Infinity`, and `-Infinity` are rejected. Stores `f64`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JsFloat(f64);
+
+impl JsFloat {
+    /// Returns the validated float.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for JsFloat {
+    type Error = String;
+
+    fn try_from(v: f64) -> Result<Self, Self::Error> {
+        if v.is_finite() {
+            Ok(Self(v))
+        } else {
+            Err(format!("expected a finite number, got {v}"))
+        }
+    }
+}
+
+impl TypeName for JsFloat {
+    fn type_name() -> &'static str {
+        "JsFloat"
+    }
+
+    fn value_type() -> napi::ValueType {
+        napi::ValueType::Number
+    }
+}
+
+impl ValidateNapiValue for JsFloat {}
+
+impl FromNapiValue for JsFloat {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let v = unsafe { f64::from_napi_value(env, napi_val)? };
+        Self::try_from(v).map_err(|msg| napi::Error::new(napi::Status::InvalidArg, msg))
+    }
+}
+
+impl ToNapiValue for JsFloat {
+    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
+        unsafe { f64::to_napi_value(env, val.0) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,5 +289,33 @@ mod tests {
     #[test]
     fn js_int_type_name_is_js_int() {
         assert_eq!(JsInt::type_name(), "JsInt");
+    }
+
+    #[test]
+    fn js_decimals_accepts_zero_through_twenty() {
+        for (v, expected) in [(0.0, 0u8), (6.0, 6), (20.0, 20)] {
+            let d = JsDecimals::try_from(v).expect("in-domain decimals value");
+            assert_eq!(d.get_u8(), expected, "input {v}");
+        }
+    }
+
+    #[test]
+    fn js_decimals_rejects_out_of_range() {
+        for v in [-1.0, 21.0, 6.5, f64::NAN, f64::INFINITY] {
+            let err = JsDecimals::try_from(v).expect_err("out-of-range decimals value must be rejected");
+            assert_eq!(err, format!("expected an integer in [0, 20], got {v}"));
+        }
+    }
+
+    #[test]
+    fn js_float_accepts_finite_rejects_nan_and_infinity() {
+        for v in [0.0, -0.0, 1.5, -1.5, f64::MAX, f64::MIN_POSITIVE] {
+            let f = JsFloat::try_from(v).expect("finite value must be accepted");
+            assert_eq!(f.get().to_bits(), v.to_bits(), "input {v}");
+        }
+        for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let err = JsFloat::try_from(v).expect_err("non-finite value must be rejected");
+            assert_eq!(err, format!("expected a finite number, got {v}"));
+        }
     }
 }
