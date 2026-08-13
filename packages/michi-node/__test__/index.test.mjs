@@ -534,4 +534,8 @@ void describe('retry_after_ms boundary (SPEC-ARCH-004)', () => {
   void it('succeeds with delay 500 when retry_after_ms = 500 is present and in-domain (AC-026)', () => {
     assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0, 500), 500)
   })
+
+  void it('succeeds with delay 110 when retry_after_ms = 50 is present but loses to the jittered delay', () => {
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0, 50), 110)
+  })
 })
