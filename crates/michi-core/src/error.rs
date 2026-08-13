@@ -429,6 +429,16 @@ mod tests {
         );
     }
 
+    // AC-016: every prior exact-literal witness for render_github_annotation()
+    // uses a DomainError with no hints and no recovery, leaving the universal
+    // "exactly {label}::{message}" claim unproven against those fields --
+    // unlike AC-012a, which does prove retry_after contributes nothing here.
+    #[test]
+    fn ac016_render_github_annotation_ignores_hints_and_recovery() {
+        let e = DomainError::new(ErrorCode::InvalidInput, "m").hint("h").recovery(RecoveryHint::new("t"));
+        assert_eq!(e.render_github_annotation(), "::error title=invalid_input::m");
+    }
+
     #[test]
     fn render_json_output_is_valid_json_with_all_fields() {
         let err = DomainError::new(ErrorCode::NotFound, r#"has "quotes" and \backslash"#)
@@ -662,6 +672,24 @@ mod tests {
         assert_eq!(e_with_retry_after.render(), "error: not_found\nmessage: m\nexit_code: 1\n");
     }
 
+    // AC-014/AC-014a/AC-014b/AC-015: every prior exact-literal render()
+    // witness uses a code whose retryable defaults to false (NotFound,
+    // Conflict). The `.retryable` field is never rendered by render() at
+    // all, so this closes the untested retryable==true half of the input
+    // space for both the bare-prefix and hints+recovery shapes.
+    #[test]
+    fn ac015_render_with_no_hints_no_recovery_ignores_retryable_true() {
+        let e = DomainError::new(ErrorCode::RateLimited, "m");
+        assert!(e.retryable, "RateLimited defaults retryable=true");
+        assert_eq!(e.render(), "error: rate_limited\nmessage: m\nexit_code: 1\n");
+    }
+
+    #[test]
+    fn ac014_render_with_hints_and_recovery_ignores_retryable_true() {
+        let e = DomainError::new(ErrorCode::RateLimited, "m").hint("h").recovery(RecoveryHint::new("t"));
+        assert_eq!(e.render(), "error: rate_limited\nmessage: m\nexit_code: 1\nhelp[1]:\n  h\nrecovery[1]:\n  t\n");
+    }
+
     #[test]
     #[cfg(feature = "serde")]
     fn ac018_render_json_top_level_keys_are_exactly_the_specified_set() {
@@ -721,6 +749,19 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(parsed["message"].as_str().unwrap(), original_message);
         assert_eq!(parsed["hints"][0].as_str().unwrap(), original_hint);
+    }
+
+    // AC-018/AC-021a: \n, \r, \t each have their own dedicated escape arm in
+    // json_escape_str; this proves the generic below-0x20 control-character
+    // arm (\u00XX) that every OTHER control character falls through to.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac021a_generic_control_characters_below_0x20_round_trip_exactly() {
+        let original = "before\u{1}mid\u{1f}end";
+        let err = DomainError::new(ErrorCode::NotFound, original);
+        let raw = err.render_json();
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("must be valid JSON");
+        assert_eq!(parsed["message"].as_str().unwrap(), original);
     }
 
     #[test]
