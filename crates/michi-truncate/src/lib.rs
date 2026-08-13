@@ -216,6 +216,15 @@ mod tests {
     }
 
     #[test]
+    fn ac017_exact_output_at_200_chars_50_max() {
+        let t = truncate(&"a".repeat(200), 50, "full=true");
+        assert!(t.was_truncated);
+        assert_eq!(t.content.chars().count(), 50);
+        assert_eq!(t.content, "aaaaaaaaaaaa (200 chars truncated — use full=true)");
+        assert_eq!(t.signal, Some("(200 chars truncated — use full=true)".to_string()));
+    }
+
+    #[test]
     fn ac004_suffix_present_with_leading_space_at_exact_fit() {
         let content = "a".repeat(100);
         let t = truncate(&content, 30, "x");
