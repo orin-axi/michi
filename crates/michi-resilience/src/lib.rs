@@ -426,6 +426,16 @@ mod tests {
     }
 
     #[test]
+    fn retry_after_exceeding_u64_millis_saturates_instead_of_truncating() {
+        let config =
+            RetryConfig::try_new(3, Duration::from_millis(1), Duration::from_secs(200_000_000_000_000_000), 0.0)
+                .expect("valid config");
+        let delay = next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(100_000_000_000_000_000)))
+            .expect("attempt 0 within max_retries");
+        assert_eq!(delay, Duration::from_millis(u64::MAX));
+    }
+
+    #[test]
     fn retry_after_wins_when_larger_than_backoff() {
         let config = RetryConfig { jitter_factor: 0.0, ..Default::default() };
         let delay =
