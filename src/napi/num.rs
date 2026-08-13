@@ -292,6 +292,16 @@ mod tests {
     }
 
     #[test]
+    fn js_ranged_type_name_is_js_ranged() {
+        assert_eq!(JsRanged::<0, 20>::type_name(), "JsRanged");
+    }
+
+    #[test]
+    fn js_float_type_name_is_js_float() {
+        assert_eq!(JsFloat::type_name(), "JsFloat");
+    }
+
+    #[test]
     fn js_decimals_accepts_zero_through_twenty() {
         for (v, expected) in [(0.0, 0u8), (6.0, 6), (20.0, 20)] {
             let d = JsDecimals::try_from(v).expect("in-domain decimals value");
