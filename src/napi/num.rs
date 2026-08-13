@@ -673,10 +673,10 @@ mod tests {
         let napi_src = include_str!("../napi.rs");
         assert_eq!(
             napi_src.matches("#[allow(clippy::cast_possible_truncation").count(),
-            1,
-            "expected exactly one cast-allow attribute (is_retryable_status) to remain in src/napi.rs"
+            0,
+            "expected zero cast-allow attributes to remain in src/napi.rs"
         );
-        for residual in [".max(0)", "usize::try_from", ".clamp(0, 20)"] {
+        for residual in [".max(0)", "usize::try_from", ".clamp(0, 20)", "u16::try_from", ".clamp(0.0, 1.0)"] {
             assert!(!napi_src.contains(residual), "residual coercion expression `{residual}` found in src/napi.rs");
         }
     }
