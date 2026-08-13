@@ -190,4 +190,18 @@ mod tests {
         let round_tripped_value: serde_json::Value = serde_json::from_str(&round_tripped.structured_content).unwrap();
         assert_eq!(original_value, round_tripped_value);
     }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac032a_round_trip_is_lossy_for_non_json_structured_content() {
+        let empty = CallToolResult::new(vec![], false, "");
+        let wire = serde_json::to_string(&empty).unwrap();
+        let round_tripped: CallToolResult = serde_json::from_str(&wire).unwrap();
+        assert_eq!(round_tripped.structured_content, "\"\"");
+
+        let not_json = CallToolResult::new(vec![], false, "not json");
+        let wire = serde_json::to_string(&not_json).unwrap();
+        let round_tripped: CallToolResult = serde_json::from_str(&wire).unwrap();
+        assert_eq!(round_tripped.structured_content, "\"not json\"");
+    }
 }
