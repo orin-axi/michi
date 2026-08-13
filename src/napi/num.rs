@@ -516,6 +516,11 @@ mod tests {
     }
 
     #[test]
+    fn js_delay_millis_type_name_is_js_delay_millis() {
+        assert_eq!(JsDelayMillis::type_name(), "JsDelayMillis");
+    }
+
+    #[test]
     fn module_denies_cast_lints() {
         let src = include_str!("../napi.rs");
         // Whitespace-stripped: rustfmt wraps this attribute's ~147-char
