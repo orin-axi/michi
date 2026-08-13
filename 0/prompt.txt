@@ -167,3 +167,62 @@ and add a new criterion:
 Relevant files: `/Users/gabe/Projects/michi/.claude/specs/michi-truncate.json`, `/Users/gabe/Projects/michi/crates/michi-truncate/src/lib.rs`, `/Users/gabe/Projects/michi/.claude/specs/michi-toon.json`, `/Users/gabe/Projects/michi/.claude/specs/michi-core-response.json`, `/Users/gabe/Projects/michi/crates/michi-truncate/tests/ui_fail.rs`, `/Users/gabe/Projects/michi/crates/michi-truncate/tests/ui-fail/struct_literal.rs`, `/Users/gabe/Projects/michi/crates/michi-truncate/tests/ui-fail/exhaustive_match.rs`.</result>
 <usage><subagent_tokens>66430</subagent_tokens><tool_uses>9</tool_uses><duration_ms>191595</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a4ad505e7534336f0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a4ad505e7534336f0.output</output-file>
+<status>completed</status>
+<summary>Agent "Fresh canon-exit-gate for michi-truncate.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have everything I need. Verdict: **fail** — two blockers.
+
+```json
+{
+  "verdict": "fail",
+  "confidence": "high",
+  "artifact_type": "spec@1",
+  "retry_count": 0,
+  "verdict_summary": "Fail. 19 of 21 criteria are exact and verified against the real code; 22/22 tests pass. Two blockers: AC-017 admits both a true and a false reading (falsified at n=1000), and the scope's is_error_case definition lists 'empty hint' while AC-016 is tagged false. Fix both, resubmit.",
+  "blockers": [
+    {
+      "criterion": "AC-017",
+      "location": ".claude/specs/michi-truncate.json:112-114 (AC-017); crates/michi-truncate/src/lib.rs:55-57",
+      "finding": "AC-017 admits two valid readings, one of which is false against the current code. Its precondition uses undefined quantitative adjectives — 'content whose length in bytes is large (content.len() far exceeds max_chars) but whose char count is also large' — while its assertion hardcodes the substring '200 chars truncated', which holds only for the single 'e.g.' instance. Empirically falsified: truncate(&amp;\"a\".repeat(1000), 50, \"full=true\") satisfies every stated precondition (bytes far exceed max_chars, char count is large) but returns \"aaaaaaaaaaa (1000 chars truncated — use full=true)\" — the asserted substring is absent, because N is the original char count (lib.rs:55). A tester must guess whether the criterion is universal (false) or instance-bound (true). Required change: replace AC-017's text with an exact-call criterion in the style AC-018/AC-019 already use, deleting 'large' and 'far exceeds' entirely — e.g. \"truncate(&amp;\\\"a\\\".repeat(200), 50, \\\"full=true\\\") returns was_truncated = true, content.chars().count() == 50, and content == \\\"aaaaaaaaaaaa (200 chars truncated — use full=true)\\\" (12 kept 'a' chars + 38-char suffix)\" — that exact output is verified. Separately, note the example is pure ASCII, so bytes == chars and the criterion's stated byte-vs-char framing is not exercised by it at all; either drop that framing (AC-009 and AC-018 already own byte-vs-char observability) or restate it with a multi-byte example that actually discriminates."
+    },
+    {
+      "criterion": "scope field (is_error_case definition) vs. AC-016",
+      "location": ".claude/specs/michi-truncate.json:4 (scope), :106-109 (AC-016), :138 (revision_note item 5)",
+      "finding": "The spec-local definition of is_error_case contradicts its own application, so gate condition 3 cannot be evaluated as written. The scope field states the flag 'denotes a degenerate-but-valid edge-of-domain input (empty content, empty hint, max_chars=0, the hard-cap region, or the no-panic matrix)'. Five cases are enumerated, but only four criteria carry is_error_case: true — AC-014 (empty content), AC-015 (max_chars=0), AC-019 (hard-cap region), AC-020 (no-panic matrix). 'empty hint' has no true-tagged criterion: AC-016, the empty-hint criterion, is tagged is_error_case: false, and revision_note item 5 records that retag explicitly ('retagged AC-016 to is_error_case: false'). A reader cannot determine whether AC-016 is mistagged or the scope enumeration is stale, and therefore cannot determine which criteria the flag is supposed to mark. Required change: pick one and apply it in the same edit. Either (a) delete 'empty hint, ' from the scope enumeration so it reads '(empty content, max_chars=0, the hard-cap region, or the no-panic matrix)', matching the four true-tagged criteria; or (b) set AC-016's is_error_case to true and correct revision_note item 5, which currently asserts the opposite."
+    }
+  ],
+  "reasoning": "Verified, not assumed. Read the spec fresh from disk and lib.rs in full (344 lines incl. tests). Ran the whole suite: 22 tests, 22 passed (21 unit + trybuild harness). Ran 7 tests individually and confirmed each asserts the criterion's actual contract, not just a plausible name: ac004 (asserts exact content, chars()==30, and signal), ac018 (exact CJK content, original_len 153, chars()==35, signal), ac019 (all three hard-cap examples incl. signal None at max_chars=1), ac021, ac009 (asserts 17 chars vs 51 bytes), test_auto_traits (real Send+Sync+'static bound, not a thread::spawn proxy), and the trybuild harness. Read the compile-fail fixtures: struct_literal.stderr pins E0639 and exhaustive_match.stderr pins E0638 — AC-011 is genuinely proven, not name-matched. Traced AC-005/006/007/014/015 through lib.rs:36-85 by hand and confirmed each holds (max_chars=0 path: keep_chars saturates to 0, byte_end 0, hard-cap empties result, signal None since result.len() == byte_end). Verified AC-012 by grep (no unsafe fn/impl/trait/block) and AC-013 by reading (all pub items have ///, crate has //!). Verified the cross-spec claim in scope: michi-toon.json AC-043, AC-044, AC-012a, AC-012b all exist and all genuinely depend on the golden suffix string — that clarification is sound. TBD grep: 0 hits. Condition 4 (scope) passes clearly: one small crate, two functions, one struct, 21 criteria, all already implemented. AC-017 was falsified empirically rather than by argument — compiled lib.rs as an rlib and ran a probe at n in {200, 1000, 5000}; only n=200 contains the asserted substring. Considered and rejected as blockers: AC-015 not pinning signal (criterion is still testable as stated), and AC-012/AC-013 having no automated test (this gate judges spec readiness, not test coverage). Both surviving blockers are mechanical single-edit fixes with the replacement text supplied; no follow-up question is needed. Explicitly declined to pass-with-notes: AC-017's ambiguity is exactly the class where an implementer guesses what 'correct' means, and the is_error_case contradiction makes condition 3 unevaluable."
+}
+```
+
+## What I verified
+
+**Suite is green as expected**: `cargo nextest run -p michi-truncate` → 22 tests, 22 passed (21 unit in `lib.rs` + the trybuild harness in `tests/ui_fail.rs`). Note the filter in the task brief doesn't match — the trybuild test's nextest ID is `michi-truncate::ui_fail non_exhaustive_...`, so the working selector is `-E 'test(=non_exhaustive_truncated_rejects_struct_literal_and_exhaustive_match)'`, not `test(=ui_fail::...)` (which silently runs 0 tests).
+
+**Spot-checked 12+ criteria against real code**, 7 by running the test individually. The tests genuinely assert their criteria — AC-004, AC-018, AC-019 all pin exact string equality including signal, and `test_auto_traits` uses the real `assert_send_sync_static::&lt;Truncated&gt;()` bound rather than the insufficient `thread::spawn` proxy the round-2 revision note flagged. The AC-011 compile-fail fixtures pin the actual error codes (E0639, E0638), so that guarantee is proven rather than asserted.
+
+**The cross-spec scope clarification is accurate** — all four referenced `michi-toon.json` criteria (AC-043, AC-044, AC-012a, AC-012b) exist and genuinely hardcode the golden suffix string.
+
+## The two blockers
+
+**AC-017** — I falsified it empirically rather than arguing about it. Compiled `crates/michi-truncate/src/lib.rs` as an rlib and probed:
+
+```
+n=200   content="aaaaaaaaaaaa (200 chars truncated — use full=true)"   contains_200=true
+n=1000  content="aaaaaaaaaaa (1000 chars truncated — use full=true)"   contains_200=false
+```
+
+`"a".repeat(1000)` satisfies every stated precondition ("length in bytes is large", "far exceeds max_chars", "char count is also large") yet the asserted substring `'200 chars truncated'` is absent. Universal reading: false. Instance reading: true. That's a guess an implementer shouldn't have to make. Secondary point: the example is pure ASCII, so bytes == chars and the criterion's byte-vs-char framing isn't exercised by its own example.
+
+**scope vs. AC-016** — the `is_error_case` definition enumerates five degenerate cases including "empty hint", but only four criteria carry the flag (AC-014, AC-015, AC-019, AC-020). AC-016 *is* the empty-hint criterion and is tagged `false`, per revision_note item 5. The auditor pass added the scope clarification without reconciling it against the round-2 retag. Condition 3 can't be evaluated while the flag's definition and its application disagree.
+
+Both are single-edit fixes and I supplied the exact replacement text in the blockers, so the drafter can fix without asking anything. The other 19 criteria are in good shape — this is close, but close doesn't earn a pass.</result>
+<usage><subagent_tokens>58979</subagent_tokens><tool_uses>14</tool_uses><duration_ms>245841</duration_ms></usage>
+</task-notification>
