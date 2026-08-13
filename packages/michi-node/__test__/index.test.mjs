@@ -507,3 +507,31 @@ void describe('base_delay_ms / max_delay_ms boundary (SPEC-ARCH-004)', () => {
     assert.strictEqual(typeof nextRetryDelay(3, 100, 1.844674407370955e22, 0.2, 0.5, 0), 'number')
   })
 })
+
+void describe('retry_after_ms boundary (SPEC-ARCH-004)', () => {
+  void it('rejects retry_after_ms = -1 (AC-008)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0, -1),
+      (err) => err.message === 'expected a finite non-negative number convertible to a Duration (v / 1000.0 < u64::MAX), got -1'
+    )
+  })
+
+  void it('rejects retry_after_ms = 2e22 as Duration-overflowing (AC-009)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0, 2e22),
+      (err) =>
+        err.message ===
+        'expected a finite non-negative number convertible to a Duration (v / 1000.0 < u64::MAX), got 20000000000000000000000'
+    )
+  })
+
+  void it('succeeds with delay 110 when retry_after_ms is omitted, undefined, or null (AC-010, AC-025)', () => {
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0), 110)
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0, undefined), 110)
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0, null), 110)
+  })
+
+  void it('succeeds with delay 500 when retry_after_ms = 500 is present and in-domain (AC-026)', () => {
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0, 500), 500)
+  })
+})
