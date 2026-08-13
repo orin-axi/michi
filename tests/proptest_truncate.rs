@@ -10,8 +10,8 @@ proptest! {
         let hint = "full=true";
         let result = truncate_inline(&content, limit, hint);
         // The hard-cap logic in truncate() guarantees the result never exceeds
-        // `limit` chars at all (not limit + signal_len) — see src/truncate.rs's
-        // final clamp.
+        // `limit` chars at all (not limit + signal_len) — see
+        // crates/michi-truncate/src/lib.rs's final clamp.
         prop_assert!(result.chars().count() <= limit, "result {} chars exceeds limit {limit}: {result:?}", result.chars().count());
     }
 

@@ -214,4 +214,121 @@ mod tests {
     fn test_auto_traits() {
         assert_send_sync_static::<Truncated>();
     }
+
+    #[test]
+    fn ac004_suffix_present_with_leading_space_at_exact_fit() {
+        let content = "a".repeat(100);
+        let t = truncate(&content, 30, "x");
+        assert_eq!(t.content, " (100 chars truncated — use x)");
+        assert_eq!(t.content.chars().count(), 30);
+        assert_eq!(t.signal, Some("(100 chars truncated — use x)".to_string()));
+
+        let t = truncate(&content, 40, "x");
+        assert_eq!(t.content, "aaaaaaaaaa (100 chars truncated — use x)");
+
+        let t = truncate(&content, 50, "x");
+        assert_eq!(t.content, "aaaaaaaaaaaaaaaaaaaa (100 chars truncated — use x)");
+    }
+
+    #[test]
+    fn ac008_truncate_inline_matches_truncate_content() {
+        let contents = ["", "hello", &"a".repeat(200), "こんにちは世界！"];
+        let max_chars_values = [0usize, 1, 5, 30, 50, 500];
+        let hints = ["", "x", "見よ"];
+        for content in contents {
+            for &max_chars in &max_chars_values {
+                for hint in hints {
+                    assert_eq!(truncate_inline(content, max_chars, hint), truncate(content, max_chars, hint).content);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ac009_original_len_is_byte_length_not_char_count() {
+        let content = "こんにちは世界！これはテストです。";
+        assert_eq!(content.chars().count(), 17);
+        assert_eq!(content.len(), 51);
+        let t = truncate(content, 100, "x");
+        assert_eq!(t.original_len, 51);
+        assert_ne!(t.original_len, content.chars().count());
+    }
+
+    #[test]
+    fn ac014_empty_content_never_truncates() {
+        for max_chars in [0usize, 1, 100, usize::MAX] {
+            let t = truncate("", max_chars, "x");
+            assert_eq!(t.content, "");
+            assert_eq!(t.original_len, 0);
+            assert!(!t.was_truncated);
+            assert_eq!(t.signal, None);
+        }
+    }
+
+    #[test]
+    fn ac015_max_chars_zero_truncates_any_nonempty_content_to_empty() {
+        for content in ["a", &"a".repeat(100), "こんにちは"] {
+            for hint in ["", "x", "見よ"] {
+                let t = truncate(content, 0, hint);
+                assert_eq!(t.content, "");
+                assert_eq!(t.original_len, content.len());
+                assert!(t.was_truncated);
+            }
+        }
+    }
+
+    #[test]
+    fn ac016_empty_hint_produces_suffix_with_empty_interpolation() {
+        let content = "a".repeat(100);
+        let t = truncate(&content, 40, "");
+        assert_eq!(t.content, "aaaaaaaaaaa (100 chars truncated — use )");
+        assert_eq!(t.content.chars().count(), 40);
+        assert!(t.content.contains(" chars truncated — use )"));
+        assert_eq!(t.signal, Some("(100 chars truncated — use )".to_string()));
+    }
+
+    #[test]
+    fn ac018_multibyte_hint_chars_feed_keep_chars_arithmetic() {
+        let content = "こんにちは世界！これはテストです。".repeat(3);
+        let t = truncate(&content, 35, "見よ");
+        assert!(t.was_truncated);
+        assert_eq!(t.original_len, 153);
+        assert_eq!(t.content, "こんにちは (51 chars truncated — use 見よ)");
+        assert_eq!(t.content.chars().count(), 35);
+        assert_eq!(t.signal, Some("(51 chars truncated — use 見よ)".to_string()));
+    }
+
+    #[test]
+    fn ac019_hard_cap_region_pins_exact_prefix_and_signal() {
+        let content = "a".repeat(100);
+
+        let t = truncate(&content, 3, "x");
+        assert!(t.was_truncated);
+        assert_eq!(t.content, " (1");
+        assert_eq!(t.signal, Some("(1".to_string()));
+
+        let t = truncate(&content, 1, "x");
+        assert!(t.was_truncated);
+        assert_eq!(t.content, " ");
+        assert_eq!(t.signal, None);
+
+        let t = truncate(&content, 28, "x");
+        assert!(t.was_truncated);
+        assert_eq!(t.content, " (100 chars truncated — use ");
+        assert_eq!(t.signal, Some("(100 chars truncated — use ".to_string()));
+    }
+
+    #[test]
+    fn ac020_full_matrix_never_panics() {
+        let contents = ["", "a", &"a".repeat(200), "こんにちは世界！これはテストです。", "👍🏽é̀"];
+        let max_chars_values = [0usize, 1, 2, 3, 5, 29, 30, 50, usize::MAX];
+        let hints = ["", "x", "見よ"];
+        for content in contents {
+            for &max_chars in &max_chars_values {
+                for hint in hints {
+                    let _ = truncate(content, max_chars, hint);
+                }
+            }
+        }
+    }
 }
