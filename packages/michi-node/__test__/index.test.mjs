@@ -280,12 +280,11 @@ void describe('int64 boundary (SPEC-NAPI-POINTFIX-001)', () => {
     const out = renderKv([{ key: 'id', value: { type: 'int', intVal: 1755000000000 } }], null, [])
     assert.strictEqual(out, 'id: 1755000000000\n')
   })
-  void it('AC-008 truncates a non-integer intVal toward zero with no error', () => {
-    let out
-    assert.doesNotThrow(() => {
-      out = renderToon({ typeName: 't', fields: ['a'], rows: [[{ type: 'int', intVal: 1.5 }]], hints: [] })
-    })
-    assert.strictEqual(out, 't[1]{a}:\n  1\n')
+  void it('renderToon rejects a fractional intVal', () => {
+    assert.throws(
+      () => renderToon({ typeName: 't', fields: ['a'], rows: [[{ type: 'int', intVal: 1.5 }]], hints: [] }),
+      (err) => err.message.includes('expected an integer in [-9007199254740991, 9007199254740991], got 1.5')
+    )
   })
 })
 
@@ -349,5 +348,33 @@ void describe('numeric boundary agreement (SPEC-ARCH-003)', () => {
       const agentOut = r.renderToon()
       assert.ok(agentOut.includes(`totalCount: ${good}`), `AgentResponse.totalCount disagreed for ${good}: ${agentOut}`)
     }
+  })
+})
+
+void describe('rejection instead of coercion (SPEC-ARCH-003 AC-009)', () => {
+  void it('truncate rejects a negative maxChars', () => {
+    assert.throws(
+      () => truncate('hello', -5, 'full=true'),
+      (err) => err.message.includes('expected a non-negative integer no greater than 9007199254740991, got -5')
+    )
+  })
+
+  void it('renderKv rejects a decimalsVal above 20', () => {
+    assert.throws(
+      () => renderKv([{ key: 'score', value: { type: 'float', floatVal: 1.0, decimalsVal: 21 } }], null, []),
+      (err) => err.message.includes('expected an integer in [0, 20], got 21')
+    )
+  })
+
+  void it('renderToon rejects a NaN floatVal', () => {
+    assert.throws(
+      () => renderToon({ typeName: 't', fields: ['a'], rows: [[{ type: 'float', floatVal: NaN }]], hints: [] }),
+      (err) => err.message.includes('expected a finite number, got NaN')
+    )
+  })
+
+  void it('renderKv defaults absent decimalsVal to 6', () => {
+    const out = renderKv([{ key: 'score', value: { type: 'float', floatVal: 1.0 } }], null, [])
+    assert.ok(out.includes('1.000000'), `expected 6 decimal places by default, got: ${out}`)
   })
 })
