@@ -574,6 +574,36 @@ mod tests {
     }
 
     #[test]
+    fn unit_interval_and_delay_millis_delegate_finiteness_to_js_float() {
+        let src = include_str!("num.rs");
+        for type_name in ["JsUnitInterval", "JsDelayMillis"] {
+            let marker = format!("impl TryFrom<f64> for {type_name} {{");
+            let start = src.find(&marker).unwrap_or_else(|| panic!("missing impl TryFrom<f64> for {type_name}"));
+            let body_start = start + marker.len();
+            let mut depth = 1;
+            let mut end = body_start;
+            for (i, c) in src[body_start..].char_indices() {
+                match c {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = body_start + i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let body = &src[body_start..end];
+            assert!(
+                body.contains("JsFloat::try_from"),
+                "{type_name}'s TryFrom<f64> impl does not delegate to JsFloat::try_from"
+            );
+        }
+    }
+
+    #[test]
     fn js_unit_interval_type_name_is_js_unit_interval() {
         assert_eq!(JsUnitInterval::type_name(), "JsUnitInterval");
     }
