@@ -275,4 +275,200 @@ mod tests {
         );
         assert!(out.contains("line1_line2"), "got: {out}");
     }
+
+    #[test]
+    #[cfg_attr(not(debug_assertions), ignore = "AC-006a only fires when debug_assertions is enabled")]
+    #[should_panic(expected = "row length 1 does not match field count 2")]
+    fn ac006a_short_row_panics_in_debug() {
+        super::render("t", &["a".to_string(), "b".to_string()], &[vec![Value::from("x")]], None, &[], 200);
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn ac006b_short_row_renders_empty_cell_in_release() {
+        let out = super::render("t", &["a".to_string(), "b".to_string()], &[vec![Value::from("x")]], None, &[], 200);
+        assert_eq!(out, "t[1]{a,b}:\n  x,\n");
+    }
+
+    #[test]
+    #[cfg_attr(not(debug_assertions), ignore = "AC-007a only fires when debug_assertions is enabled")]
+    #[should_panic(expected = "row length 2 does not match field count 1")]
+    fn ac007a_long_row_panics_in_debug() {
+        super::render("t", &["a".to_string()], &[vec![Value::from("x"), Value::from("y")]], None, &[], 200);
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn ac007b_long_row_drops_extra_cells_in_release() {
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from("x"), Value::from("y")]], None, &[], 200);
+        assert_eq!(out, "t[1]{a}:\n  x\n");
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn ac018_null_and_missing_cell_render_identically_in_release() {
+        let null_row = super::render(
+            "t",
+            &["a".to_string(), "b".to_string()],
+            &[vec![Value::from("x"), Value::Null]],
+            None,
+            &[],
+            200,
+        );
+        let missing_row =
+            super::render("t", &["a".to_string(), "b".to_string()], &[vec![Value::from("x")]], None, &[], 200);
+        assert_eq!(null_row, missing_row);
+    }
+
+    #[test]
+    fn ac011_truncated_cell_content_is_exact() {
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], 200);
+        let expected_prefix = "a".repeat(162);
+        assert_eq!(out, format!("t[1]{{a}}:\n  {expected_prefix} (500 chars truncated — use full=true)\n"));
+    }
+
+    #[test]
+    fn ac011b_max_cell_len_bounds_chars_not_bytes() {
+        let content = "日".repeat(100);
+        assert_eq!(content.chars().count(), 100);
+        assert_eq!(content.len(), 300);
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from(content.clone())]], None, &[], 200);
+        assert_eq!(
+            out,
+            format!("t[1]{{a}}:\n  {content}\n"),
+            "a 300-byte/100-char cell must not truncate at max_cell_len=200"
+        );
+    }
+
+    #[test]
+    fn ac011c_max_cell_len_smaller_than_suffix_yields_suffix_prefix_only() {
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(50))]], None, &[], 10);
+        assert_eq!(out, "t[1]{a}:\n   (50 chars\n");
+    }
+
+    #[test]
+    fn ac012a_full_render_with_default_max_cell_len() {
+        let opts_row = vec![Value::from("a".repeat(500))];
+        let out = super::render("t", &["a".to_string()], &[opts_row], None, &[], 200);
+        let expected_prefix = "a".repeat(162);
+        assert_eq!(out, format!("t[1]{{a}}:\n  {expected_prefix} (500 chars truncated — use full=true)\n"));
+    }
+
+    #[test]
+    fn ac012b_untruncated_cell_at_150_chars_near_boundary() {
+        let content = "a".repeat(150);
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from(content.clone())]], None, &[], 200);
+        assert_eq!(out, format!("t[1]{{a}}:\n  {content}\n"));
+        assert!(!out.contains("chars truncated"));
+    }
+
+    #[test]
+    fn ac013_u64_and_usize_max_clamp_to_i64_max() {
+        let v: Value = u64::MAX.into();
+        assert_eq!(v, Value::Int(i64::MAX));
+        let v: Value = usize::MAX.into();
+        assert_eq!(v, Value::Int(i64::MAX));
+        let out = super::render("t", &["n".to_string()], &[vec![u64::MAX.into()]], None, &[], 200);
+        assert_eq!(out, "t[1]{n}:\n  9223372036854775807\n");
+    }
+
+    #[test]
+    fn ac014_u64_and_usize_within_range_render_exact_digits() {
+        let v: Value = 42u64.into();
+        assert_eq!(v, Value::Int(42));
+        let v: Value = 42usize.into();
+        assert_eq!(v, Value::Int(42));
+        let out = super::render("t", &["n".to_string()], &[vec![42u64.into()]], None, &[], 200);
+        assert_eq!(out, "t[1]{n}:\n  42\n");
+    }
+
+    #[test]
+    fn ac015_nan_renders_as_exact_quoted_text() {
+        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::NAN)]], None, &[], 200);
+        assert_eq!(out, "t[1]{v}:\n  \"NaN\"\n");
+    }
+
+    #[test]
+    fn ac016_infinity_renders_as_exact_quoted_text() {
+        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::INFINITY)]], None, &[], 200);
+        assert_eq!(out, "t[1]{v}:\n  \"inf\"\n");
+    }
+
+    #[test]
+    fn ac023_empty_hints_produce_no_help_line() {
+        let out = super::render("t", &[], &[], None, &[], 200);
+        assert!(!out.lines().any(|l| l.starts_with("help[")), "got: {out}");
+    }
+
+    #[test]
+    fn ac043_truncation_suffix_format_is_exact() {
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], 200);
+        assert!(out.ends_with(" (500 chars truncated — use full=true)\n"), "got: {out:?}");
+        assert!(out.contains('\u{2014}'), "must use EM DASH U+2014, got: {out:?}");
+        assert!(!out.contains('-'), "must not contain a hyphen anywhere in the suffix, got: {out:?}");
+    }
+
+    #[test]
+    fn ac044_kept_prefix_length_equals_max_cell_len_minus_suffix_chars() {
+        let suffix = " (500 chars truncated — use full=true)";
+        let suffix_chars = suffix.chars().count();
+        let max_cell_len = 200usize;
+        let expected_kept = max_cell_len - suffix_chars;
+        let out =
+            super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], max_cell_len);
+        let cell = out.strip_prefix("t[1]{a}:\n  ").unwrap().strip_suffix('\n').unwrap();
+        assert_eq!(cell.chars().count(), max_cell_len, "total cell content must be exactly max_cell_len chars");
+        let kept: String = cell.chars().take_while(|c| *c == 'a').collect();
+        assert_eq!(kept.chars().count(), expected_kept);
+
+        // Saturating-at-0 case (per AC-011c): suffix char count > max_cell_len.
+        let out10 = super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(50))]], None, &[], 10);
+        let cell10 = out10.strip_prefix("t[1]{a}:\n  ").unwrap().strip_suffix('\n').unwrap();
+        assert!(!cell10.starts_with('a'), "kept prefix must saturate to 0 chars, got: {cell10:?}");
+        assert!(cell10.chars().count() <= 10);
+    }
+
+    #[test]
+    fn ac036_from_option_string_some_matches_str_none_matches_null() {
+        let some_via_option: Value = Some("x".to_string()).into();
+        assert_eq!(some_via_option, Value::from("x"));
+        let none_via_option: Value = None::<String>.into();
+        assert_eq!(none_via_option, Value::Null);
+
+        let out_some = super::render(
+            "t",
+            &["a".to_string(), "b".to_string()],
+            &[vec![some_via_option, Value::from("y")]],
+            None,
+            &[],
+            200,
+        );
+        let out_str = super::render(
+            "t",
+            &["a".to_string(), "b".to_string()],
+            &[vec![Value::from("x"), Value::from("y")]],
+            None,
+            &[],
+            200,
+        );
+        assert_eq!(out_some, out_str);
+
+        let out_none = super::render(
+            "t",
+            &["a".to_string(), "b".to_string()],
+            &[vec![none_via_option, Value::from("y")]],
+            None,
+            &[],
+            200,
+        );
+        let out_null = super::render(
+            "t",
+            &["a".to_string(), "b".to_string()],
+            &[vec![Value::Null, Value::from("y")]],
+            None,
+            &[],
+            200,
+        );
+        assert_eq!(out_none, out_null);
+    }
 }

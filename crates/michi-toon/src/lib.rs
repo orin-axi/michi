@@ -235,6 +235,63 @@ pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T]) -> R
 }
 
 #[cfg(test)]
+mod ac032_public_surface_tests {
+    #[test]
+    fn top_level_pub_items_are_exactly_the_spec_api_surface() {
+        let src = include_str!("lib.rs");
+        let mut top_level_pub_names: Vec<&str> = Vec::new();
+        for line in src.lines() {
+            // Only unindented lines are true crate-root items -- anything
+            // indented is inside an `impl` block (an associated function,
+            // e.g. `ToonOptions::new`, not a separate `michi_toon::X` item).
+            if line != line.trim_start() {
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("pub use ") {
+                // `pub use escape::{escape_value, escape_value_quoted};` and
+                // `pub use render::Value;` -- collect every re-exported name.
+                let list_part = rest.trim_end_matches(';');
+                let names_part = list_part.rsplit("::").next().unwrap_or(list_part);
+                for name in names_part.trim_start_matches('{').trim_end_matches('}').split(',') {
+                    top_level_pub_names.push(name.trim());
+                }
+            } else if let Some(rest) = line.strip_prefix("pub enum ") {
+                top_level_pub_names.push(rest.split(|c: char| c == ' ' || c == '{').next().unwrap_or(rest));
+            } else if let Some(rest) = line.strip_prefix("pub struct ") {
+                top_level_pub_names.push(rest.split(|c: char| c == ' ' || c == '{').next().unwrap_or(rest));
+            } else if let Some(rest) = line.strip_prefix("pub fn ") {
+                top_level_pub_names.push(rest.split(['(', '<']).next().unwrap_or(rest));
+            }
+        }
+        let mut expected =
+            vec!["escape_value", "escape_value_quoted", "Value", "ToonError", "ToonOptions", "render_toon"];
+        if cfg!(feature = "serde") {
+            expected.push("list");
+        }
+        top_level_pub_names.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(
+            top_level_pub_names, expected,
+            "top-level pub surface of lib.rs must be exactly the spec's api_surface list"
+        );
+    }
+
+    #[test]
+    fn must_use_and_list_signature_match_the_spec() {
+        let src = include_str!("lib.rs");
+        assert!(
+            src.contains("#[must_use]\n    pub fn new("),
+            "ToonOptions::new must carry #[must_use] per api_surface"
+        );
+        assert!(src.contains("#[must_use]\npub fn render_toon("), "render_toon must carry #[must_use] per api_surface");
+        assert!(
+            src.contains("pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T])"),
+            "list's first parameter must be impl Into<String>, not &str, per api_surface"
+        );
+    }
+}
+
+#[cfg(test)]
 mod auto_trait_tests {
     use super::*;
 
@@ -278,6 +335,19 @@ mod validate_tests {
     }
 
     #[test]
+    fn ac002_invalid_type_name_error_carries_exact_offending_name() {
+        let opts = ToonOptions {
+            type_name: "foo[bar".into(),
+            fields: vec![],
+            rows: vec![],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert_eq!(opts.validate(), Err(ToonError::InvalidTypeName { name: "foo[bar".to_string() }));
+    }
+
+    #[test]
     fn validate_rejects_field_with_comma() {
         let opts = ToonOptions {
             type_name: "t".into(),
@@ -288,6 +358,40 @@ mod validate_tests {
             total_count: None,
         };
         assert!(matches!(opts.validate(), Err(ToonError::InvalidFieldName { .. })));
+    }
+
+    #[test]
+    fn ac003_invalid_field_name_error_carries_exact_offending_name() {
+        let opts = ToonOptions {
+            type_name: "t".into(),
+            fields: vec!["a,b".into()],
+            rows: vec![],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert_eq!(opts.validate(), Err(ToonError::InvalidFieldName { name: "a,b".to_string() }));
+    }
+
+    #[test]
+    fn ac035_default_renders_exact_empty_document() {
+        let opts = ToonOptions::default();
+        assert_eq!(render_toon(&opts), "[0]{}:\n");
+        let equivalent = ToonOptions::new(String::new(), Vec::new(), Vec::new());
+        assert_eq!(render_toon(&opts), render_toon(&equivalent));
+    }
+
+    #[test]
+    fn ac037_direct_field_mutation_affects_render_toon_output() {
+        let mut opts = ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("x")]]);
+        opts.total_count = Some(5);
+        opts.hints = vec!["h".to_string()];
+        let via_mutation = render_toon(&opts);
+
+        let via_builder = ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("x")]])
+            .total_count(Some(5))
+            .hints(vec!["h".to_string()]);
+        assert_eq!(via_mutation, render_toon(&via_builder));
     }
 
     #[test]
@@ -315,5 +419,66 @@ mod list_tests {
             matches!(result, Err(ToonError::InvalidItem { row_index: 0, .. })),
             "non-object items must return Err(InvalidItem), got: {result:?}"
         );
+    }
+
+    #[test]
+    fn ac025a_builder_chain_exact_output() {
+        let opts = ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("a".repeat(50))]])
+            .total_count(Some(5))
+            .hints(vec!["h".to_string()])
+            .max_cell_len(10);
+        assert_eq!(render_toon(&opts), "t[1]{a}:\n   (50 chars\ntotalCount: 5\nhelp[1]:\n  h\n");
+    }
+
+    #[test]
+    fn ac025b_builder_order_independence() {
+        let forward = ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("a".repeat(50))]])
+            .total_count(Some(5))
+            .hints(vec!["h".to_string()])
+            .max_cell_len(10);
+        let reversed = ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("a".repeat(50))]])
+            .max_cell_len(10)
+            .hints(vec!["h".to_string()])
+            .total_count(Some(5));
+        assert_eq!(render_toon(&forward), render_toon(&reversed));
+    }
+
+    #[test]
+    fn ac027_invalid_item_reports_index_of_first_non_object_item() {
+        let result = list("t", &[serde_json::json!({"a": 1}), serde_json::json!(7)]);
+        assert!(
+            matches!(result, Err(ToonError::InvalidItem { row_index: 1, .. })),
+            "the first item is a valid object; only the second (index 1) is non-object, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn ac028_missing_key_renders_as_empty_cell() {
+        let result = list("t", &[serde_json::json!({"a": 1, "b": 2}), serde_json::json!({"a": 3})]);
+        assert_eq!(result, Ok("t[2]{a,b}:\n  1,2\n  3,\n".to_string()));
+    }
+
+    #[test]
+    fn ac029_structural_char_in_first_items_key_rejected_before_rendering() {
+        let result = list("t", &[serde_json::json!({"a,b": 1})]);
+        assert_eq!(result, Err(ToonError::InvalidFieldName { name: "a,b".to_string() }));
+    }
+
+    #[test]
+    fn ac038_first_item_empty_later_item_nonempty_is_row_length_mismatch() {
+        let result = list("t", &[serde_json::json!({}), serde_json::json!({"k": 1})]);
+        assert_eq!(result, Err(ToonError::RowLengthMismatch { row_index: 0, expected: 1, actual: 0 }));
+    }
+
+    #[test]
+    fn ac039_empty_items_slice_renders_exact_empty_document() {
+        let result = list("t", &([] as [serde_json::Value; 0]));
+        assert_eq!(result, Ok("t[0]{}:\n".to_string()));
+    }
+
+    #[test]
+    fn ac040_all_empty_object_items_render_exact_blank_rows() {
+        let result = list("t", &[serde_json::json!({}), serde_json::json!({})]);
+        assert_eq!(result, Ok("t[2]{}:\n  \n  \n".to_string()));
     }
 }

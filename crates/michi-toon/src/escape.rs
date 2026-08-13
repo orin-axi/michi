@@ -143,4 +143,36 @@ mod tests {
     fn empty_value_is_unchanged() {
         assert_eq!(escape_value(""), "");
     }
+
+    #[test]
+    fn ac031_escape_value_quoted_always_wraps_in_quotes() {
+        for s in ["", "plain", "a,b", "line1\nline2"] {
+            let out = escape_value_quoted(s);
+            assert!(out.starts_with('"') && out.ends_with('"'), "input {s:?} -> {out:?}");
+        }
+    }
+
+    #[test]
+    fn ac033_escape_value_quoted_escapes_embedded_quotes() {
+        assert_eq!(escape_value_quoted(r#"say "hi""#), r#""say \"hi\"""#);
+    }
+
+    #[test]
+    fn ac034_escape_value_quoted_strips_newlines_and_carriage_returns() {
+        let out = escape_value_quoted("a\nb\rc");
+        assert!(!out.contains('\n') && !out.contains('\r'), "got: {out:?}");
+        assert_eq!(out, "\"abc\"");
+    }
+
+    #[test]
+    fn ac042_escape_value_cow_variant_matches_whether_escaping_was_needed() {
+        assert!(matches!(escape_value("plain"), std::borrow::Cow::Borrowed(_)));
+        assert!(matches!(escape_value("a,b"), std::borrow::Cow::Owned(_)));
+        assert!(matches!(escape_value("a\"b"), std::borrow::Cow::Owned(_)));
+        // \n/\r alone (no comma or quote) still needs stripping -> Owned, but is
+        // NOT wrapped in surrounding quotes (needs_quote stays false).
+        let newline_only = escape_value("a\nb");
+        assert!(matches!(newline_only, std::borrow::Cow::Owned(_)));
+        assert_eq!(newline_only, "ab");
+    }
 }
