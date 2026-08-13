@@ -1,0 +1,56 @@
+<task-notification>
+<task-id>aef4b45dc4216d194</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/aef4b45dc4216d194.output</output-file>
+<status>completed</status>
+<summary>Agent "canon-auditor pass on michi-toon.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Audit Results — michi-toon.json (spec@1)
+
+I read the spec fresh from `/Users/gabe/Projects/michi/.claude/specs/michi-toon.json`, cross-checked it against `crates/michi-toon/src/{lib,render,escape}.rs`, ran `cargo nextest run -p michi-toon --all-features` (55/55 pass) and `--release` (56/56 pass, 2 correctly skipped), and searched `.claude/specs/` for sibling overlap.
+
+**Important correction to the task's premise:** the claim that "all 35 gaps are now closed with new tests" does not hold for AC-026. I grepped the entire crate (`grep -rn "order"` across `src/`) and found **zero test coverage for AC-026** (the `list()` field-order-matches-serialization-order guarantee, which the spec's own `scope` field flags as depending on a fragile workspace-level `serde_json` `preserve_order` feature not named in michi-toon's own `Cargo.toml`). This is a real, currently-unverified gap in the implementation's test suite — worth relaying back to whoever ran the drift-closure pass, even though it isn't a defect in the spec text itself.
+
+```json
+{
+  "issues": [
+    {
+      "criterion_id": null,
+      "type": "scope-overlap",
+      "description": "The spec pins render_toon()'s current profile-dependent behavior — infallible `-&gt; String`, debug-build panic on row-length mismatch (AC-006a/AC-007a), silent cell-fabrication/truncation in release (AC-006b/AC-007b/AC-018), and the exact api_surface signature `#[must_use] pub fn render_toon(opts: &amp;ToonOptions) -&gt; String` (AC-032) — as a permanent baseline, with zero acknowledgment of .claude/specs/structural-toonoptions-validate-not-enforced-at-render-toon-entry-points.json (SPEC-ARCH-001). That spec is live and unimplemented (verified: no `ToonDocument` type exists anywhere in crates/michi-toon or crates/michi-core; napi-boundary-point-fixes.json explicitly lists 'The ToonDocument proof-carrying-type refactor specified in SPEC-ARCH-001' as a deferred dependency). SPEC-ARCH-001 proposes changing render_toon's signature to `Result&lt;String, ToonError&gt;` and deleting the debug_assert entirely — a change that would falsify AC-005, AC-006a, AC-006b, AC-007a, AC-007b, AC-018, AC-035, AC-037, and the render_toon api_surface entry simultaneously. Without a cross-reference, canon-drift-checker will flag a correct SPEC-ARCH-001 implementation as drift against a baseline that was never meant to survive it, and a developer implementing SPEC-ARCH-001 has no signal that michi-toon.json needs a coordinated revision.",
+      "suggested_fix": "Append to the `scope` field: \"NOTE: AC-005, AC-006a, AC-006b, AC-007a, AC-007b, AC-018, AC-035, AC-037, and the render_toon api_surface entry describe render_toon()'s PRE-SPEC-ARCH-001 signature and behavior (infallible String return, debug-only panic on row-length mismatch). .claude/specs/structural-toonoptions-validate-not-enforced-at-render-toon-entry-points.json (SPEC-ARCH-001) is a live, unimplemented structural spec that will change render_toon() to `Result&lt;String, ToonError&gt;` and remove the debug_assert entirely. If SPEC-ARCH-001 ships, the criteria listed above must be revised in the same changeset — canon-drift-checker findings against them post-SPEC-ARCH-001 should be triaged as expected obsolescence, not regression.\" Add the same cross-reference as a bullet in `non_goals`: \"Whether render_toon() SHOULD be infallible is SPEC-ARCH-001's concern, not this spec's; this spec only characterizes what render_toon() currently does.\""
+    },
+    {
+      "criterion_id": "AC-013",
+      "type": "ambiguous",
+      "description": "\"Converting u64::MAX or usize::MAX (on a 64-bit target, a value exceeding i64::MAX) into a Value...\" admits two readings: (a) the parenthetical scopes the entire criterion to 64-bit targets, meaning u64::MAX's behavior on a 32-bit target is unspecified; or (b) the parenthetical only qualifies usize::MAX (since usize's width is platform-dependent while u64 is always 64-bit and always exceeds i64::MAX regardless of target). Verified against render.rs:72-86: `From&lt;u64&gt;` unconditionally saturating-casts on every platform, so reading (a) is actually wrong for the u64::MAX half of the criterion — but the sentence as written doesn't rule that reading out. A developer targeting a 32-bit build has no way to tell from this text whether u64::MAX's clamping is asserted there or not.",
+      "suggested_fix": "Split into two criteria: AC-013a: \"Converting u64::MAX into a Value via From and rendering it produces the literal digit sequence \\\"9223372036854775807\\\" (i64::MAX), on any target platform, since u64 is always 64 bits regardless of pointer width.\" AC-013b: \"On a target where usize is 64 bits (i.e. usize::MAX &gt; i64::MAX), converting usize::MAX into a Value via From and rendering it produces the literal digit sequence \\\"9223372036854775807\\\" (i64::MAX). On a target where usize is 32 bits or narrower, this criterion does not apply, since usize::MAX does not exceed i64::MAX and AC-014 (in-range conversion) governs instead.\""
+    },
+    {
+      "criterion_id": "AC-016",
+      "type": "missing-error-case",
+      "description": "AC-016 pins the exact quoted output only for `f64::INFINITY` (\"inf\"). render.rs:185 guards with `f.is_nan() || f.is_infinite()`, which also catches `f64::NEG_INFINITY` — but no criterion pins its exact rendered text. Verified: no test, string literal, or mention of NEG_INFINITY or \"-inf\" exists anywhere in crates/michi-toon/src/. A developer reading only the spec would have to infer from AC-016's general phrasing that negative infinity is handled the same way and would have to guess whether its quoted content is \"-inf\" (Rust's actual Display form) or something else (e.g. \"-Infinity\", \"NegInfinity\") — a coin flip the spec should not leave open, especially since AC-015/AC-016 both pin exact text for their respective cases.",
+      "suggested_fix": "Add AC-016b: \"Rendering a ToonOptions containing a Value::Float(f64::NEG_INFINITY) cell produces output containing the double-quoted text \\\"-inf\\\" at that cell position, not a bare unquoted token and not the text \\\"-Infinity\\\" or \\\"NegInfinity\\\".\" Mark is_error_case: false to match AC-015/AC-016's classification."
+    },
+    {
+      "criterion_id": "AC-002",
+      "type": "missing-error-case",
+      "description": "AC-002, AC-003, and AC-004 each independently specify validate()'s return value when exactly one invariant class is violated, but no criterion states precedence when multiple classes are violated simultaneously (e.g. type_name contains '[' AND a field name contains ',' AND a row length mismatches). Verified in lib.rs:130-153: validate() checks type_name first, then fields in order, then rows, returning on the FIRST failure encountered — so a ToonOptions violating all three returns InvalidTypeName, never InvalidFieldName or RowLengthMismatch. Nothing in the spec states this precedence, so a developer reading AC-002/003/004 in isolation could reasonably assume validate() aggregates all violations, or checks rows first, or field names first.",
+      "suggested_fix": "Add AC-004b: \"When a ToonOptions violates more than one of the three invariant classes checked by validate() (type_name structural character, field-name structural character, row-length mismatch) simultaneously, validate() returns only the first violation encountered, checked in this fixed order: type_name first, then field names in field-list order, then rows in row-list order. Example: a ToonOptions whose type_name is invalid AND whose first row is the wrong length returns Err(ToonError::InvalidTypeName{..}), never Err(ToonError::RowLengthMismatch{..}).\""
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "Four issues surfaced: one high-severity scope-overlap (an unshipped structural spec, SPEC-ARCH-001, will falsify 8 of this spec's criteria plus its api_surface entry for render_toon, with no cross-reference anywhere), one genuine ambiguity (AC-013's platform-scoping parenthetical), and two missing-error-case gaps (NEG_INFINITY's exact text is unpinned despite being reachable through the same code path as AC-016's INFINITY case; validate()'s multi-violation precedence is unstated despite the implementation having a fixed, testable order). Eight-plus criteria were spot-checked directly against live source and passing tests (AC-005/006a/006b/007a/007b via render.rs + full debug and release nextest runs; AC-011/011b/011c/012a/012b/043/044 via render.rs's truncation branch and byte-vs-char gate; AC-026 via grep, which found it UNTESTED contrary to the task's premise; AC-030/031/033/034/042 via escape.rs; AC-032 via its own source-scanning test; AC-038/039/040 via list_tests) and found sound as stated, aside from the four issues above. None of the four issues are stylistic — each would cost a developer a clarifying question."
+}
+```
+
+Files consulted (all absolute paths):
+- `/Users/gabe/Projects/michi/.claude/specs/michi-toon.json`
+- `/Users/gabe/Projects/michi/crates/michi-toon/src/lib.rs`
+- `/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs`
+- `/Users/gabe/Projects/michi/crates/michi-toon/src/escape.rs`
+- `/Users/gabe/Projects/michi/.claude/specs/structural-toonoptions-validate-not-enforced-at-render-toon-entry-points.json` (SPEC-ARCH-001 — the scope-overlap source)
+- `/Users/gabe/Projects/michi/.claude/specs/napi-boundary-point-fixes.json` (confirms SPEC-ARCH-001 is still unimplemented/deferred)
+- `/Users/gabe/Projects/michi/Cargo.toml` (confirmed `preserve_order` is enabled workspace-wide, as the spec's scope text claims)</result>
+<usage><subagent_tokens>95509</subagent_tokens><tool_uses>15</tool_uses><duration_ms>260476</duration_ms></usage>
+</task-notification>
