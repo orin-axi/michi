@@ -26,6 +26,18 @@ mod tests {
     }
 
     #[test]
+    fn ac001_is_non_exhaustive() {
+        let src = include_str!("audience.rs");
+        assert!(src.contains("#[non_exhaustive]"), "missing #[non_exhaustive]");
+    }
+
+    #[test]
+    fn ac001_is_eq() {
+        fn assert_eq_impl<T: Eq>() {}
+        assert_eq_impl::<Audience>();
+    }
+
+    #[test]
     #[cfg(feature = "serde")]
     fn ac037_serializes_lowercase() {
         assert_eq!(serde_json::to_string(&Audience::Assistant).unwrap(), "\"assistant\"");

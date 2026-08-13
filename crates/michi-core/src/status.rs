@@ -191,6 +191,16 @@ mod tests {
     }
 
     #[test]
+    fn ac019_health_is_non_exhaustive() {
+        let src = include_str!("status.rs");
+        let idx = src.find("pub enum Health").expect("pub enum Health present");
+        let preceding = &src[..idx];
+        let attr_start = preceding.rfind("#[non_exhaustive]").expect("#[non_exhaustive] precedes pub enum Health");
+        // confirm no other pub enum/struct declaration sits between the attribute and Health
+        assert!(!preceding[attr_start..].contains("pub enum") && !preceding[attr_start..].contains("pub struct"));
+    }
+
+    #[test]
     fn ac021_new_defaults_hints_empty_and_with_hints_is_a_consuming_builder() {
         let resp = StatusResponse::new("tool", "desc", vec![]);
         assert!(resp.hints.is_empty());
