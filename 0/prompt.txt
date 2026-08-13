@@ -1,0 +1,5 @@
+The node tests should run, probably the relevant source is not included to invalidate the cache. If it depends on rust code it should include that to invalidate the cache right?
+
+---
+
+Yes
