@@ -564,6 +564,18 @@ mod tests {
     }
 
     #[test]
+    fn http_date_grammar_is_more_lenient_than_strict_rfc7231_imf_fixdate() {
+        let now = std::time::UNIX_EPOCH;
+        let expected = Some(Duration::from_secs(1_767_225_600));
+        // day-name is not validated -- any token before ", " is discarded
+        assert_eq!(parse_retry_after_at("Xxx, 01 Jan 2026 00:00:00 GMT", now), expected);
+        // day is parsed with str::parse, not fixed-width 2DIGIT -- unpadded accepted
+        assert_eq!(parse_retry_after_at("Thu, 1 Jan 2026 00:00:00 GMT", now), expected);
+        // time fields likewise accept unpadded digits
+        assert_eq!(parse_retry_after_at("Thu, 01 Jan 2026 0:0:0 GMT", now), expected);
+    }
+
+    #[test]
     fn http_date_with_day_out_of_range_returns_none() {
         let now = std::time::SystemTime::UNIX_EPOCH;
         assert_eq!(parse_retry_after_at("Thu, 32 Jan 2026 00:00:00 GMT", now), None);
