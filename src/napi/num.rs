@@ -410,6 +410,11 @@ mod tests {
     }
 
     #[test]
+    fn js_unit_interval_type_name_is_js_unit_interval() {
+        assert_eq!(JsUnitInterval::type_name(), "JsUnitInterval");
+    }
+
+    #[test]
     fn module_denies_cast_lints() {
         let src = include_str!("../napi.rs");
         // Whitespace-stripped: rustfmt wraps this attribute's ~147-char
