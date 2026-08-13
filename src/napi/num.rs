@@ -237,6 +237,61 @@ impl ToNapiValue for JsFloat {
     }
 }
 
+/// A JavaScript number accepted only when it is finite and lies within
+/// `[0.0, 1.0]`. Delegates its finiteness check to [`JsFloat::try_from`]
+/// (both share `type Error = String`), so a non-finite input is rejected
+/// with `JsFloat`'s own message verbatim, not a `JsUnitInterval`-specific
+/// string; only a finite value then receives this type's own range check.
+/// Used for `next_retry_delay`'s `jitter_factor` and `jitter_seed`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JsUnitInterval(f64);
+
+impl JsUnitInterval {
+    /// Returns the validated value.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for JsUnitInterval {
+    type Error = String;
+
+    fn try_from(v: f64) -> Result<Self, Self::Error> {
+        let v = JsFloat::try_from(v)?.get();
+        if (0.0..=1.0).contains(&v) {
+            Ok(Self(v))
+        } else {
+            Err(format!("expected a finite number in [0.0, 1.0], got {v}"))
+        }
+    }
+}
+
+impl TypeName for JsUnitInterval {
+    fn type_name() -> &'static str {
+        "JsUnitInterval"
+    }
+
+    fn value_type() -> napi::ValueType {
+        napi::ValueType::Number
+    }
+}
+
+impl ValidateNapiValue for JsUnitInterval {}
+
+impl FromNapiValue for JsUnitInterval {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let v = unsafe { f64::from_napi_value(env, napi_val)? };
+        Self::try_from(v).map_err(|msg| napi::Error::new(napi::Status::InvalidArg, msg))
+    }
+}
+
+impl ToNapiValue for JsUnitInterval {
+    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
+        unsafe { f64::to_napi_value(env, val.0) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +381,30 @@ mod tests {
         }
         for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let err = JsFloat::try_from(v).expect_err("non-finite value must be rejected");
+            assert_eq!(err, format!("expected a finite number, got {v}"));
+        }
+    }
+
+    #[test]
+    fn js_unit_interval_accepts_domain_boundaries() {
+        for v in [0.0, 0.5, 1.0] {
+            let u = JsUnitInterval::try_from(v).expect("in-domain unit interval value");
+            assert_eq!(u.get(), v, "input {v}");
+        }
+    }
+
+    #[test]
+    fn js_unit_interval_rejects_out_of_range() {
+        for v in [1.5, -0.1] {
+            let err = JsUnitInterval::try_from(v).expect_err("out-of-range value must be rejected");
+            assert_eq!(err, format!("expected a finite number in [0.0, 1.0], got {v}"));
+        }
+    }
+
+    #[test]
+    fn js_unit_interval_rejects_non_finite_via_delegated_message() {
+        for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let err = JsUnitInterval::try_from(v).expect_err("non-finite value must be rejected");
             assert_eq!(err, format!("expected a finite number, got {v}"));
         }
     }
