@@ -27,7 +27,7 @@
     clippy::cast_precision_loss
 )]
 
-use self::num::{JsCount, JsDecimals, JsDelayMillis, JsFloat, JsInt, JsRetryCount, JsUnitInterval};
+use self::num::{JsCount, JsDecimals, JsDelayMillis, JsFloat, JsHttpStatus, JsInt, JsRetryCount, JsUnitInterval};
 use napi_derive::napi;
 
 /// Validating newtypes for the NAPI numeric boundary (shared kernel for
@@ -316,10 +316,8 @@ pub fn next_retry_delay(
 
 /// Return `true` if the HTTP status code is conventionally retryable (429, 502, 503, 504).
 #[napi(catch_unwind)]
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-pub fn is_retryable_status(status: u32) -> bool {
-    let code = u16::try_from(status).unwrap_or(0);
-    michi_resilience::is_retryable_status(code)
+pub fn is_retryable_status(#[napi(ts_arg_type = "number")] status: JsHttpStatus) -> bool {
+    michi_resilience::is_retryable_status(status.get_u16())
 }
 
 /// Render a classified `DomainError` card or GitHub annotation.

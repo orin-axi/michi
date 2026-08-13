@@ -157,6 +157,13 @@ void describe('standalone helpers', () => {
     assert.strictEqual(isRetryableStatus(404), false)
   })
 
+  void it('rejects status = 70000 (AC-015)', () => {
+    assert.throws(
+      () => isRetryableStatus(70000),
+      (err) => err.message === 'expected an integer in [100, 599], got 70000'
+    )
+  })
+
   void it('renderDomainError formats error card and github annotation', () => {
     const card = renderDomainError('not_found', 'Item not found', ['check ID'])
     assert.ok(card.includes('error: not_found'))
