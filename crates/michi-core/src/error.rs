@@ -499,6 +499,24 @@ mod tests {
         assert_eq!(format!("{}", Sensitive("plain str")), "<redacted>");
     }
 
+    // AC-001/AC-002: a compile-time bound proof that ErrorClass/ErrorCode are
+    // Copy, distinct from the trybuild exhaustive-match fixtures (which prove
+    // #[non_exhaustive], not Copy). Removing `Copy` from either derive still
+    // leaves every other test in this module compiling and passing, since
+    // Clone alone satisfies every existing use site -- only a bound assertion
+    // like this one fails to compile without Copy.
+    #[test]
+    fn ac001_error_class_is_copy() {
+        fn assert_copy<T: Copy>() {}
+        assert_copy::<ErrorClass>();
+    }
+
+    #[test]
+    fn ac002_error_code_is_copy() {
+        fn assert_copy<T: Copy>() {}
+        assert_copy::<ErrorCode>();
+    }
+
     #[test]
     fn ac005_label_is_exact_snake_case_for_every_code() {
         use ErrorCode::*;
@@ -686,6 +704,23 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
+    fn ac021b_recovery_tool_param_key_and_reason_round_trip_exactly() {
+        let original_tool = r#"tool "name" with \backslash"#;
+        let original_key = r#"key "with" \quotes"#;
+        let original_reason = r#"reason "text" with \backslash"#;
+        let r = RecoveryHint::new(original_tool)
+            .param(original_key, crate::kv::KvValue::Text("v".to_string()))
+            .reason(original_reason);
+        let err = DomainError::new(ErrorCode::NotFound, "m").recovery(r);
+        let parsed: serde_json::Value = serde_json::from_str(&err.render_json()).unwrap();
+        assert_eq!(parsed["recovery"]["tool"].as_str().unwrap(), original_tool);
+        assert_eq!(parsed["recovery"]["reason"].as_str().unwrap(), original_reason);
+        let params = parsed["recovery"]["params"].as_object().unwrap();
+        assert!(params.contains_key(original_key), "got keys: {:?}", params.keys().collect::<Vec<_>>());
+    }
+
+    #[test]
     fn ac022_to_call_tool_result_matches_render_outputs_exactly() {
         let err = DomainError::new(ErrorCode::Unavailable, "down").hint("h");
         let result = err.to_call_tool_result();
@@ -730,6 +765,14 @@ mod tests {
     fn ac031_is_retryable_true_direction() {
         let err = Error::Domain(DomainError::new(ErrorCode::Unavailable, "down").retryable(true));
         assert!(err.is_retryable(), "Transient-classified error must be retryable");
+    }
+
+    #[test]
+    fn ac031_invalid_input_and_not_found_variants_are_never_retryable() {
+        assert!(!Error::InvalidInput(String::new()).is_retryable());
+        assert!(!Error::InvalidInput("msg".into()).is_retryable());
+        assert!(!Error::NotFound(String::new()).is_retryable());
+        assert!(!Error::NotFound("msg".into()).is_retryable());
     }
 
     #[test]
