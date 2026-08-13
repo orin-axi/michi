@@ -413,6 +413,19 @@ mod validate_tests {
     }
 
     #[test]
+    fn ac004b_field_name_violation_takes_precedence_over_row_length_violation() {
+        let opts = ToonOptions {
+            type_name: "t".into(),
+            fields: vec!["a,b".into()],
+            rows: vec![vec![Value::from("x"), Value::from("y")]],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert_eq!(opts.validate(), Err(ToonError::InvalidFieldName { name: "a,b".to_string() }));
+    }
+
+    #[test]
     fn ac035_default_renders_exact_empty_document() {
         let opts = ToonOptions::default();
         assert_eq!(render_toon(&opts), "[0]{}:\n");
