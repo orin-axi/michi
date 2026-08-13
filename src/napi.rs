@@ -219,10 +219,9 @@ pub fn render_recovery(hints: Vec<JsRecoveryHint>) -> napi::Result<String> {
 
 /// Truncate content to `max_chars` Unicode scalar values with an agent-readable suffix.
 #[napi(catch_unwind)]
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // max_chars clamped non-negative first
 #[allow(clippy::needless_pass_by_value)] // napi-derive requires owned String for JS string params
-pub fn truncate(content: String, max_chars: i32, hint: String) -> String {
-    crate::truncate::truncate_inline(&content, max_chars.max(0) as usize, &hint)
+pub fn truncate(content: String, #[napi(ts_arg_type = "number")] max_chars: JsCount, hint: String) -> String {
+    crate::truncate::truncate_inline(&content, max_chars.get(), &hint)
 }
 
 /// A key-value item for [`JsAgentResponse::kv_items`] (JavaScript-friendly).
@@ -249,8 +248,11 @@ fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
 
 /// Render key-value pairs with aligned columns.
 #[napi(catch_unwind)]
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-pub fn render_kv(items: Vec<JsKvItem>, total_count: Option<i32>, hints: Vec<String>) -> napi::Result<String> {
+pub fn render_kv(
+    items: Vec<JsKvItem>,
+    #[napi(ts_arg_type = "number | undefined | null")] total_count: Option<JsCount>,
+    hints: Vec<String>,
+) -> napi::Result<String> {
     if items.len() > MAX_FIELDS {
         return Err(napi::Error::from_reason(format!("items length {} exceeds maximum of {MAX_FIELDS}", items.len())));
     }
@@ -260,7 +262,7 @@ pub fn render_kv(items: Vec<JsKvItem>, total_count: Option<i32>, hints: Vec<Stri
     let converted: Vec<crate::kv::KvItem> =
         items.into_iter().map(|i| crate::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value) }).collect();
     let hint_objs: Vec<crate::hints::Hint> = hints.into_iter().map(Into::into).collect();
-    Ok(crate::kv::render_kv(&converted, total_count.map(|n| n.max(0) as usize), &hint_objs))
+    Ok(crate::kv::render_kv(&converted, total_count.map(JsCount::get), &hint_objs))
 }
 
 /// Render an explicit `already_done` status block.
@@ -517,10 +519,9 @@ impl JsAgentResponse {
 
     /// Set the total available count (TOON path only).
     #[napi(catch_unwind)]
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // n clamped non-negative first
-    pub fn total_count(&mut self, n: i32) -> napi::Result<()> {
+    pub fn total_count(&mut self, #[napi(ts_arg_type = "number")] n: JsCount) -> napi::Result<()> {
         let b = self.take()?;
-        self.inner = Some(b.total_count(n.max(0) as usize));
+        self.inner = Some(b.total_count(n.get()));
         Ok(())
     }
 
@@ -879,14 +880,14 @@ mod tests {
 
     #[test]
     fn truncate_basic() {
-        assert_eq!(truncate("hello".to_string(), 100, "full=true".to_string()), "hello");
-    }
-
-    #[test]
-    fn truncate_clamps_negative_max_chars() {
-        // max_chars.max(0) clamps to 0 rather than wrapping/panicking on a negative input.
-        let out = truncate("hello".to_string(), -5, "full=true".to_string());
-        assert!(out.chars().count() <= 1 || out.contains("chars truncated"));
+        assert_eq!(
+            truncate(
+                "hello".to_string(),
+                JsCount::try_from(100.0).expect("100 is a valid count"),
+                "full=true".to_string()
+            ),
+            "hello"
+        );
     }
 
     #[test]
