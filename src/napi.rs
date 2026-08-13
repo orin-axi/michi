@@ -765,7 +765,9 @@ mod tests {
             total_count: None,
             hints: vec![],
         };
-        assert!(render_toon(opts).is_err());
+        // AC-004: exact error message, not just is_err().
+        let err = render_toon(opts).expect_err("fields over MAX_FIELDS must be rejected");
+        assert_eq!(err.reason, format!("fields length {} exceeds maximum of {MAX_FIELDS}", MAX_FIELDS + 1));
     }
 
     #[test]
@@ -777,7 +779,9 @@ mod tests {
             total_count: None,
             hints: vec!["h".to_string(); MAX_HINTS + 1],
         };
-        assert!(render_toon(opts).is_err());
+        // AC-005: exact error message, not just is_err().
+        let err = render_toon(opts).expect_err("hints over MAX_HINTS must be rejected");
+        assert_eq!(err.reason, format!("hints length {} exceeds maximum of {MAX_HINTS}", MAX_HINTS + 1));
     }
 
     #[test]
@@ -789,7 +793,9 @@ mod tests {
             total_count: None,
             hints: vec![],
         };
-        assert!(render_toon(opts).is_err());
+        // AC-007: exact error message, not just is_err().
+        let err = render_toon(opts).expect_err("oversized row must be rejected");
+        assert_eq!(err.reason, format!("row length {} exceeds maximum fields per row of {MAX_FIELDS}", MAX_FIELDS + 1));
     }
 
     #[test]
@@ -900,6 +906,34 @@ mod tests {
         r.items(vec![vec![value("null")]], vec!["a".to_string()]).expect("builder still usable after rejection");
     }
 
+    // --- AC-010: JsAgentResponse::items rejects all three oversized paths
+    // (rows, fields, per-row), and the builder remains usable after each. ---
+
+    #[test]
+    fn ac010_js_agent_response_items_rejects_too_many_rows_and_stays_usable() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        let rows: Vec<Vec<JsToonValue>> = (0..=MAX_ROWS).map(|_| vec![value("null")]).collect();
+        let err = r
+            .items(rows, vec!["a".to_string()])
+            .expect_err("rows over MAX_ROWS must be rejected before consuming the builder");
+        assert!(err.reason.contains("rows length"), "got: {}", err.reason);
+
+        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("null") }])
+            .expect("builder still usable after rows rejection");
+    }
+
+    #[test]
+    fn ac010_js_agent_response_items_rejects_too_many_fields_and_stays_usable() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        let fields: Vec<String> = vec!["f".to_string(); MAX_FIELDS + 1];
+        let err =
+            r.items(vec![], fields).expect_err("fields over MAX_FIELDS must be rejected before consuming the builder");
+        assert!(err.reason.contains("fields length"), "got: {}", err.reason);
+
+        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("null") }])
+            .expect("builder still usable after fields rejection");
+    }
+
     #[test]
     fn js_agent_response_kv_items_rejects_oversized_input() {
         let mut r = JsAgentResponse::new("issue".to_string());
@@ -993,6 +1027,24 @@ mod tests {
         assert_eq!(r.render_for("user".to_string()).unwrap(), r.render_kv().unwrap());
     }
 
+    // --- AC-017: with items() populated (not kv_items()) and human_content
+    // never called, render_for('user') matches render_for('assistant') and
+    // is non-empty. Neither clause was previously asserted at the NAPI layer. ---
+
+    #[test]
+    fn ac017_render_for_user_with_items_populated_matches_assistant_and_is_nonempty() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        r.items(vec![vec![JsToonValue { str_val: Some("a".to_string()), ..value("str") }]], vec!["name".to_string()])
+            .unwrap();
+        let user = r.render_for("user".to_string()).unwrap();
+        let assistant = r.render_for("assistant".to_string()).unwrap();
+        assert_eq!(
+            user, assistant,
+            "with human_content unset, 'user' must fall back to the same output as 'assistant'"
+        );
+        assert!(!user.is_empty(), "items() populated with at least one row must yield non-empty output");
+    }
+
     #[test]
     fn render_for_rejects_unknown_audience() {
         let mut r = JsAgentResponse::new("t".to_string());
@@ -1070,6 +1122,23 @@ mod tests {
         }
         let result = r.recovery_hint("retry".to_string(), None);
         assert!(result.is_err(), "expected error after exceeding MAX_HINTS cumulative recovery hints");
+    }
+
+    // --- AC-026: hint() and recovery_hint() are independently capped;
+    // exhausting hint_count must not affect recovery_count. ---
+
+    #[test]
+    fn ac026_hint_and_recovery_hint_are_independently_capped() {
+        let mut r = JsAgentResponse::new("t".to_string());
+        r.kv_items(vec![]).unwrap();
+        for i in 0..MAX_HINTS {
+            r.hint(format!("h{i}")).expect("hint calls under MAX_HINTS must all succeed");
+        }
+        // hint_count is now exhausted; recovery_count must be a separate counter,
+        // still at 0, so this call must succeed rather than failing on account
+        // of hint()'s exhausted cap.
+        r.recovery_hint("retry".to_string(), None)
+            .expect("recovery_hint must succeed after hint()'s cap is exhausted — the two counters are independent");
     }
 
     #[test]
@@ -1206,7 +1275,110 @@ mod tests {
             value: JsToonValue { str_val: Some("v".into()), ..value("str") },
             health: Some("degraded".into()), // missing colon and reason
         }];
-        assert!(render_status("t".into(), "d".into(), items, None).is_err());
+        // AC-036: exact error message, not just is_err().
+        let err = render_status("t".into(), "d".into(), items, None).expect_err("unrecognized health must be rejected");
+        assert_eq!(
+            err.reason,
+            "unknown health value \"degraded\": expected \"ok\", \"degraded: <reason>\", or \"error: <reason>\""
+        );
+    }
+
+    // --- AC-038: render_domain_error rejects an unrecognized code with a
+    // message enumerating the valid codes. ---
+
+    #[test]
+    fn ac038_render_domain_error_rejects_unknown_code_with_enumerated_message() {
+        let err = render_domain_error("bogus_code".into(), "msg".into(), vec![], None)
+            .expect_err("unrecognized error code must be rejected");
+        assert_eq!(
+            err.reason,
+            "unknown error code \"bogus_code\"; expected one of: invalid_input, not_found, unauthorized, \
+             forbidden, conflict, rate_limited, unavailable, timeout, external_failure"
+        );
+    }
+
+    // --- AC-029: a KV item whose value has an unrecognized type renders as
+    // the KV "missing" representation ('—'), not an error. ---
+
+    #[test]
+    fn ac029_kv_unrecognized_value_type_renders_as_missing_em_dash() {
+        let item = JsKvItem { key: "id".into(), value: value("unrecognized-type") };
+        let out = render_kv(vec![item], None, vec![]).expect("unrecognized type must not error");
+        assert_eq!(out, "id: \u{2014}\n", "got: {out}");
+    }
+
+    // --- AC-044: render_json() on the spec's example builder state produces
+    // real, parseable, distinguishable JSON. ---
+
+    #[test]
+    fn ac044_render_json_is_valid_json_distinct_from_render_toon() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        r.items(vec![vec![JsToonValue { str_val: Some("a".to_string()), ..value("str") }]], vec!["name".to_string()])
+            .unwrap();
+        r.hint("h".to_string()).unwrap();
+
+        let json = r.render_json().expect("render_json must succeed");
+        assert!(json.starts_with('{'), "got: {json}");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("render_json output must parse as JSON");
+        assert!(parsed.is_object(), "expected a JSON object, got: {parsed:?}");
+
+        let toon = r.render_toon().expect("render_toon must succeed");
+        assert_ne!(json, toon, "render_json output must not be byte-identical to render_toon output");
+    }
+
+    // --- AC-048: the NAPI-exported parse_retry_after returns None (not a
+    // panic, not an error) for unparsable input. ---
+
+    #[test]
+    fn ac048_napi_parse_retry_after_returns_none_for_unparsable_input() {
+        assert_eq!(parse_retry_after("not-a-number-or-date".to_string()), None);
+    }
+
+    // --- AC-050: a recovery_hint added via the builder appears in
+    // render_toon() output, and presence vs. absence of a reason changes the
+    // rendered output. ---
+
+    #[test]
+    fn ac050_builder_recovery_hint_appears_in_render_toon_output() {
+        let mut r_no_reason = JsAgentResponse::new("issue".to_string());
+        r_no_reason
+            .items(vec![vec![JsToonValue { str_val: Some("a".to_string()), ..value("str") }]], vec!["name".to_string()])
+            .unwrap();
+        r_no_reason.recovery_hint("retry".to_string(), None).unwrap();
+        let out_no_reason = r_no_reason.render_toon().unwrap();
+        assert!(out_no_reason.contains("retry"), "got: {out_no_reason}");
+
+        let mut r_with_reason = JsAgentResponse::new("issue".to_string());
+        r_with_reason
+            .items(vec![vec![JsToonValue { str_val: Some("a".to_string()), ..value("str") }]], vec!["name".to_string()])
+            .unwrap();
+        r_with_reason.recovery_hint("retry".to_string(), Some("r".to_string())).unwrap();
+        let out_with_reason = r_with_reason.render_toon().unwrap();
+        assert!(out_with_reason.contains("retry"), "got: {out_with_reason}");
+        assert!(out_with_reason.contains('r'), "got: {out_with_reason}");
+
+        assert_ne!(
+            out_no_reason, out_with_reason,
+            "presence of a reason must produce different render_toon() output than its absence"
+        );
+    }
+
+    // --- AC-040: to_call_tool_result() succeeds for the fresh-builder and
+    // items()-populated states (kv_items-populated and as_error states are
+    // already covered by existing tests above). ---
+
+    #[test]
+    fn ac040_to_call_tool_result_ok_for_fresh_and_items_populated_states() {
+        let r_fresh = JsAgentResponse::new("issue".to_string());
+        let result_fresh = r_fresh.to_call_tool_result().expect("fresh builder must produce Ok");
+        assert!(result_fresh.structured_content.is_object(), "got: {:?}", result_fresh.structured_content);
+
+        let mut r_items = JsAgentResponse::new("issue".to_string());
+        r_items
+            .items(vec![vec![JsToonValue { str_val: Some("a".to_string()), ..value("str") }]], vec!["name".to_string()])
+            .unwrap();
+        let result_items = r_items.to_call_tool_result().expect("items-populated builder must produce Ok");
+        assert!(result_items.structured_content.is_object(), "got: {:?}", result_items.structured_content);
     }
 
     // --- AC-002: hard-cap constants are pinned to their documented values. ---
@@ -1354,5 +1526,179 @@ mod tests {
             (0..MAX_HINTS).map(|_| JsRecoveryHint { tool: "retry".to_string(), reason: None }).collect();
         let out = render_recovery(hints).expect("hints at exactly MAX_HINTS must be accepted");
         assert!(out.starts_with(&format!("recovery[{MAX_HINTS}]")), "got: {}", &out[..out.len().min(40)]);
+    }
+
+    // --- AC-032: packages/michi-node/src/lib.rs contains only a doc-comment
+    // header and `pub use michi::napi::*;` — no other public items. ---
+
+    #[test]
+    fn ac032_michi_node_lib_rs_contains_only_the_reexport() {
+        let src = include_str!("../packages/michi-node/src/lib.rs");
+        let non_comment_non_blank: Vec<&str> =
+            src.lines().map(str::trim).filter(|line| !line.is_empty() && !line.starts_with("//")).collect();
+        assert_eq!(
+            non_comment_non_blank,
+            vec!["pub use michi::napi::*;"],
+            "packages/michi-node/src/lib.rs must contain only a doc-comment header and \
+             `pub use michi::napi::*;`, got non-comment/non-blank lines: {non_comment_non_blank:?}"
+        );
+    }
+
+    /// Returns `true` if `line` contains the token `unsafe` used as a block
+    /// or item qualifier — i.e. immediately (modulo whitespace) followed by
+    /// `{`, `fn`, `impl`, or `trait` — approximating the regex
+    /// `\bunsafe\s*(\{|fn|impl|trait)` from AC-033a without a regex
+    /// dependency. Deliberately does not match `unsafe_code` (the attribute
+    /// token used by `#![deny(unsafe_code)]` / `#![allow(unsafe_code)]`,
+    /// covered separately by AC-033b) because the character immediately
+    /// following `unsafe` there is `_`, which fails the word-boundary check.
+    fn line_has_unsafe_qualifier(line: &str) -> bool {
+        let bytes = line.as_bytes();
+        let mut i = 0;
+        while let Some(rel) = line[i..].find("unsafe") {
+            let start = i + rel;
+            let before_ok = start == 0 || !(bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_');
+            let after = start + "unsafe".len();
+            let after_ok = after >= bytes.len() || !(bytes[after].is_ascii_alphanumeric() || bytes[after] == b'_');
+            if before_ok && after_ok {
+                let mut j = after;
+                while j < bytes.len() && (bytes[j] as char).is_whitespace() {
+                    j += 1;
+                }
+                let rest = &line[j..];
+                if rest.starts_with('{')
+                    || rest.starts_with("fn")
+                    || rest.starts_with("impl")
+                    || rest.starts_with("trait")
+                {
+                    return true;
+                }
+            }
+            i = after;
+            if i > line.len() {
+                break;
+            }
+        }
+        false
+    }
+
+    // --- AC-033a: the only unsafe blocks/fns in the napi module tree are
+    // FromNapiValue/ToNapiValue trait impl bodies in src/napi/num.rs; no
+    // hand-written unsafe exists in src/lib.rs, src/napi.rs, or
+    // packages/michi-node/src/lib.rs. ---
+
+    #[test]
+    fn ac033a_unsafe_confined_to_napi_num_ffi_trait_impls() {
+        let lib_src = include_str!("lib.rs");
+        let napi_src = include_str!("napi.rs");
+        let node_src = include_str!("../packages/michi-node/src/lib.rs");
+        let num_src = include_str!("napi/num.rs");
+
+        for (name, src) in
+            [("src/lib.rs", lib_src), ("src/napi.rs", napi_src), ("packages/michi-node/src/lib.rs", node_src)]
+        {
+            let hits: Vec<&str> = src.lines().filter(|l| line_has_unsafe_qualifier(l)).collect();
+            assert!(hits.is_empty(), "{name} must contain no hand-written `unsafe` qualifiers, found: {hits:?}");
+        }
+
+        let lines: Vec<&str> = num_src.lines().collect();
+        let impl_line_indices: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.contains("impl") && (l.contains("FromNapiValue") || l.contains("ToNapiValue")))
+            .map(|(i, _)| i)
+            .collect();
+        assert!(!impl_line_indices.is_empty(), "expected at least one FromNapiValue/ToNapiValue impl in num.rs");
+
+        let mut unsafe_hit_count = 0;
+        for (i, line) in lines.iter().enumerate() {
+            if line_has_unsafe_qualifier(line) {
+                unsafe_hit_count += 1;
+                let near = impl_line_indices.iter().any(|&ii| i >= ii && i <= ii + 3);
+                assert!(
+                    near,
+                    "num.rs:{}: `{}` is not within 3 lines of a FromNapiValue/ToNapiValue impl line",
+                    i + 1,
+                    line.trim()
+                );
+            }
+        }
+        assert!(unsafe_hit_count > 0, "expected num.rs to contain the sanctioned FFI-boundary unsafe occurrences");
+    }
+
+    // --- AC-033b: src/lib.rs has #![deny(unsafe_code)]; src/napi.rs has
+    // #![allow(unsafe_code)] immediately preceded by an explanatory comment. ---
+
+    #[test]
+    fn ac033b_deny_and_allow_unsafe_code_attributes_present() {
+        let lib_src = include_str!("lib.rs");
+        assert!(lib_src.contains("#![deny(unsafe_code)]"), "src/lib.rs must contain #![deny(unsafe_code)]");
+
+        let napi_src = include_str!("napi.rs");
+        let idx = napi_src.find("#![allow(unsafe_code)]").expect("src/napi.rs must contain #![allow(unsafe_code)]");
+        let preceding = &napi_src[..idx];
+        let last_non_blank = preceding.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+        assert!(
+            last_non_blank.trim_start().starts_with("//"),
+            "expected a comment immediately preceding #![allow(unsafe_code)], got: {last_non_blank:?}"
+        );
+        // Check the comment block explains the reason (catch_unwind macro expansion),
+        // not just that some comment happens to be adjacent.
+        let block: String = preceding
+            .lines()
+            .rev()
+            .take_while(|l| l.trim().is_empty() || l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            block.contains("catch_unwind"),
+            "comment preceding #![allow(unsafe_code)] must explain the exemption via catch_unwind, got: {block:?}"
+        );
+    }
+
+    // --- AC-034a: every #[napi(...)]-attributed free function and every
+    // #[napi(...)]-attributed method in `impl JsAgentResponse` carries
+    // catch_unwind. ---
+
+    #[test]
+    fn ac034a_every_napi_paren_attributed_fn_has_catch_unwind() {
+        let napi_src = include_str!("napi.rs");
+        let lines: Vec<&str> = napi_src.lines().collect();
+        let mut checked = 0;
+        for (i, line) in lines.iter().enumerate() {
+            if !line.trim_start().starts_with("pub fn") {
+                continue;
+            }
+            let mut j = i;
+            let mut found_napi_paren_attr: Option<&str> = None;
+            while j > 0 {
+                let prev = lines[j - 1].trim_start();
+                if prev.starts_with("#[") || prev.starts_with("///") || prev.starts_with("//!") {
+                    if prev.starts_with("#[napi(") {
+                        found_napi_paren_attr = Some(lines[j - 1]);
+                    }
+                    j -= 1;
+                } else {
+                    break;
+                }
+            }
+            if let Some(attr) = found_napi_paren_attr {
+                checked += 1;
+                assert!(
+                    attr.contains("catch_unwind"),
+                    "napi.rs:{}: `pub fn` preceded by `{}` without catch_unwind",
+                    i + 1,
+                    attr.trim()
+                );
+            }
+        }
+        assert!(
+            checked >= 15,
+            "expected to check at least 15 #[napi(...)]-attributed fns/methods, only checked {checked} \
+             (a change to how attributes are written may have broken this scan's detection)"
+        );
     }
 }
