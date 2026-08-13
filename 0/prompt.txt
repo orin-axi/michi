@@ -1,0 +1,95 @@
+<task-notification>
+<task-id>a892eaf45ba43a9cc</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a892eaf45ba43a9cc.output</output-file>
+<status>completed</status>
+<summary>Agent "Drift check michi-core-error.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Probe removed; tree clean of my changes (the untracked `docs/superpowers/plans/` file is from a sibling agent, not this pass). All compile-time attributes verified present in source.
+
+```json
+{
+  "spec_id": "michi-core-error",
+  "spec_file_path": "/Users/gabe/Projects/michi/.claude/specs/michi-core-error.json",
+  "covered": [
+    { "criterion_id": "AC-007", "test_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "test_line": 467, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "implementation_line": 94 },
+    { "criterion_id": "AC-014a", "test_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "test_line": 386, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "implementation_line": 172 },
+    { "criterion_id": "AC-016", "test_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "test_line": 397, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "implementation_line": 191 },
+    { "criterion_id": "AC-017", "test_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "test_line": 403, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "implementation_line": 191 },
+    { "criterion_id": "AC-019", "test_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "test_line": 422, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "implementation_line": 223 },
+    { "criterion_id": "AC-025", "test_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "test_line": 380, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "implementation_line": 296 },
+    { "criterion_id": "AC-028", "test_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "test_line": 460, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "implementation_line": 328 },
+    { "criterion_id": "AC-029", "test_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "test_line": 448, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-core/src/error.rs", "implementation_line": 329 }
+  ],
+  "uncovered": [
+    { "criterion_id": "AC-001", "note": "ErrorClass has #[non_exhaustive] (error.rs:9), Copy (error.rs:7), 3 variants — property holds, but no trybuild fixture exists. Spec names crates/michi-core/tests/compile_fail/; actual fixture dir is tests/ui-fail/ and contains no ErrorClass fixture." },
+    { "criterion_id": "AC-002", "note": "ErrorCode #[non_exhaustive] (error.rs:43), Copy (error.rs:41), 9 variants — holds; no trybuild fixture." },
+    { "criterion_id": "AC-023", "note": "Error #[non_exhaustive] (error.rs:293), 3 variants — holds; no trybuild fixture." },
+    { "criterion_id": "AC-009a", "note": "All four builders carry #[must_use] (error.rs:137,144,151,158) — holds; no deny(unused_must_use) fixture exists." },
+    { "criterion_id": "AC-003", "note": "Sensitive&lt;T&gt; Debug -&gt; '&lt;redacted&gt;' verified empirically incl. a type with no Debug impl; zero tests reference Sensitive anywhere in the workspace." },
+    { "criterion_id": "AC-004", "note": "Sensitive&lt;T&gt; Display -&gt; '&lt;redacted&gt;' verified empirically; no test." },
+    { "criterion_id": "AC-006", "note": "is_retryable_by_default() correct for all 9 codes (verified empirically); no test asserts it. The dedicated test existed in packaged 0.1.0 and was dropped." },
+    { "criterion_id": "AC-008", "note": "new() defaults verified empirically (hints=0, recovery=None, retry_after=None, retryable=code default); no test asserts the field set." },
+    { "criterion_id": "AC-010", "note": "recovery() overwrite verified empirically (r1 then r2 -&gt; Some(r2)); no test." },
+    { "criterion_id": "AC-012", "note": "retry_after() setter correct; no test in workspace references retry_after outside error.rs:120,132,159,160." },
+    { "criterion_id": "AC-012a", "note": "Byte-identity across render/render_github_annotation/render_json verified empirically true; no test." },
+    { "criterion_id": "AC-013", "note": "DomainError::exit_code() == 1; no test (only idempotency.rs has exit_code tests)." },
+    { "criterion_id": "AC-014", "note": "The hints+recovery combination — the exact literal the criterion pins — has no test. The existing render test covers hints-only (AC-014a). Literal confirmed correct empirically." },
+    { "criterion_id": "AC-014b", "note": "recovery-without-hints branch verified empirically to emit no 'help[' substring; no test." },
+    { "criterion_id": "AC-015", "note": "Empty hints + no recovery render verified empirically, incl. with retry_after set; no test." },
+    { "criterion_id": "AC-024", "note": "Error::Domain(d).render() == d.render() verified empirically; no test." },
+    { "criterion_id": "AC-026", "note": "Error::NotFound render correct ('error: Not found: x'); no test. Sibling AC-025 IS tested — the not_found_renders test existed in packaged 0.1.0 and was dropped." },
+    { "criterion_id": "AC-027", "note": "Error::exit_code() == 1 for all 3 variants; no test. exit_code_is_one existed in packaged 0.1.0 and was dropped." },
+    { "criterion_id": "AC-030", "note": "Error::InvalidInput(_)/NotFound(_).class() == User incl. empty string, verified empirically; no test. TRAP: the existing invalid_input_is_user test (error.rs:454) exercises Error::Domain(DomainError::new(InvalidInput)), NOT the Error::InvalidInput variant — it does not witness AC-030." },
+    { "criterion_id": "AC-034", "note": "Both Display impls produce 'rate_limited: slow down' as specified; no test." },
+    { "criterion_id": "AC-035", "note": "params is Vec&lt;(String,KvValue)&gt; (recovery.rs:11) so insertion order is structurally preserved; probe with reverse-alphabetical keys emitted {\"zebra\":1,\"alpha\":2}, confirming no reordering. No test — the only recovery in the suite has a single param and cannot witness ordering." }
+  ],
+  "drifted": [
+    { "criterion_id": "AC-005", "spec_contract": "label() returns the exact snake_case string for all 9 codes.", "actual_behavior": "Implementation correct for all 9 (verified). No test asserts label(); only 2 of 9 labels are incidentally witnessed as substrings of render assertions (not_found at error.rs:392, invalid_input at error.rs:399). The dedicated error_code_labels_are_snake_case test existed in packaged 0.1.0 and was dropped. 7 labels could be changed with the suite still green." },
+    { "criterion_id": "AC-009", "spec_contract": ".hint(\"a\").hint(\"b\") yields exactly two Hints with as_str() \"a\" then \"b\" in order.", "actual_behavior": "Implementation correct. Two hints are added at error.rs:416-417 but nothing asserts their count, values, or order; the only hint assertion is a substring check (error.rs:361). Hint order could invert with the suite still green." },
+    { "criterion_id": "AC-011", "spec_contract": "retryable(false) flips a default-true code to false AND retryable(true) flips a default-false code to true.", "actual_behavior": "Implementation correct in both directions. CONFOUNDED WITNESS: both retryable() calls in the render_json tests are no-ops on their chosen codes — .retryable(false) on NotFound (already false, error.rs:417) and .retryable(true) on Unavailable (already true, error.rs:433); both would still pass if retryable() were a no-op. The genuine false-direction flip appears only in the class tests. The true-direction half has no witness anywhere." },
+    { "criterion_id": "AC-018", "spec_contract": "render_json() parses as valid JSON whose top-level object has exactly the keys {isError,error,message,retryable,hints,recovery}.", "actual_behavior": "Implementation emits exactly those six keys unconditionally. No test parses the JSON or asserts the key set — all assertions are substring contains() checks. Spec scope claims serde_json is an unconditional [dev-dependency] of michi-core; it is not — serde_json is an optional feature-gated regular dependency (crates/michi-core/Cargo.toml:17), and the only dev-dependency is trybuild. The stated verification mechanism does not exist." },
+    { "criterion_id": "AC-020", "spec_contract": "reason key is ABSENT when r.reason is None; present and equal to text when Some.", "actual_behavior": "Implementation correct — probe confirms Some(recovery) with reason None emits {\"tool\":\"t\",\"params\":{}} with no reason key. Only the Some half is asserted (error.rs:444). The discriminating half — key absence — has no test; the impl could emit \"reason\":null with the suite still green." },
+    { "criterion_id": "AC-021", "spec_contract": "A message containing both a double-quote and a backslash still parses as valid JSON and the decoded message equals the original exactly.", "actual_behavior": "Implementation correct (kv/mod.rs:66-67 escapes both). Quote escaping is asserted positively (error.rs:376). Backslash is NOT: the message at error.rs:414 contains a backslash but the only related assertion is the negative !json.contains(r#\"has \"quotes\"\"#) at error.rs:424, which passes purely because quotes are escaped — it is satisfied for a reason unrelated to backslash handling. No round-trip decode is performed anywhere." },
+    { "criterion_id": "AC-022", "spec_contract": "CallToolResult with is_error==true, exactly one content block whose text == self.render() and audience == [Audience::Assistant], and structured_content == self.render_json().", "actual_behavior": "Implementation satisfies all four clauses (verified empirically). The test at error.rs:365 asserts only is_error and !content.is_empty() — it does not assert block count, text equality, audience, or structured_content. Three of four clauses could break with the suite still green; notably audience could be [User] undetected." },
+    { "criterion_id": "AC-031", "spec_contract": "is_retryable() is true if and only if class() == Transient.", "actual_behavior": "Implementation is tautologically correct (error.rs:337). Only the false direction is asserted, for a single code (error.rs:484). No test asserts is_retryable()==true for any error." },
+    { "criterion_id": "AC-032", "spec_contract": "All four of {RateLimited, Unavailable, Timeout, ExternalFailure} with no override yield class()==Transient AND is_retryable()==true.", "actual_behavior": "All four correct empirically. Only RateLimited is tested (error.rs:462), and only its class() — is_retryable() is never asserted for any of the four. Unavailable, Timeout, ExternalFailure have no witness." },
+    { "criterion_id": "AC-033", "spec_contract": "All five of {InvalidInput, NotFound, Unauthorized, Forbidden, Conflict} with no override yield class()==User AND is_retryable()==false.", "actual_behavior": "All five correct empirically. Only InvalidInput is tested (error.rs:455), and only its class(). NotFound, Unauthorized, Forbidden, Conflict have no witness, and is_retryable() is never asserted." }
+  ],
+  "summary": "Baseline is green (115/115 michi-core tests pass). Of 39 criteria: 8 covered, 21 uncovered, 10 drifted. Critically, ZERO criteria show genuine behavior divergence — every runtime-observable criterion was empirically confirmed correct against the current implementation via a temporary probe harness, so the spec's behavioral claims are accurate and no code fix is indicated. All 10 'drifted' entries are false-greens: a test touches the surface but does not assert the criterion's discriminating condition, so the behavior could break with the suite still green. The dominant finding is a coverage regression introduced by the crate split: the packaged michi-0.1.0 snapshot at target/package/michi-0.1.0/src/error.rs contains eight error tests (not_found_renders, invalid_input_is_user_class, not_found_is_user_class, exit_code_is_one, sensitive_redacts_debug, sensitive_redacts_display, error_code_labels_are_snake_case, non_retryable_codes) that no longer exist in crates/michi-core/src/error.rs, directly explaining AC-003, AC-004, AC-005, AC-006, AC-026, AC-027, and AC-030. Two spec-accuracy defects are separate from code: the spec prescribes trybuild fixtures under crates/michi-core/tests/compile_fail/ (the real directory is tests/ui-fail/ and holds no error.rs fixtures), and asserts serde_json is an unconditional dev-dependency of michi-core when it is an optional feature-gated regular dependency. All three of the session's recurring defect patterns are present, with family-sibling-gap by far the most prevalent.",
+  "reasoning": "Read spec from disk, not context. Ran cargo nextest (115 pass) before classifying. Read error.rs, recovery.rs, hints.rs, kv/mod.rs, mcp.rs, audience.rs, both Cargo.tomls, and all four test files. Rather than infer untested behavior, wrote a throwaway integration test exercising every runtime criterion and read its output, then deleted it — this is what let me state confidently that uncovered criteria are untested-but-correct rather than silently broken. Distinguished 'no test at all' (uncovered) from 'test exists but does not assert the contract' (drifted/false-green) per the classification rules. Did not treat the doc comment at error.rs:88-92 claiming classification behavior, nor the packaged snapshot, as evidence of current coverage."
+}
+```
+
+## Report
+
+**Baseline**: green — `cargo nextest run -p michi-core` gives 115/115 pass.
+
+**Counts**: 8 covered / 21 uncovered / 10 drifted.
+
+**The headline: there is no behavior drift.** I wrote a throwaway probe harness (`crates/michi-core/tests/zz_drift_probe.rs`, since deleted) exercising every runtime-observable criterion and read its actual output. All 39 of the spec's behavioral claims are accurate against the current code. Nothing here calls for a `lambda` fix to the implementation. All 10 "drifted" entries are **false-greens** — a test exists and passes, but does not assert the criterion's discriminating condition.
+
+**Root cause of most gaps — a coverage regression from the crate split.** `/Users/gabe/Projects/michi/target/package/michi-0.1.0/src/error.rs` (a stale packaged snapshot) contains eight error tests that **no longer exist** in `/Users/gabe/Projects/michi/crates/michi-core/src/error.rs`: `not_found_renders`, `invalid_input_is_user_class`, `not_found_is_user_class`, `exit_code_is_one`, `sensitive_redacts_debug`, `sensitive_redacts_display`, `error_code_labels_are_snake_case`, `non_retryable_codes`. These directly explain AC-003, AC-004, AC-005, AC-006, AC-026, AC-027, AC-030. Recovering them is the cheapest single win.
+
+### All three recurring patterns confirmed
+
+**1. Confounded witness** — two clean instances:
+- **AC-011**: *both* `.retryable()` calls in the suite are no-ops on their chosen codes — `.retryable(false)` on `NotFound` (error.rs:417, already false) and `.retryable(true)` on `Unavailable` (error.rs:433, already true). Both assertions pass identically if `retryable()` were deleted entirely.
+- **AC-021**: the backslash in the test message at error.rs:414 is never asserted on. The only nearby assertion is negative — `!json.contains(r#"has "quotes""#)` at error.rs:424 — which passes purely because *quotes* are escaped, a mechanism unrelated to backslash handling.
+
+**2. Unbounded universal + safe witness** — AC-029/AC-031/AC-032/AC-033 each state a rule over a code family but are witnessed by exactly one code. AC-028's witness is genuinely discriminating (removing the `d.retryable` guard would fail it), but the interesting untested consequence is that a *User*-fault code explicitly marked `.retryable(true)` classifies as `Transient` and retryable — spec-consistent, empirically confirmed, zero coverage.
+
+**3. Family-sibling-gap — most prevalent, as predicted.** `Error::InvalidInput` render tested / `Error::NotFound` sibling not (AC-025 vs AC-026). `default_class()` gets an exhaustive 9-variant test / siblings `label()` and `is_retryable_by_default()` get none. `render()` hints-only branch pinned to an exact literal / the other three cells of the 2x2 (hints+recovery, recovery-only, neither) untested. `reason` present asserted / `reason` absent — the discriminating half — not.
+
+### One trap worth flagging explicitly
+
+The test named `invalid_input_is_user` (error.rs:454) looks like it covers AC-030, but it exercises `Error::Domain(DomainError::new(ErrorCode::InvalidInput, ...))` — the **Domain** variant, not the `Error::InvalidInput` variant AC-030 is about. AC-030 has no coverage despite the suggestive name.
+
+### Two spec-accuracy defects (for `canon/correct`, not code)
+
+- AC-001/002/023/009a prescribe fixtures under `crates/michi-core/tests/compile_fail/`. The real directory is `crates/michi-core/tests/ui-fail/` and contains no error.rs fixtures. The underlying properties all hold in source (`#[non_exhaustive]` at error.rs:9/43/107/293; `Copy` at :7/:41; `#[must_use]` at :137/144/151/158).
+- The spec's `scope` states serde_json is "an unconditional `[dev-dependency]`" of michi-core, used to evaluate AC-018/019/020/021. It is not — serde_json is an **optional, feature-gated regular dependency** (`crates/michi-core/Cargo.toml:17`); the sole dev-dependency is `trybuild`. No test anywhere parses `render_json()` output.
+
+I made no lasting changes; the untracked `docs/superpowers/plans/2026-08-04-edge-case-fixes.md` in `git status` is from a sibling agent, not this pass.</result>
+<usage><subagent_tokens>83021</subagent_tokens><tool_uses>20</tool_uses><duration_ms>344254</duration_ms></usage>
+</task-notification>
