@@ -648,7 +648,21 @@ mod tests {
         assert!(!docs.contains("clamped non-negative"), "docs still describe clamping");
         assert!(!docs.contains("n.max(0) as usize"), "docs still show the deleted clamp expression");
         assert!(!docs.contains("silently lose precision"), "docs still describe silent precision loss");
-        for field in ["totalCount", "decimalsVal", "maxChars", "intVal", "floatVal"] {
+        for field in [
+            "totalCount",
+            "decimalsVal",
+            "maxChars",
+            "intVal",
+            "floatVal",
+            "baseDelayMs",
+            "maxDelayMs",
+            "jitterFactor",
+            "jitterSeed",
+            "retryAfterMs",
+            "maxRetries",
+            "attempt",
+            "status",
+        ] {
             assert!(docs.contains(field), "numeric boundary docs missing rejection contract for {field}");
         }
 

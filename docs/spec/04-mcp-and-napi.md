@@ -168,8 +168,12 @@ Every JavaScript number that crosses into a rendering call is validated at the b
 - `maxChars` (`truncate`'s parameter) is rejected unless it is a finite, non-negative integer no greater than `Number.MAX_SAFE_INTEGER`.
 - `intVal` is rejected unless it is a finite integer in `[-9007199254740991, 9007199254740991]` — the range over which a JS number and an `i64` agree exactly.
 - `floatVal` is rejected unless it is finite; `NaN`, `Infinity`, and `-Infinity` are all rejected.
+- `baseDelayMs`, `maxDelayMs`, and `retryAfterMs` are rejected unless finite, non-negative, and Duration-representable (`v / 1000.0 < u64::MAX`).
+- `jitterFactor` and `jitterSeed` are rejected unless finite and in `[0.0, 1.0]`.
+- `maxRetries` and `attempt` are rejected unless a finite integer in `[0, 4294967295]`.
+- `status` is rejected unless a finite integer in `[100, 599]`.
 
-None of these five inputs is ever silently clamped, truncated, or defaulted on an out-of-domain value — rejection happens before any michi rendering code runs.
+None of these thirteen inputs is ever silently clamped, truncated, or defaulted on an out-of-domain value — rejection happens before any michi rendering or resilience code runs.
 
 ### Platform binary loading (`index.js`)
 
