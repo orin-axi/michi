@@ -395,6 +395,12 @@ mod tests {
     }
 
     #[test]
+    fn ac016b_neg_infinity_renders_as_exact_quoted_text() {
+        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::NEG_INFINITY)]], None, &[], 200);
+        assert_eq!(out, "t[1]{v}:\n  \"-inf\"\n");
+    }
+
+    #[test]
     fn ac023_empty_hints_produce_no_help_line() {
         let out = super::render("t", &[], &[], None, &[], 200);
         assert!(!out.lines().any(|l| l.starts_with("help[")), "got: {out}");
