@@ -617,6 +617,42 @@ mod tests {
     }
 
     #[test]
+    fn resilience_supersessions_are_recorded_in_michi_root_napi() {
+        let root_napi: serde_json::Value =
+            serde_json::from_str(include_str!("../../.claude/specs/michi-root-napi.json"))
+                .expect("michi-root-napi.json is valid JSON");
+        let criteria = root_napi["acceptance_criteria"].as_array().expect("acceptance_criteria is an array");
+        let superseded_ids = ["AC-023", "AC-035"];
+        for c in criteria {
+            let id = c["id"].as_str().expect("id is a string");
+            let criterion = c["criterion"].as_str().expect("criterion is a string");
+            if superseded_ids.contains(&id) {
+                assert!(
+                    criterion.starts_with("SUPERSEDED BY SPEC-ARCH-004 -- "),
+                    "{id} should carry the SPEC-ARCH-004 supersession prefix, got: {criterion}"
+                );
+            } else {
+                assert!(
+                    !criterion.starts_with("SUPERSEDED BY SPEC-ARCH-004"),
+                    "{id} should not carry the SPEC-ARCH-004 supersession prefix"
+                );
+            }
+        }
+        let api_surface = root_napi["api_surface"].as_array().expect("api_surface is an array");
+        for entry in api_surface {
+            let name = entry["name"].as_str().unwrap_or_default();
+            if name == "next_retry_delay" || name == "is_retryable_status" {
+                let description = entry["description"].as_str().unwrap_or_default();
+                assert!(!description.contains("clamped to [0,1]"), "{name} api_surface still describes clamping");
+                assert!(
+                    !description.contains("silently coerced to 0"),
+                    "{name} api_surface still describes silent coercion"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn js_unit_interval_type_name_is_js_unit_interval() {
         assert_eq!(JsUnitInterval::type_name(), "JsUnitInterval");
     }
