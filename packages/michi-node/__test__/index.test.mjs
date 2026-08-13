@@ -416,3 +416,49 @@ void describe('index.d.ts keeps plain number types (SPEC-ARCH-003 AC-012)', () =
     }
   })
 })
+
+void describe('jitter_seed / jitter_factor rejection (SPEC-ARCH-004)', () => {
+  void it('rejects jitter_seed = 1.5 with the exact range-check message (AC-001)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, 1000, 0.2, 1.5, 0),
+      (err) => err.message === 'expected a finite number in [0.0, 1.0], got 1.5'
+    )
+  })
+
+  void it('rejects jitter_seed = -0.1 with the exact range-check message (AC-002)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, 1000, 0.2, -0.1, 0),
+      (err) => err.message === 'expected a finite number in [0.0, 1.0], got -0.1'
+    )
+  })
+
+  void it('rejects jitter_factor = NaN with the delegated finiteness message (AC-003)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, 1000, NaN, 0.5, 0),
+      (err) => err.message === 'expected a finite number, got NaN'
+    )
+  })
+
+  void it('rejects jitter_seed = NaN with the delegated finiteness message (AC-031)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, 1000, 0.2, NaN, 0),
+      (err) => err.message === 'expected a finite number, got NaN'
+    )
+  })
+
+  void it('rejects jitter_factor = 5.0 instead of clamping to 1.0 (AC-004b)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, 1000, 5.0, 0.5, 0),
+      (err) => err.message === 'expected a finite number in [0.0, 1.0], got 5'
+    )
+  })
+
+  void it('accepts jitter_seed / jitter_factor at 0.0, 0.5, and 1.0 with exact delay values (AC-004)', () => {
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.0, 0.5, 0), 100)
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.5, 0.5, 0), 125)
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 1.0, 0.5, 0), 150)
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.0, 0), 100)
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0), 110)
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 1.0, 0), 120)
+  })
+})
