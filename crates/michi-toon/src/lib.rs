@@ -374,6 +374,19 @@ mod validate_tests {
     }
 
     #[test]
+    fn ac003_multiple_bad_fields_reports_first_in_list_order() {
+        let opts = ToonOptions {
+            type_name: "t".into(),
+            fields: vec!["a,b".into(), "c,d".into()],
+            rows: vec![],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert_eq!(opts.validate(), Err(ToonError::InvalidFieldName { name: "a,b".to_string() }));
+    }
+
+    #[test]
     fn ac004b_multiple_violations_return_only_the_first_in_fixed_order() {
         let opts = ToonOptions {
             type_name: "foo[bar".into(),
@@ -475,6 +488,26 @@ mod list_tests {
     fn ac029_structural_char_in_first_items_key_rejected_before_rendering() {
         let result = list("t", &[serde_json::json!({"a,b": 1})]);
         assert_eq!(result, Err(ToonError::InvalidFieldName { name: "a,b".to_string() }));
+    }
+
+    #[test]
+    fn ac029_type_name_violation_takes_precedence_over_field_name_violation() {
+        let result = list("t[x", &[serde_json::json!({"a,b": 1})]);
+        assert_eq!(result, Err(ToonError::InvalidTypeName { name: "t[x".to_string() }));
+    }
+
+    struct FailsToSerialize;
+
+    impl serde::Serialize for FailsToSerialize {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("boom"))
+        }
+    }
+
+    #[test]
+    fn ac027b_serialization_error_reports_reason_and_first_failing_index() {
+        let result = list("t", &[FailsToSerialize]);
+        assert_eq!(result, Err(ToonError::InvalidItem { row_index: 0, reason: "boom".to_string() }));
     }
 
     #[test]

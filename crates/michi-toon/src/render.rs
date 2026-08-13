@@ -347,6 +347,50 @@ mod tests {
     }
 
     #[test]
+    fn ac008_render_level_comma_cell_is_quoted_when_untruncated() {
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from("x,y")]], None, &[], 200);
+        assert_eq!(out, "t[1]{a}:\n  \"x,y\"\n");
+    }
+
+    #[test]
+    fn ac009_render_level_quote_cell_is_wrapped_and_escaped_when_untruncated() {
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from(r#"say "hi""#)]], None, &[], 200);
+        assert_eq!(out, "t[1]{a}:\n  \"say \\\"hi\\\"\"\n");
+    }
+
+    #[test]
+    fn ac008b_ac011d_truncated_cell_with_comma_in_kept_prefix_is_quoted() {
+        let content = "a,".repeat(300);
+        assert_eq!(content.chars().count(), 600);
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from(content)]], None, &[], 200);
+        let expected_kept: String = "a,".repeat(300).chars().take(162).collect();
+        let expected = format!("t[1]{{a}}:\n  \"{expected_kept} (600 chars truncated — use full=true)\"\n");
+        assert_eq!(out, expected);
+        let cell = out.strip_prefix("t[1]{a}:\n  ").unwrap().strip_suffix('\n').unwrap();
+        assert_eq!(cell.chars().count(), 202);
+        assert!(cell.starts_with('"') && cell.ends_with('"'));
+    }
+
+    #[test]
+    fn ac005_structural_type_name_sanitizes_without_panicking_when_rows_well_formed() {
+        let out = super::render(
+            "ty[pe",
+            &["a".to_string(), "b".to_string()],
+            &[vec![Value::from("x"), Value::from("y")]],
+            None,
+            &[],
+            200,
+        );
+        assert_eq!(out, "ty_pe[1]{a,b}:\n  x,y\n");
+    }
+
+    #[test]
+    fn ac020_structural_type_name_is_sanitized_not_preserved_in_header() {
+        let out = super::render("ty[pe", &["a".to_string()], &[], None, &[], 200);
+        assert_eq!(out, "ty_pe[0]{a}:\n");
+    }
+
+    #[test]
     fn ac012a_full_render_with_default_max_cell_len() {
         let opts_row = vec![Value::from("a".repeat(500))];
         let out = super::render("t", &["a".to_string()], &[opts_row], None, &[], 200);
