@@ -1,0 +1,83 @@
+<task-notification>
+<task-id>a3ed642fa63d3878f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a3ed642fa63d3878f.output</output-file>
+<status>completed</status>
+<summary>Agent "Round-2 canon-exit-gate for michi-toon.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both suites green, tree verified clean after all three sabotages. Here is the binding verdict.
+
+```json
+{
+  "artifact_type": "spec@1",
+  "verdict": "fail",
+  "confidence": "high",
+  "retry_count": 2,
+  "verdict_summary": "Fail. Both suites green (65 debug, 66 release); no TBDs, error cases carry is_error_case, scope fits one cycle. But 9 criteria state universal clauses refuted by inputs meeting their own stated preconditions — AC-011, AC-044, AC-007b, AC-022, AC-023, AC-029, AC-038, AC-039, AC-040 — each verified by execution.",
+  "blockers": [
+    {
+      "criterion": "AC-011",
+      "location": "crates/michi-toon/src/render.rs:173-179; escape.rs:17,33",
+      "finding": "Provably false under its own preconditions. Input: type_name \"t\", fields [\"a\"], one cell Value::Str(\"a\\n\".repeat(300)) (600 chars), max_cell_len=200. Pre-escape content = first 162 chars + 38-char suffix = 200 chars, and it contains NO comma and NO double-quote, so AC-011's first branch asserts the rendered cell equals it unchanged. Executed result: the rendered cell is 119 chars (81 'a' + suffix) because escape_value strips every \\n and \\r unconditionally, independent of the quoting decision. AC-011's two-branch dichotomy (comma/quote present vs. absent) omits the third transformation. FIX: replace both branches with one statement — 'the rendered cell content equals the pre-escape content with all \\n and \\r characters removed, and additionally, if and only if the pre-escape content contains a comma or a double-quote, wrapped in a leading and trailing double-quote with each embedded double-quote replaced by the two-character sequence \\\". ' Keep the existing 500-'a' example and add a second example whose kept prefix contains \\n."
+    },
+    {
+      "criterion": "AC-044",
+      "location": "crates/michi-toon/src/escape.rs:17,33",
+      "finding": "Same truncate-then-escape interaction. 'the number of original-string characters preserved before the suffix equals max_cell_len minus the Unicode scalar count of the suffix text' is false as an observable claim for the AC-011 input above: 81 original characters survive into the output, not 162. The closing caveat enumerates only comma and double-quote as escape effects that break the count and omits \\n/\\r removal, which shrinks rather than grows it. FIX: scope the 'preserved' count explicitly to the pre-escape kept prefix, and rewrite the final sentence to 'post-escape output can exceed max_cell_len by exactly 2 when the kept prefix contains a comma or double-quote, and can fall below max_cell_len when the kept prefix contains \\n or \\r, which escape_value removes.'"
+    },
+    {
+      "criterion": "AC-007b",
+      "location": "crates/michi-toon/src/render.rs:168",
+      "finding": "Not checkable from observable output, and false under a literal reading. 'no text derived from cells at index &gt;= fields.len() appears' describes provenance, which the returned String does not carry. Input fields [\"a\"], row [Value::Str(\"x\"), Value::Str(\"x\")] in release: the rendered line is \"x\", which does contain text identical to the rendering of cell index 1. Verifying the criterion requires knowing the loop runs 0..field_count — implementation knowledge. FIX: restate as a byte equality: 'that row's rendered line is byte-for-byte identical to the line render_toon() produces for an otherwise-identical ToonOptions whose row has been truncated to its first fields.len() cells.' Keep the distinct-value example."
+    },
+    {
+      "criterion": "AC-022",
+      "location": "crates/michi-toon/src/render.rs:153, 201-205",
+      "finding": "The negative branch is falsified. render_toon(&amp;ToonOptions::new(\"totalCount:\", vec![], vec![])) with total_count None satisfies the stated precondition and yields \"totalCount:[0]{}:\\n\" — a line beginning with 'totalCount:'. ':' is not a structural character, so sanitize_header_token leaves it intact. FIX: change the negative branch to 'no line equal to `totalCount: N`, for any decimal integer N, appears anywhere in the output.' This is safe because a header line always contains the substring ']{' and ends with '}:', and every row and hint line starts with two spaces, so neither can collide with that exact form."
+    },
+    {
+      "criterion": "AC-023",
+      "location": "crates/michi-toon/src/render.rs:153, 208-211",
+      "finding": "The negative branch is falsified by an ordinary input, not a contrived one. render_toon(&amp;ToonOptions::new(\"help\", vec![], vec![])) with hints empty yields \"help[0]{}:\\n\" — a line beginning with 'help['. A caller naming a type 'help' is entirely plausible for this crate. FIX: change the negative branch to 'no line equal to `help[N]:`, for any decimal integer N, appears anywhere in the output.' A header line can never take that form because it always contains ']{' and ends with '}:'."
+    },
+    {
+      "criterion": "AC-029",
+      "location": "crates/michi-toon/src/lib.rs:214-233",
+      "finding": "Falsified. list(\"t\", &amp;[json!({\"a,b\": 1}), json!(7)]) satisfies both stated preconditions (type_name has no structural character; the first non-empty serialized item's object has a structural key) but returns Err(InvalidItem { row_index: 1, reason: \"item is not a JSON object (struct or map required)\" }), not InvalidFieldName. The serialization loop returns on the first non-object item before validate() is ever reached. FIX: add the precondition 'and every item in items serializes successfully to a JSON object'."
+    },
+    {
+      "criterion": "AC-038",
+      "location": "crates/michi-toon/src/lib.rs:214-233",
+      "finding": "Two defects. (a) Same missing guard as AC-029: a later non-object item pre-empts with InvalidItem, and a structurally invalid type_name pre-empts with InvalidTypeName, both while AC-038's stated preconditions hold. (b) 'expected equals the key count of that later non-empty item's serialized object' is underdetermined when two or more later items serialize to non-empty objects of differing arity. Verified: list(\"t\", &amp;[json!({}), json!({\"k\":1}), json!({\"a\":1,\"b\":2})]) returns expected: 1 — the key count of the FIRST later non-empty item, not the last. FIX: add 'type_name contains none of [ ] { } , \\n \\r and every item serializes to a JSON object', and change the expected clause to 'expected equals the key count of the first item, in slice order, whose serialized object is non-empty'."
+    },
+    {
+      "criterion": "AC-039",
+      "location": "crates/michi-toon/src/lib.rs:232-234",
+      "finding": "Falsified. list(\"a[b\", &amp;([] as [serde_json::Value; 0])) satisfies the stated precondition (empty items slice) but returns Err(ToonError::InvalidTypeName { name: \"a[b\" }), not Ok(\"a[b[0]{}:\\n\"), because list() calls opts.validate() unconditionally before rendering. FIX: add the precondition 'where type_name contains none of [ ] { } , \\n \\r'. Note this is the same well-formedness guard round 1 added to AC-020 and AC-021 — it was not propagated to the list() criteria, which is a sibling gap."
+    },
+    {
+      "criterion": "AC-040",
+      "location": "crates/michi-toon/src/lib.rs:232-234",
+      "finding": "Falsified identically. list(\"a[b\", &amp;[json!({}), json!({})]) returns Err(ToonError::InvalidTypeName { name: \"a[b\" }), not the specified Ok value. FIX: add the same precondition 'where type_name contains none of [ ] { } , \\n \\r'. Once that guard is present, the literal `&lt;type_name&gt;` in the expected output string is correct as written, since sanitize_header_token leaves a guarded type_name unchanged."
+    },
+    {
+      "criterion": "revision_note (defect 4 clause)",
+      "location": ".claude/specs/michi-toon.json revision_note",
+      "finding": "The document makes a false statement about its own contents. revision_note says AC-011b was 'replaced with a concrete measured instance (300x \\u65e5, max_cell_len=200) verified via a standalone binary against the live crate: row line = 202 chars / 528 bytes.' AC-011b as written uses 100 repetitions of \\u65e5 and asserts that NO truncation occurs (300 bytes, 100 chars, max_cell_len=200) — the opposite scenario. 300 repetitions at max_cell_len=200 would truncate and produce a 200-char unquoted cell, not 202. FIX: rewrite that clause to describe AC-011b's actual instance (100 repetitions, 100 chars / 300 bytes, rendered untruncated), or state both if a 300-repetition criterion was intended and dropped."
+    }
+  ],
+  "reasoning": "Verification performed: read spec fresh from disk; read render.rs, escape.rs, lib.rs, and michi-truncate/src/lib.rs in full. Ran cargo nextest run -p michi-toon --all-features (65 passed, 0 skipped) and --release (66 passed, 2 skipped) — both green as predicted. Built a standalone probe crate depending on michi-toon by path with the serde feature and executed 10 adversarial probes in release. Six criteria were empirically refuted (AC-011, AC-022, AC-023, AC-029, AC-039, AC-040), one shown underdetermined (AC-038), one shown non-observable (AC-007b), one shown wrong post-escape (AC-044). Spot-checked 13 criteria by running their named tests (ac011c, ac008b/011d, ac042, ac038, ac035, ac006a, ac007a, ac027b, ac029 x2, ac032 x2, ac044) — all pass. Three sabotage-and-restore cycles: (1) forced escape_value to always return Cow::Owned -&gt; ac042 failed as predicted; (2) moved the totalCount block after the help block -&gt; ac025a failed (ac025b did not, since it compares two outputs that shift together; AC-041's ordering is pinned only incidentally by AC-025a's exact-string assertion and has no dedicated test — a coverage observation, not a spec blocker); (3) made Value::Null render a space while a missing cell stays empty -&gt; ac028 failed in debug and ac018 failed in release once nextest fail-fast was bypassed. git diff --quiet over the three source files confirmed clean after every restore, and both suites returned to green. Controls that PASSED adversarial attack and are correctly stated: AC-008 and AC-009 survive the byte-gate/char-gate interaction — verified with a 4-char/10-byte comma-bearing multibyte cell at max_cell_len=5, which takes the truncate_inline path yet returns unchanged (char_count &lt;= max_chars) and is still quoted; AC-011/AC-044's 'first N characters' is correct for multibyte because truncate() uses char_indices().nth(keep_chars); AC-020, AC-021, AC-041, AC-030, AC-042, AC-032 (all twelve api_surface signature strings checked verbatim against source), AC-013/013b/014/015/016/016b/017/019, AC-024, AC-004b, AC-005, AC-006a/b, AC-007a, AC-010, AC-018, AC-027/027b, AC-035, AC-036, AC-043 all hold under generalization. The scope note's claim that AC-026 depends on serde_json preserve_order is accurate — confirmed enabled at workspace Cargo.toml:23 and absent from crates/michi-toon/Cargo.toml. Conditions 2 (no TBDs), 3 (error cases carry is_error_case: true), and 4 (single planning cycle) all hold. Condition 1 fails on nine criteria. retry_count is 2, below the escalation threshold of 3, so this is a fail rather than an escalation."
+}
+```
+
+Two things worth flagging beyond the verdict itself.
+
+**The round-1 defect class was not eliminated, only patched at its known instances.** All three round-1 falsifications were "universal clause + favorable assumption about another pipeline stage." Round 2 fixed those three but reintroduced the same shape in new places. AC-011 is the sharpest example: it was rewritten specifically to handle the truncate-then-escape ordering, and it correctly accounts for escape_value's *quoting* behavior — but escape_value performs **two** transformations, and the criterion silently assumes the `\n`/`\r` stripping never fires. A cell of `"a\n".repeat(300)` refutes it directly. The same is true of the `list()` criteria: round 1 added well-formedness guards to AC-020/AC-021 but never asked which *other* criteria needed the identical guard, leaving AC-039 and AC-040 refutable by a one-line call.
+
+**A structural suggestion for the drafter, beyond the nine local fixes.** Two rules would kill the class rather than the instances:
+- Any criterion about a rendered cell must account for all three stages in order — truncation, `\n`/`\r` removal, conditional quoting — or explicitly state a precondition excluding the stages it ignores.
+- Any criterion about `list()`'s return value must state preconditions on *both* earlier failure gates (the per-item serialize/object check at `lib.rs:214-231` and `validate()` at `lib.rs:233`), because either can pre-empt the outcome the criterion names.
+
+Relevant paths: `/Users/gabe/Projects/michi/.claude/specs/michi-toon.json`, `/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs`, `/Users/gabe/Projects/michi/crates/michi-toon/src/escape.rs`, `/Users/gabe/Projects/michi/crates/michi-toon/src/lib.rs`, `/Users/gabe/Projects/michi/crates/michi-truncate/src/lib.rs`. The probe crate used for the refutations is at `/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/scratchpad/probe/` if you want to re-run it.</result>
+<usage><subagent_tokens>109086</subagent_tokens><tool_uses>22</tool_uses><duration_ms>551466</duration_ms></usage>
+</task-notification>
