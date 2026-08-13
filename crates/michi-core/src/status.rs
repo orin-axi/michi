@@ -236,6 +236,32 @@ mod tests {
     }
 
     #[test]
+    fn ac023a_newline_in_item_key_breaks_the_2_plus_n_formula_even_with_hints() {
+        let items = vec![StatusItem { key: "a\nb".into(), value: KvValue::Text("v".into()), health: None }];
+        let hints = vec![Hint::new("h1")];
+        let resp = StatusResponse::new("tool", "desc", items).with_hints(hints);
+        let out = resp.render();
+        let lines_before_help = out.lines().take_while(|l| !l.starts_with("help[")).count();
+        assert_eq!(lines_before_help, 4, "2 (tool+desc) + 1 item + 1 extra from the embedded \\n, got: {out:?}");
+    }
+
+    #[test]
+    fn ac024_health_ok_renders_byte_identical_to_health_none() {
+        let ok_item = StatusItem { key: "x".into(), value: KvValue::Int(1), health: Some(Health::Ok) };
+        let none_item = StatusItem { key: "x".into(), value: KvValue::Int(1), health: None };
+        let ok_out = StatusResponse::new("tool", "desc", vec![ok_item]).render();
+        let none_out = StatusResponse::new("tool", "desc", vec![none_item]).render();
+        assert_eq!(ok_out, none_out);
+    }
+
+    #[test]
+    fn ac024_value_text_containing_bracket_literal_is_not_mistaken_for_a_real_annotation() {
+        let item = StatusItem { key: "x".into(), value: KvValue::Text("[DEGRADED: fake]".into()), health: None };
+        let out = StatusResponse::new("tool", "desc", vec![item]).render();
+        assert_eq!(out, "tool:        tool\ndescription: desc\nx:           [DEGRADED: fake]\n");
+    }
+
+    #[test]
     fn ac023b_newline_in_item_key_adds_a_line_beyond_the_2_plus_n_formula() {
         let items = vec![StatusItem { key: "a\nb".into(), value: KvValue::Text("v".into()), health: None }];
         let resp = StatusResponse::new("tool", "desc", items);

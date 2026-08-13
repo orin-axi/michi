@@ -180,6 +180,14 @@ mod tests {
     }
 
     #[test]
+    fn ac018c_newline_in_param_key_passes_through_unstripped() {
+        let hints = [RecoveryHint::new("t").param("k\nz", KvValue::Text("v".to_string()))];
+        let out = render_recovery(&hints);
+        assert_eq!(out, "recovery[1]:\n  t: suggestedParams: { k\nz: v }\n");
+        assert_eq!(out.lines().count(), 3, "one extra line from the embedded \\n in the param key");
+    }
+
+    #[test]
     #[cfg(feature = "serde")]
     fn ac037b_serializes_with_null_for_unset_reason_and_no_rename() {
         assert_eq!(
