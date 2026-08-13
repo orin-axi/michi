@@ -673,6 +673,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
+    fn ac021a_newline_cr_and_tab_round_trip_exactly_in_message_and_hint() {
+        let original_message = "line1\nline2\rline3\ttabbed";
+        let original_hint = "hint\nwith\rcontrol\tchars";
+        let err = DomainError::new(ErrorCode::NotFound, original_message).hint(original_hint);
+        let raw = err.render_json();
+        assert!(!raw.contains('\n') && !raw.contains('\r') && !raw.contains('\t'), "got: {raw:?}");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(parsed["message"].as_str().unwrap(), original_message);
+        assert_eq!(parsed["hints"][0].as_str().unwrap(), original_hint);
+    }
+
+    #[test]
     fn ac022_to_call_tool_result_matches_render_outputs_exactly() {
         let err = DomainError::new(ErrorCode::Unavailable, "down").hint("h");
         let result = err.to_call_tool_result();
