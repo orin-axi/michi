@@ -1,6 +1,11 @@
 //! AC-027/AC-029: `#[non_exhaustive]` on `ContentBlock`/`CallToolResult`
 //! prevents struct-literal construction from outside this crate.
 //! AC-036: `Health` has no `Serialize` impl even with the `serde` feature on.
+//! error.rs AC-001/AC-002/AC-023: `ErrorClass`/`ErrorCode`/`Error` are
+//! `#[non_exhaustive]`, so an exhaustive match without a wildcard arm fails
+//! to compile (E0004).
+//! error.rs AC-009a: `DomainError`'s builder methods are `#[must_use]`, so
+//! discarding their return value under `#![deny(unused_must_use)]` fails.
 
 #[test]
 fn non_exhaustive_and_no_serde_types_reject_the_forbidden_construction() {
@@ -9,6 +14,10 @@ fn non_exhaustive_and_no_serde_types_reject_the_forbidden_construction() {
     t.compile_fail("tests/ui-fail/call_tool_result_struct_literal.rs");
     t.compile_fail("tests/ui-fail/status_response_struct_literal.rs");
     t.compile_fail("tests/ui-fail/audience_exhaustive_match.rs");
+    t.compile_fail("tests/ui-fail/error_class_exhaustive_match.rs");
+    t.compile_fail("tests/ui-fail/error_code_exhaustive_match.rs");
+    t.compile_fail("tests/ui-fail/error_exhaustive_match.rs");
+    t.compile_fail("tests/ui-fail/domain_error_must_use.rs");
     #[cfg(feature = "serde")]
     {
         t.compile_fail("tests/ui-fail/health_no_serde.rs");

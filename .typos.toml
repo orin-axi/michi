@@ -2,4 +2,4 @@
 extend-ignore-identifiers-re = ["[0-9a-f]{16}"]
 
 [files]
-extend-exclude = ["*.snap", "Cargo.lock"]
+extend-exclude = ["*.snap", "*.stderr", "Cargo.lock"]

@@ -1,0 +1,48 @@
+error: unused return value of `DomainError::hint` that must be used
+ --> tests/ui-fail/domain_error_must_use.rs:5:5
+  |
+5 |     e.clone().hint("h");
+  |     ^^^^^^^^^^^^^^^^^^^
+  |
+note: the lint level is defined here
+ --> tests/ui-fail/domain_error_must_use.rs:1:9
+  |
+1 | #![deny(unused_must_use)]
+  |         ^^^^^^^^^^^^^^^
+help: use `let _ = ...` to ignore the resulting value
+  |
+5 |     let _ = e.clone().hint("h");
+  |     +++++++
+
+error: unused return value of `DomainError::recovery` that must be used
+ --> tests/ui-fail/domain_error_must_use.rs:6:5
+  |
+6 |     e.clone().recovery(michi_core::RecoveryHint::new("t"));
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+help: use `let _ = ...` to ignore the resulting value
+  |
+6 |     let _ = e.clone().recovery(michi_core::RecoveryHint::new("t"));
+  |     +++++++
+
+error: unused return value of `DomainError::retryable` that must be used
+ --> tests/ui-fail/domain_error_must_use.rs:7:5
+  |
+7 |     e.clone().retryable(true);
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+help: use `let _ = ...` to ignore the resulting value
+  |
+7 |     let _ = e.clone().retryable(true);
+  |     +++++++
+
+error: unused return value of `DomainError::retry_after` that must be used
+ --> tests/ui-fail/domain_error_must_use.rs:8:5
+  |
+8 |     e.clone().retry_after(std::time::Duration::from_secs(1));
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+help: use `let _ = ...` to ignore the resulting value
+  |
+8 |     let _ = e.clone().retry_after(std::time::Duration::from_secs(1));
+  |     +++++++

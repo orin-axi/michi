@@ -483,4 +483,279 @@ mod tests {
         let err = Error::Domain(DomainError::new(ErrorCode::Unavailable, "down").retryable(false));
         assert!(!err.is_retryable(), "Internal-classified error must not be retryable");
     }
+
+    // AC-003/AC-004: Sensitive<T> redacts even a type with no Debug/Display impl.
+    struct NoDebugOrDisplay;
+
+    #[test]
+    fn ac003_sensitive_debug_is_always_redacted() {
+        assert_eq!(format!("{:?}", Sensitive(NoDebugOrDisplay)), "<redacted>");
+        assert_eq!(format!("{:?}", Sensitive("plain str")), "<redacted>");
+    }
+
+    #[test]
+    fn ac004_sensitive_display_is_always_redacted() {
+        assert_eq!(format!("{}", Sensitive(NoDebugOrDisplay)), "<redacted>");
+        assert_eq!(format!("{}", Sensitive("plain str")), "<redacted>");
+    }
+
+    #[test]
+    fn ac005_label_is_exact_snake_case_for_every_code() {
+        use ErrorCode::*;
+        assert_eq!(InvalidInput.label(), "invalid_input");
+        assert_eq!(NotFound.label(), "not_found");
+        assert_eq!(Unauthorized.label(), "unauthorized");
+        assert_eq!(Forbidden.label(), "forbidden");
+        assert_eq!(Conflict.label(), "conflict");
+        assert_eq!(RateLimited.label(), "rate_limited");
+        assert_eq!(Unavailable.label(), "unavailable");
+        assert_eq!(Timeout.label(), "timeout");
+        assert_eq!(ExternalFailure.label(), "external_failure");
+    }
+
+    #[test]
+    fn ac006_is_retryable_by_default_matches_the_transient_codes() {
+        use ErrorCode::*;
+        assert!(RateLimited.is_retryable_by_default());
+        assert!(Unavailable.is_retryable_by_default());
+        assert!(Timeout.is_retryable_by_default());
+        assert!(ExternalFailure.is_retryable_by_default());
+        assert!(!InvalidInput.is_retryable_by_default());
+        assert!(!NotFound.is_retryable_by_default());
+        assert!(!Unauthorized.is_retryable_by_default());
+        assert!(!Forbidden.is_retryable_by_default());
+        assert!(!Conflict.is_retryable_by_default());
+    }
+
+    #[test]
+    fn ac008_new_defaults_hold_for_a_default_true_and_a_default_false_code() {
+        let e = DomainError::new(ErrorCode::InvalidInput, "bad");
+        assert_eq!(e.message, "bad");
+        assert!(e.hints.is_empty());
+        assert!(e.recovery.is_none());
+        assert!(e.retry_after.is_none());
+        assert_eq!(e.retryable, ErrorCode::InvalidInput.is_retryable_by_default());
+        assert!(!e.retryable);
+
+        let e = DomainError::new(ErrorCode::RateLimited, "slow down");
+        assert_eq!(e.message, "slow down");
+        assert!(e.hints.is_empty());
+        assert!(e.recovery.is_none());
+        assert!(e.retry_after.is_none());
+        assert_eq!(e.retryable, ErrorCode::RateLimited.is_retryable_by_default());
+        assert!(e.retryable);
+    }
+
+    #[test]
+    fn ac009_hint_calls_are_stored_in_call_order() {
+        let e = DomainError::new(ErrorCode::NotFound, "m").hint("a").hint("b");
+        let as_strs: Vec<&str> = e.hints.iter().map(Hint::as_str).collect();
+        assert_eq!(as_strs, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn ac010_recovery_overwrites_not_accumulates() {
+        let r1 = RecoveryHint::new("first_tool");
+        let r2 = RecoveryHint::new("second_tool");
+        let e = DomainError::new(ErrorCode::NotFound, "m").recovery(r1).recovery(r2.clone());
+        assert_eq!(e.recovery, Some(r2));
+    }
+
+    #[test]
+    fn ac011_retryable_flips_in_both_directions() {
+        // RateLimited defaults retryable=true; force it false.
+        let e = DomainError::new(ErrorCode::RateLimited, "m").retryable(false);
+        assert!(!e.retryable);
+
+        // InvalidInput defaults retryable=false; force it true.
+        let e = DomainError::new(ErrorCode::InvalidInput, "m").retryable(true);
+        assert!(e.retryable);
+    }
+
+    #[test]
+    fn ac012_retry_after_sets_the_exact_duration() {
+        let d = Duration::from_millis(1234);
+        let e = DomainError::new(ErrorCode::Unavailable, "m").retry_after(d);
+        assert_eq!(e.retry_after, Some(d));
+    }
+
+    #[test]
+    fn ac012a_retry_after_contributes_no_bytes_to_any_render_output() {
+        let base = DomainError::new(ErrorCode::NotFound, "m").hint("h").recovery(RecoveryHint::new("t"));
+        let with_retry_after = base.clone().retry_after(Duration::from_secs(30));
+        assert_eq!(base.render(), with_retry_after.render());
+        assert_eq!(base.render_github_annotation(), with_retry_after.render_github_annotation());
+        assert_eq!(base.render_json(), with_retry_after.render_json());
+    }
+
+    #[test]
+    fn ac013_exit_code_is_always_one() {
+        assert_eq!(DomainError::new(ErrorCode::InvalidInput, "m").exit_code(), 1);
+        assert_eq!(
+            DomainError::new(ErrorCode::Unavailable, "m")
+                .hint("h")
+                .recovery(RecoveryHint::new("t"))
+                .retryable(false)
+                .retry_after(Duration::from_secs(5))
+                .exit_code(),
+            1
+        );
+    }
+
+    #[test]
+    fn ac014_render_with_hints_and_recovery_is_exact_literal() {
+        let e = DomainError::new(ErrorCode::NotFound, "m").hint("h").recovery(RecoveryHint::new("t"));
+        assert_eq!(e.render(), "error: not_found\nmessage: m\nexit_code: 1\nhelp[1]:\n  h\nrecovery[1]:\n  t\n");
+    }
+
+    #[test]
+    fn ac014b_render_with_recovery_and_no_hints_has_no_help_block() {
+        let e = DomainError::new(ErrorCode::NotFound, "m").recovery(RecoveryHint::new("t"));
+        assert_eq!(e.render(), "error: not_found\nmessage: m\nexit_code: 1\nrecovery[1]:\n  t\n");
+        assert!(!e.render().contains("help["), "got: {}", e.render());
+    }
+
+    #[test]
+    fn ac015_render_with_no_hints_no_recovery_is_exact_prefix_regardless_of_retry_after() {
+        let e = DomainError::new(ErrorCode::NotFound, "m");
+        assert_eq!(e.render(), "error: not_found\nmessage: m\nexit_code: 1\n");
+
+        let e_with_retry_after = e.retry_after(Duration::from_secs(1));
+        assert_eq!(e_with_retry_after.render(), "error: not_found\nmessage: m\nexit_code: 1\n");
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac018_render_json_top_level_keys_are_exactly_the_specified_set() {
+        let with_recovery = DomainError::new(ErrorCode::NotFound, "m").recovery(RecoveryHint::new("t"));
+        let without_recovery = DomainError::new(ErrorCode::NotFound, "m");
+        for err in [with_recovery, without_recovery] {
+            let parsed: serde_json::Value = serde_json::from_str(&err.render_json()).unwrap();
+            let obj = parsed.as_object().unwrap();
+            let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            assert_eq!(keys, vec!["error", "hints", "isError", "message", "recovery", "retryable"]);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac018_render_json_field_values_match_the_source_fields() {
+        let err = DomainError::new(ErrorCode::Unauthorized, "nope").hint("h1").retryable(true);
+        let parsed: serde_json::Value = serde_json::from_str(&err.render_json()).unwrap();
+        assert_eq!(parsed["isError"], serde_json::json!(true));
+        assert_eq!(parsed["error"], serde_json::json!("unauthorized"));
+        assert_eq!(parsed["message"], serde_json::json!("nope"));
+        assert_eq!(parsed["retryable"], serde_json::json!(true));
+        assert_eq!(parsed["hints"], serde_json::json!(["h1"]));
+        assert_eq!(parsed["recovery"], serde_json::Value::Null);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac020_reason_key_is_absent_when_none_and_present_when_some() {
+        let no_reason = DomainError::new(ErrorCode::NotFound, "m").recovery(RecoveryHint::new("t"));
+        let parsed: serde_json::Value = serde_json::from_str(&no_reason.render_json()).unwrap();
+        assert!(parsed["recovery"].as_object().unwrap().get("reason").is_none(), "got: {parsed}");
+
+        let with_reason = DomainError::new(ErrorCode::NotFound, "m").recovery(RecoveryHint::new("t").reason("why"));
+        let parsed: serde_json::Value = serde_json::from_str(&with_reason.render_json()).unwrap();
+        assert_eq!(parsed["recovery"]["reason"], serde_json::json!("why"));
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac021_quote_and_backslash_round_trip_exactly() {
+        let original = r#"has "quotes" and \backslash"#;
+        let err = DomainError::new(ErrorCode::NotFound, original);
+        let parsed: serde_json::Value = serde_json::from_str(&err.render_json()).unwrap();
+        assert_eq!(parsed["message"].as_str().unwrap(), original);
+    }
+
+    #[test]
+    fn ac022_to_call_tool_result_matches_render_outputs_exactly() {
+        let err = DomainError::new(ErrorCode::Unavailable, "down").hint("h");
+        let result = err.to_call_tool_result();
+        assert!(result.is_error);
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.content[0].text, err.render());
+        assert_eq!(result.content[0].audience, vec![crate::audience::Audience::Assistant]);
+        assert_eq!(result.structured_content, err.render_json());
+    }
+
+    #[test]
+    fn ac024_error_domain_render_matches_inner_domain_error_render() {
+        let d = DomainError::new(ErrorCode::Conflict, "m").hint("h");
+        assert_eq!(Error::Domain(d.clone()).render(), d.render());
+    }
+
+    #[test]
+    fn ac026_error_not_found_variant_renders_exact_prefix() {
+        let e = Error::NotFound("issue 42".into());
+        assert_eq!(e.render(), "error: Not found: issue 42");
+    }
+
+    #[test]
+    fn ac027_exit_code_is_one_for_every_variant() {
+        assert_eq!(Error::InvalidInput("x".into()).exit_code(), 1);
+        assert_eq!(Error::NotFound("x".into()).exit_code(), 1);
+        assert_eq!(Error::Domain(DomainError::new(ErrorCode::Unavailable, "x")).exit_code(), 1);
+    }
+
+    // AC-030 TRAP: a test named for the InvalidInput/NotFound *variants* must actually
+    // construct those variants, not Error::Domain(DomainError::new(InvalidInput, ..)) --
+    // the two are different Error variants with independently-implemented class() arms.
+    #[test]
+    fn ac030_invalid_input_and_not_found_variants_are_always_user_class() {
+        assert_eq!(Error::InvalidInput(String::new()).class(), ErrorClass::User);
+        assert_eq!(Error::InvalidInput("msg".into()).class(), ErrorClass::User);
+        assert_eq!(Error::NotFound(String::new()).class(), ErrorClass::User);
+        assert_eq!(Error::NotFound("msg".into()).class(), ErrorClass::User);
+    }
+
+    #[test]
+    fn ac031_is_retryable_true_direction() {
+        let err = Error::Domain(DomainError::new(ErrorCode::Unavailable, "down").retryable(true));
+        assert!(err.is_retryable(), "Transient-classified error must be retryable");
+    }
+
+    #[test]
+    fn ac032_all_transient_default_codes_are_transient_and_retryable() {
+        use ErrorCode::*;
+        for code in [RateLimited, Unavailable, Timeout, ExternalFailure] {
+            let err = Error::Domain(DomainError::new(code, "m"));
+            assert_eq!(err.class(), ErrorClass::Transient, "{code:?}");
+            assert!(err.is_retryable(), "{code:?}");
+        }
+    }
+
+    #[test]
+    fn ac033_all_user_default_codes_are_user_and_not_retryable() {
+        use ErrorCode::*;
+        for code in [InvalidInput, NotFound, Unauthorized, Forbidden, Conflict] {
+            let err = Error::Domain(DomainError::new(code, "m"));
+            assert_eq!(err.class(), ErrorClass::User, "{code:?}");
+            assert!(!err.is_retryable(), "{code:?}");
+        }
+    }
+
+    #[test]
+    fn ac034_display_impls_agree_on_the_exact_format() {
+        let d = DomainError::new(ErrorCode::RateLimited, "slow down");
+        assert_eq!(format!("{d}"), "rate_limited: slow down");
+        let e = Error::Domain(d);
+        assert_eq!(format!("{e}"), "rate_limited: slow down");
+    }
+
+    #[test]
+    fn ac035_render_json_recovery_params_preserve_insertion_order() {
+        let r = RecoveryHint::new("t")
+            .param("zebra", crate::kv::KvValue::Int(1))
+            .param("alpha", crate::kv::KvValue::Int(2));
+        let e = DomainError::new(ErrorCode::NotFound, "m").recovery(r);
+        let json = e.render_json();
+        let zebra_pos = json.find("\"zebra\"").expect("zebra key present");
+        let alpha_pos = json.find("\"alpha\"").expect("alpha key present");
+        assert!(zebra_pos < alpha_pos, "zebra (added first) must appear before alpha, got: {json}");
+    }
 }
