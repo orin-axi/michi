@@ -331,4 +331,14 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn ac021_truncated_implements_clone_partial_eq_debug() {
+        let a = truncate("hello", 100, "x");
+        let b = truncate("hello", 100, "x");
+        assert_eq!(a, b);
+        assert_eq!(a.clone(), a);
+        let debug_str = format!("{a:?}");
+        assert!(!debug_str.is_empty());
+    }
 }
