@@ -361,6 +361,19 @@ mod validate_tests {
     }
 
     #[test]
+    fn ac003_type_name_violation_takes_precedence_over_field_name_violation() {
+        let opts = ToonOptions {
+            type_name: "a[b".into(),
+            fields: vec!["x,y".into()],
+            rows: vec![],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert_eq!(opts.validate(), Err(ToonError::InvalidTypeName { name: "a[b".to_string() }));
+    }
+
+    #[test]
     fn ac003_invalid_field_name_error_carries_exact_offending_name() {
         let opts = ToonOptions {
             type_name: "t".into(),
@@ -408,6 +421,21 @@ mod validate_tests {
     }
 
     #[test]
+    fn ac035b_default_fields_match_new_field_by_field() {
+        // Asserted field-by-field, not just via the empty-document render, since
+        // the empty render is invariant under max_cell_len and cannot catch a
+        // Default-only regression (Default is a separate struct literal, not a
+        // delegation to ToonOptions::new).
+        let opts = ToonOptions::default();
+        assert_eq!(opts.type_name, String::new());
+        assert!(opts.fields.is_empty());
+        assert!(opts.rows.is_empty());
+        assert_eq!(opts.total_count, None);
+        assert!(opts.hints.is_empty());
+        assert_eq!(opts.max_cell_len, 200);
+    }
+
+    #[test]
     fn ac037_direct_field_mutation_affects_render_toon_output() {
         let mut opts = ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("x")]]);
         opts.total_count = Some(5);
@@ -431,6 +459,19 @@ mod validate_tests {
             total_count: None,
         };
         assert!(matches!(opts.validate(), Err(ToonError::RowLengthMismatch { row_index: 0, expected: 1, actual: 2 })));
+    }
+
+    #[test]
+    fn ac004_type_name_violation_takes_precedence_over_row_length_violation() {
+        let opts = ToonOptions {
+            type_name: "a[b".into(),
+            fields: vec!["a".into()],
+            rows: vec![vec![Value::from("x"), Value::from("y")]],
+            hints: vec![],
+            max_cell_len: 200,
+            total_count: None,
+        };
+        assert_eq!(opts.validate(), Err(ToonError::InvalidTypeName { name: "a[b".to_string() }));
     }
 }
 
