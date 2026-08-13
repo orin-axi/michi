@@ -302,6 +302,9 @@ mod tests {
     fn ac007b_long_row_drops_extra_cells_in_release() {
         let out = super::render("t", &["a".to_string()], &[vec![Value::from("x"), Value::from("y")]], None, &[], 200);
         assert_eq!(out, "t[1]{a}:\n  x\n");
+        // byte-equal to the render of a row truncated to fields.len() cells
+        let truncated_row_out = super::render("t", &["a".to_string()], &[vec![Value::from("x")]], None, &[], 200);
+        assert_eq!(out, truncated_row_out);
     }
 
     #[test]
@@ -325,6 +328,17 @@ mod tests {
         let out = super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], 200);
         let expected_prefix = "a".repeat(162);
         assert_eq!(out, format!("t[1]{{a}}:\n  {expected_prefix} (500 chars truncated — use full=true)\n"));
+    }
+
+    #[test]
+    fn ac011_truncated_cell_strips_newlines_from_kept_prefix() {
+        let content = "a\n".repeat(300);
+        assert_eq!(content.chars().count(), 600);
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from(content)]], None, &[], 200);
+        let expected_prefix = "a".repeat(81);
+        assert_eq!(out, format!("t[1]{{a}}:\n  {expected_prefix} (600 chars truncated — use full=true)\n"));
+        let cell = out.strip_prefix("t[1]{a}:\n  ").unwrap().strip_suffix('\n').unwrap();
+        assert_eq!(cell.chars().count(), 119, "119, not the pre-escape 200, since newlines are stripped");
     }
 
     #[test]
@@ -447,7 +461,28 @@ mod tests {
     #[test]
     fn ac023_empty_hints_produce_no_help_line() {
         let out = super::render("t", &[], &[], None, &[], 200);
-        assert!(!out.lines().any(|l| l.starts_with("help[")), "got: {out}");
+        // A genuine `help[N]:` block line contains no `{` (the header, in
+        // contrast, always contains `]{`); check for that exact form's absence.
+        assert!(!out.lines().any(|l| l.starts_with("help[") && l.ends_with(':') && !l.contains('{')), "got: {out}");
+    }
+
+    #[test]
+    fn ac023_type_name_help_does_not_falsely_trigger_the_negative_check() {
+        // A header line starting with "help[" (from type_name "help") is not
+        // itself of the form `help[N]:` as a standalone line -- it's the header,
+        // which always contains "]{" and ends with "}:". This must not be
+        // mistaken for a real help[N]: block.
+        let out = super::render("help", &[], &[], None, &[], 200);
+        assert_eq!(out, "help[0]{}:\n");
+        assert!(!out.lines().any(|l| l.starts_with("help[") && l.ends_with(':') && !l.contains('{')), "got: {out}");
+    }
+
+    #[test]
+    fn ac022_type_name_totalcount_does_not_falsely_trigger_the_negative_check() {
+        let out = super::render("totalCount:", &[], &[], None, &[], 200);
+        assert_eq!(out, "totalCount:[0]{}:\n");
+        // A genuine `totalCount: N` line contains no `{`.
+        assert!(!out.lines().any(|l| l.starts_with("totalCount: ") && !l.contains('{')), "got: {out}");
     }
 
     #[test]

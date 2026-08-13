@@ -496,6 +496,18 @@ mod list_tests {
         assert_eq!(result, Err(ToonError::InvalidTypeName { name: "t[x".to_string() }));
     }
 
+    #[test]
+    fn ac029_serialization_failure_takes_precedence_over_field_name_violation() {
+        let result = list("t", &[serde_json::json!({"a,b": 1}), serde_json::json!(7)]);
+        assert_eq!(
+            result,
+            Err(ToonError::InvalidItem {
+                row_index: 1,
+                reason: "item is not a JSON object (struct or map required)".to_string()
+            })
+        );
+    }
+
     struct FailsToSerialize;
 
     impl serde::Serialize for FailsToSerialize {
@@ -517,14 +529,33 @@ mod list_tests {
     }
 
     #[test]
+    fn ac038_expected_is_first_nonempty_later_items_key_count_not_the_last() {
+        let result =
+            list("t", &[serde_json::json!({}), serde_json::json!({"k": 1}), serde_json::json!({"a": 1, "b": 2})]);
+        assert_eq!(result, Err(ToonError::RowLengthMismatch { row_index: 0, expected: 1, actual: 0 }));
+    }
+
+    #[test]
     fn ac039_empty_items_slice_renders_exact_empty_document() {
         let result = list("t", &([] as [serde_json::Value; 0]));
         assert_eq!(result, Ok("t[0]{}:\n".to_string()));
     }
 
     #[test]
+    fn ac039_invalid_type_name_rejected_even_with_empty_items_slice() {
+        let result = list("a[b", &([] as [serde_json::Value; 0]));
+        assert_eq!(result, Err(ToonError::InvalidTypeName { name: "a[b".to_string() }));
+    }
+
+    #[test]
     fn ac040_all_empty_object_items_render_exact_blank_rows() {
         let result = list("t", &[serde_json::json!({}), serde_json::json!({})]);
         assert_eq!(result, Ok("t[2]{}:\n  \n  \n".to_string()));
+    }
+
+    #[test]
+    fn ac040_invalid_type_name_rejected_even_with_all_empty_object_items() {
+        let result = list("a[b", &[serde_json::json!({}), serde_json::json!({})]);
+        assert_eq!(result, Err(ToonError::InvalidTypeName { name: "a[b".to_string() }));
     }
 }
