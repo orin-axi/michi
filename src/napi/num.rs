@@ -292,6 +292,72 @@ impl ToNapiValue for JsUnitInterval {
     }
 }
 
+/// A JavaScript number, in milliseconds, accepted only when it is finite,
+/// `>= 0.0`, and its seconds-equivalent (`v / 1000.0`) is strictly less
+/// than `u64::MAX as f64` (`2^64`, one greater than the true `u64::MAX`)
+/// so [`Self::as_duration`] can never panic. Delegates its finiteness
+/// check to [`JsFloat::try_from`] (both share `type Error = String`), so a
+/// non-finite input is rejected with `JsFloat`'s own message verbatim.
+/// Used for `next_retry_delay`'s `base_delay_ms`, `max_delay_ms`, and
+/// `retry_after_ms`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JsDelayMillis(f64);
+
+impl JsDelayMillis {
+    /// Returns the validated value, in milliseconds.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+
+    /// Converts to a [`std::time::Duration`]. Infallible: the `TryFrom<f64>`
+    /// bound already guarantees `self.0 / 1000.0 < u64::MAX as f64`.
+    #[must_use]
+    pub fn as_duration(self) -> std::time::Duration {
+        std::time::Duration::from_secs_f64(self.0 / 1000.0)
+    }
+}
+
+impl TryFrom<f64> for JsDelayMillis {
+    type Error = String;
+
+    fn try_from(v: f64) -> Result<Self, Self::Error> {
+        let v = JsFloat::try_from(v)?.get();
+        if v >= 0.0 && v / 1000.0 < u64::MAX as f64 {
+            Ok(Self(v))
+        } else {
+            Err(format!(
+                "expected a finite non-negative number convertible to a Duration (v / 1000.0 < u64::MAX), got {v}"
+            ))
+        }
+    }
+}
+
+impl TypeName for JsDelayMillis {
+    fn type_name() -> &'static str {
+        "JsDelayMillis"
+    }
+
+    fn value_type() -> napi::ValueType {
+        napi::ValueType::Number
+    }
+}
+
+impl ValidateNapiValue for JsDelayMillis {}
+
+impl FromNapiValue for JsDelayMillis {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let v = unsafe { f64::from_napi_value(env, napi_val)? };
+        Self::try_from(v).map_err(|msg| napi::Error::new(napi::Status::InvalidArg, msg))
+    }
+}
+
+impl ToNapiValue for JsDelayMillis {
+    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
+        unsafe { f64::to_napi_value(env, val.0) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,6 +473,41 @@ mod tests {
             let err = JsUnitInterval::try_from(v).expect_err("non-finite value must be rejected");
             assert_eq!(err, format!("expected a finite number, got {v}"));
         }
+    }
+
+    #[test]
+    fn js_delay_millis_accepts_domain_boundaries() {
+        for v in [0.0, 1000.0, 1.844674407370955e22] {
+            let d = JsDelayMillis::try_from(v).expect("in-domain delay value");
+            assert_eq!(d.get(), v, "input {v}");
+        }
+    }
+
+    #[test]
+    fn js_delay_millis_rejects_negative_and_overflow() {
+        for v in [-1.0, 2e22, 1.8446744073709552e22] {
+            let err = JsDelayMillis::try_from(v).expect_err("out-of-domain value must be rejected");
+            assert_eq!(
+                err,
+                format!(
+                    "expected a finite non-negative number convertible to a Duration (v / 1000.0 < u64::MAX), got {v}"
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn js_delay_millis_rejects_non_finite_via_delegated_message() {
+        for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let err = JsDelayMillis::try_from(v).expect_err("non-finite value must be rejected");
+            assert_eq!(err, format!("expected a finite number, got {v}"));
+        }
+    }
+
+    #[test]
+    fn js_delay_millis_as_duration_computes_seconds_equivalent() {
+        let d = JsDelayMillis::try_from(1500.0).expect("1500 is in-domain");
+        assert_eq!(d.as_duration(), std::time::Duration::from_secs_f64(1.5));
     }
 
     #[test]
