@@ -406,18 +406,41 @@ mod tests {
 
     #[test]
     fn ac012a_full_render_with_default_max_cell_len() {
-        let opts_row = vec![Value::from("a".repeat(500))];
-        let out = super::render("t", &["a".to_string()], &[opts_row], None, &[], 200);
+        // Constructed via ToonOptions::new + render_toon (not super::render with a
+        // literal 200) so a regression to ToonOptions::new's actual default is caught.
+        let opts = crate::ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("a".repeat(500))]]);
+        let out = crate::render_toon(&opts);
         let expected_prefix = "a".repeat(162);
         assert_eq!(out, format!("t[1]{{a}}:\n  {expected_prefix} (500 chars truncated — use full=true)\n"));
     }
 
     #[test]
+    fn ac012c_toon_options_new_defaults() {
+        let opts = crate::ToonOptions::new("t", vec![], vec![]);
+        assert_eq!(opts.total_count, None);
+        assert!(opts.hints.is_empty());
+        assert_eq!(opts.max_cell_len, 200);
+    }
+
+    #[test]
     fn ac012b_untruncated_cell_at_150_chars_near_boundary() {
         let content = "a".repeat(150);
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from(content.clone())]], None, &[], 200);
+        let opts = crate::ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from(content.clone())]]);
+        let out = crate::render_toon(&opts);
         assert_eq!(out, format!("t[1]{{a}}:\n  {content}\n"));
         assert!(!out.contains("chars truncated"));
+    }
+
+    #[test]
+    fn ac021_row_line_leading_space_in_cell_content_stacks_with_row_prefix() {
+        let out = super::render("t", &["a".to_string()], &[vec![Value::from(" x")]], None, &[], 200);
+        assert_eq!(out, "t[1]{a}:\n   x\n");
+    }
+
+    #[test]
+    fn ac023_hint_line_leading_space_stacks_with_hint_prefix() {
+        let out = super::render("t", &[], &[], None, &[" h".to_string()], 200);
+        assert_eq!(out, "t[0]{}:\nhelp[1]:\n   h\n");
     }
 
     #[test]

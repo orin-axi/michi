@@ -522,6 +522,38 @@ mod list_tests {
         assert_eq!(result, Err(ToonError::InvalidItem { row_index: 0, reason: "boom".to_string() }));
     }
 
+    enum MixedItem {
+        Fails,
+        Num(i32),
+    }
+
+    impl serde::Serialize for MixedItem {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            match self {
+                Self::Fails => Err(serde::ser::Error::custom("boom")),
+                Self::Num(n) => serializer.serialize_i32(*n),
+            }
+        }
+    }
+
+    #[test]
+    fn ac027_serialization_failure_at_lower_index_wins_over_non_object_at_higher_index() {
+        let result = list("t", &[MixedItem::Fails, MixedItem::Num(7)]);
+        assert_eq!(result, Err(ToonError::InvalidItem { row_index: 0, reason: "boom".to_string() }));
+    }
+
+    #[test]
+    fn ac027b_non_object_at_lower_index_wins_over_serialization_failure_at_higher_index() {
+        let result = list("t", &[MixedItem::Num(7), MixedItem::Fails]);
+        assert_eq!(
+            result,
+            Err(ToonError::InvalidItem {
+                row_index: 0,
+                reason: "item is not a JSON object (struct or map required)".to_string()
+            })
+        );
+    }
+
     #[test]
     fn ac038_first_item_empty_later_item_nonempty_is_row_length_mismatch() {
         let result = list("t", &[serde_json::json!({}), serde_json::json!({"k": 1})]);
