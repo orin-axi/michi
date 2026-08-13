@@ -625,3 +625,12 @@ void describe('index.d.ts keeps plain number types for the resilience domain (SP
     }
   })
 })
+
+void describe('full in-domain regression (SPEC-ARCH-004 AC-021)', () => {
+  void it('nextRetryDelay and isRetryableStatus in-domain results are unchanged from before this spec', () => {
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.0, 0.5, 0), 100)
+    assert.strictEqual(isRetryableStatus(429), true)
+    assert.strictEqual(isRetryableStatus(503), true)
+    assert.strictEqual(isRetryableStatus(404), false)
+  })
+})
