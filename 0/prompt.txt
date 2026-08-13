@@ -1,0 +1,59 @@
+<task-notification>
+<task-id>a213bf4503f43ef1b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a213bf4503f43ef1b.output</output-file>
+<status>completed</status>
+<summary>Agent "Drift check michi-core-dtos.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Baseline confirmed green (71 tests default, 72 with `--features serde`), and I verified every criterion by executing it against the real code from an **external** crate (scratch harness, now deleted — I made no changes to the repo; the untracked `docs/superpowers/plans/2026-08-04-edge-case-fixes.md` is not mine).
+
+## Counts: 17 covered / 26 uncovered / 4 drifted
+
+### DRIFTED (4) — genuine spec inaccuracies, all instances of pattern #2
+
+**AC-011a** — Spec: a Hint containing `'\n'` **or `'\r'`** passes through unescaped, "meaning the resulting string's line count is no longer help[N]'s N+1 lines." Actual: `render_hints(&amp;[Hint::from("a\rb")])` → `"help[1]:\n  a\rb\n"`, `lines().count() == 2 == N+1`. `str::lines()` splits only on `'\n'`; a lone `'\r'` is not a line break. The `'\n'` witness holds; the `'\r'` half of the disjunction is false. Textual pass-through is unsanitized for both (`hints.rs:58`) — only the *line-count* consequence is wrong.
+
+**AC-018b** — Identical defect for `RecoveryHint.tool`/`.reason`. `render_recovery(&amp;[RecoveryHint::new("a\rb").reason("c\rd")])` → `lines().count() == 2`, i.e. exactly the one-line-per-hint count the criterion says no longer holds.
+
+**AC-023** — Its exception clause says the 2+N formula "does not hold if any item's key **or Text value** contains an embedded `'\n'`/`'\r'`". Two false parts:
+- *Text value*: `KvValue::Text` **is** stripped by `push_kv_value` (`kv/mod.rs:36-47`). A real `'\n'` in the value renders `v1v2` and line count stays 3. This also directly contradicts AC-023b's own body, which correctly states only the key side is unsanitized.
+- *`'\r'` in key*: `key: "a\rb"` → 3 lines, formula holds.
+
+Only `'\n'` in `key` breaks it. AC-023's core proposition (exactly 2+N lines, verified for N=0..3) and AC-023b's own `'\n'` assertion are both correct.
+
+**AC-035** — Spec: `cargo tree -p michi-core -e normal` under default features "lists none of serde, serde_json, or schemars." Actual: **serde v1.0.228 is in the default graph**, unconditionally:
+```
+serde v1.0.228 └── compact_str v0.8.2 └── michi-toon └── michi-core
+```
+`crates/michi-toon/Cargo.toml:11`: `compact_str = { workspace = true, features = ["serde"] }` — a hard, non-optional feature. `serde_json` and `schemars` are correctly absent. (`cargo public-api` is not installed, so the second half is unverifiable either way.)
+
+### COVERED (17)
+AC-001 (`audience.rs:21`→`:9`), AC-002 (`empty.rs:26`→`:5`), AC-008 (`hints.rs:75`→`:40`), AC-009 (`hints.rs:82`→`:49`), AC-010 (`hints.rs:88`→`:50`), AC-012 (`recovery.rs:104`→`:18`), AC-013 (`recovery.rs:97`→`:41`), AC-014 (`recovery.rs:104`→`:60`), AC-015 (`recovery.rs:92`→`:64`), AC-016 (`recovery.rs:111`→`:76`), AC-018 (`recovery.rs:125`→`:51`), AC-019 (`status.rs:126`→`:8`), AC-020 (`status.rs:108`→`:20`), AC-022 (`status.rs:100`→`:59`), AC-024 (`status.rs:111`→`:65`), AC-029 (`mcp.rs:114`→`:61`), AC-034 (`lib.rs:54`→`:51`) — all under `/Users/gabe/Projects/michi/crates/michi-core/src/`.
+
+### UNCOVERED (26) — behavior verified correct, no test asserts it
+AC-003, AC-004, AC-005, AC-006, AC-007, AC-011, AC-017, AC-018a, AC-021, AC-023a, AC-023b, AC-025, AC-026, AC-027, AC-028, AC-028a, AC-028b, AC-029a, AC-030, AC-031, AC-032, AC-033, AC-036, AC-037, AC-037a, AC-037b.
+
+Grouped by cause:
+- **Zero serde tests exist for this spec's surface.** The crate's only `#[cfg(feature="serde")]` test is `kv/mod.rs:206`, unrelated. All 11 serde criteria untested. I confirmed all 11 hold, including the two compile-fail claims: external struct-literal of `CallToolResult` → **E0639**, and `serde_json::to_string(&amp;Health::Ok)` → **E0277 `Health: serde::Serialize` not satisfied**, exactly as AC-029/AC-036 claim. AC-036's trybuild fixture and `crates/michi-core/tests/` still do not exist.
+- **No test calls** `ContentBlock::new`, `CallToolResult::new`, `Hint::from`, `Hint`'s `Display`, `StatusResponse::with_hints`, or `empty_state_with_hints` anywhere in michi-core (AC-005, 006, 007, 021, 023a, 027, 029a).
+- **Structural/untestable-by-suite**: AC-004 (capacity — holds; note `with_capacity(n+20)` then writing n+21 bytes always reallocs to 2n+40, so the `&gt;=` bound passes only via regrowth), AC-033 (attributes present at `lib.rs:1-2`).
+
+### Suspected-pattern flags
+
+**Pattern #1 (confounded witness) — 3 instances:**
+1. **AC-025/AC-026 — most serious.** The criteria's entire distinguishing point is "**two** spaces before the opening bracket, **not one**." The tests assert only `out.contains("[DEGRADED: slow eviction]")` (`status.rs:126`, `:141`) — they would pass identically with one space, zero spaces, or any prefix. The witness cannot distinguish the mechanism it names. (Two spaces confirmed correct at `status.rs:78`.)
+2. **AC-020 / AC-029.** Both claim something about construction *from another crate* (`StatusItem` is not `#[non_exhaustive]`; `CallToolResult` is, giving E0639 externally). The witnesses are in-crate `#[cfg(test)]` struct literals, which compile regardless of `#[non_exhaustive]` — the tests are structurally incapable of witnessing the claim. Both claims are true; I verified them externally.
+3. **AC-029 secondary.** The criterion's actual point is that `structured_content` is stored independently of `content[0].text`. `mcp.rs:114` never asserts `structured_content` at all — only `content.len()` and `is_error`.
+
+**Pattern #2 (unbounded universal + safe witness) — 4 instances,** the three drifted `'\n'`/`'\r'` criteria above plus:
+4. **AC-015.** States the general rule "comma-separated `key: value` pairs in insertion order," witnessed by a **single**-parameter example — which cannot distinguish comma separation or ordering from any other joining scheme. The general rule does hold (`recovery.rs:66-73`; I verified `{ a: 1, b: 2 }`). Same shape in AC-012 (params insertion order tested only at len 1).
+
+### One trap for follow-up work
+`/Users/gabe/Projects/michi/src/` (root crate `michi`) contains **parallel duplicate modules** — its own `hints.rs`, `status.rs`, `empty.rs`, etc. — with tests in `src/napi.rs` covering `append_hints` and `StatusResponse::with_hints`. A workspace-wide grep will surface those and read as coverage. They exercise the root crate, not `michi-core`, and cover none of this spec's criteria.
+
+### Correction paths (caller's decision)
+- AC-011a / AC-018b: either narrow the criteria to `'\n'` (spec fix via canon/correct), or keep the `'\r'` mention while dropping the line-count consequence for it.
+- AC-023: delete "or Text value" and the `'\r'` mention from the exception clause — it contradicts AC-023b and the code.
+- AC-035: either restate as "none of serde_json or schemars" plus an explicit note that `serde` is pulled transitively by `compact_str`, or treat `compact_str`'s hard `serde` feature as the defect and make it optional in `michi-toon` (a lambda task).</result>
+<usage><subagent_tokens>98566</subagent_tokens><tool_uses>26</tool_uses><duration_ms>438738</duration_ms></usage>
+</task-notification>
