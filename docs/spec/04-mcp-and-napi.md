@@ -161,11 +161,15 @@ Any `#[napi]` function returning `napi::Result<T>` throws a JS `Error` on `Err`.
 
 ### Numeric boundary
 
-`total_count` is `usize` in Rust, and the NAPI boundary narrows further to a plain `i32` (`JsToonOptions.total_count`, `JsAgentResponse::total_count`), clamped non-negative (`n.max(0) as usize`) on the way in.
+Every JavaScript number that crosses into a rendering call is validated at the boundary through a newtype in `src/napi/num.rs` before any michi code runs; an out-of-domain value throws a JS `Error` instead of being narrowed. `napi_get_value_double` (a non-coercing read) is used for every converted position, so `napi_get_value_int32`'s `ToInt32` wraparound is never in the path.
 
-- For `total_count` specifically: JavaScript numbers are 64-bit floats with a max safe integer of 2^53, so `i32` is comfortably within the safe range for this field — no need for an `i64`-as-`number` mapping or `BigInt`.
-- Counts beyond `i32::MAX` aren't a realistic concern for agent list responses.
-- `JsToonValue.intVal` (and any KV int value routed through `js_kv_value_to_rust`) is `i64`, mapped to a JS `number` via `napi_get_value_int64`/`napi_create_int64`. This is safe and lossless up to `Number.MAX_SAFE_INTEGER` (2^53 minus 1); values beyond that silently lose precision per Node's N-API coercion behavior.
+- `totalCount` (`JsToonOptions.totalCount`, `renderKv`'s `totalCount` parameter, and `AgentResponse.totalCount`) is rejected unless it is a finite, non-negative integer no greater than `Number.MAX_SAFE_INTEGER` (2^53 - 1).
+- `decimalsVal` is rejected unless it is a finite integer in `[0, 20]`.
+- `maxChars` (`truncate`'s parameter) is rejected unless it is a finite, non-negative integer no greater than `Number.MAX_SAFE_INTEGER`.
+- `intVal` is rejected unless it is a finite integer in `[-9007199254740991, 9007199254740991]` — the range over which a JS number and an `i64` agree exactly.
+- `floatVal` is rejected unless it is finite; `NaN`, `Infinity`, and `-Infinity` are all rejected.
+
+None of these five inputs is ever silently clamped, truncated, or defaulted on an out-of-domain value — rejection happens before any michi rendering code runs.
 
 ### Platform binary loading (`index.js`)
 

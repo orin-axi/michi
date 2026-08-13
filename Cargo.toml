@@ -64,10 +64,11 @@ napi-derive = { version = "3", optional = true }
 serde_json  = { workspace = true, optional = true }
 
 [dev-dependencies]
-serde    = { workspace = true }
-divan    = "0.1"
-proptest = "1"
-insta    = { version = "1", features = ["yaml"] }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+divan      = "0.1"
+proptest   = "1"
+insta      = { version = "1", features = ["yaml"] }
 
 [[bench]]
 name    = "toon_render"

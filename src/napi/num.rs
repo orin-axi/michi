@@ -347,6 +347,45 @@ mod tests {
     }
 
     #[test]
+    fn napi_numeric_docs_and_superseded_specs_are_consistent() {
+        let docs = include_str!("../../docs/spec/04-mcp-and-napi.md");
+        assert!(!docs.contains("clamped non-negative"), "docs still describe clamping");
+        assert!(!docs.contains("n.max(0) as usize"), "docs still show the deleted clamp expression");
+        assert!(!docs.contains("silently lose precision"), "docs still describe silent precision loss");
+        for field in ["totalCount", "decimalsVal", "maxChars", "intVal", "floatVal"] {
+            assert!(docs.contains(field), "numeric boundary docs missing rejection contract for {field}");
+        }
+
+        let arch002: serde_json::Value = serde_json::from_str(include_str!(
+            "../../.claude/specs/structural-napi-numeric-boundary-narrow-inconsistent-i32-coercion-across-multiple-call-sites.json"
+        ))
+        .expect("SPEC-ARCH-002 is valid JSON");
+        let purpose = arch002["purpose"].as_str().expect("purpose is a string");
+        assert!(purpose.starts_with("SUPERSEDED BY SPEC-ARCH-003"), "got: {purpose}");
+
+        let point_fixes: serde_json::Value =
+            serde_json::from_str(include_str!("../../.claude/specs/napi-boundary-point-fixes.json"))
+                .expect("napi-boundary-point-fixes.json is valid JSON");
+        let criteria = point_fixes["acceptance_criteria"].as_array().expect("acceptance_criteria is an array");
+        let superseded_ids = ["AC-007", "AC-008", "AC-011"];
+        for c in criteria {
+            let id = c["id"].as_str().expect("id is a string");
+            let criterion = c["criterion"].as_str().expect("criterion is a string");
+            if superseded_ids.contains(&id) {
+                assert!(
+                    criterion.starts_with("SUPERSEDED BY SPEC-ARCH-003 -- "),
+                    "{id} should carry the supersession prefix, got: {criterion}"
+                );
+            } else {
+                assert!(
+                    !criterion.starts_with("SUPERSEDED BY SPEC-ARCH-003"),
+                    "{id} should not carry the supersession prefix"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn boundary_carries_exactly_one_cast_allow_and_no_residual_coercion() {
         let napi_src = include_str!("../napi.rs");
         assert_eq!(
