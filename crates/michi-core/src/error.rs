@@ -409,6 +409,26 @@ mod tests {
         assert!(out.contains("%0D"), "CR must be encoded as %0D");
     }
 
+    // AC-017: the mixed-character test above only proves %0A and %0D are both
+    // present, not which source character maps to which -- a swapped mapping
+    // would pass it too. Isolate each character singly (where the other
+    // encoding cannot legally appear) to pin the exact direction.
+    #[test]
+    fn ac017_lf_maps_to_pct0a_and_cr_maps_to_pct0d_specifically() {
+        assert_eq!(
+            DomainError::new(ErrorCode::InvalidInput, "a\nb").render_github_annotation(),
+            "::error title=invalid_input::a%0Ab"
+        );
+        assert_eq!(
+            DomainError::new(ErrorCode::InvalidInput, "a\rb").render_github_annotation(),
+            "::error title=invalid_input::a%0Db"
+        );
+        assert_eq!(
+            DomainError::new(ErrorCode::InvalidInput, "line1\nline2\r\nline3").render_github_annotation(),
+            "::error title=invalid_input::line1%0Aline2%0D%0Aline3"
+        );
+    }
+
     #[test]
     fn render_json_output_is_valid_json_with_all_fields() {
         let err = DomainError::new(ErrorCode::NotFound, r#"has "quotes" and \backslash"#)
