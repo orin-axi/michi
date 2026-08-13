@@ -161,7 +161,7 @@ Any `#[napi]` function returning `napi::Result<T>` throws a JS `Error` on `Err`.
 
 ### Numeric boundary
 
-Every JavaScript number that crosses into a rendering call is validated at the boundary through a newtype in `src/napi/num.rs` before any michi code runs; an out-of-domain value throws a JS `Error` instead of being narrowed. `napi_get_value_double` (a non-coercing read) is used for every converted position, so `napi_get_value_int32`'s `ToInt32` wraparound is never in the path.
+Every JavaScript number that crosses into a rendering or resilience call is validated at the boundary through a newtype in `src/napi/num.rs` before any michi code runs; an out-of-domain value throws a JS `Error` instead of being narrowed. `napi_get_value_double` (a non-coercing read) is used for every converted position, so `napi_get_value_int32`'s `ToInt32` wraparound is never in the path.
 
 - `totalCount` (`JsToonOptions.totalCount`, `renderKv`'s `totalCount` parameter, and `AgentResponse.totalCount`) is rejected unless it is a finite, non-negative integer no greater than `Number.MAX_SAFE_INTEGER` (2^53 - 1).
 - `decimalsVal` is rejected unless it is a finite integer in `[0, 20]`.
