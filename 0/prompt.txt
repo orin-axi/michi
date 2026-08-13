@@ -1,0 +1,50 @@
+<task-notification>
+<task-id>a5a23063999e2a670</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a5a23063999e2a670.output</output-file>
+<status>completed</status>
+<summary>Agent "Round-2 canon-exit-gate for michi-core-dtos.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Tree clean — the only untracked file is the pre-existing plan doc from the starting snapshot.
+
+## Verdict: **FAIL** (confidence: high, retry_count 2 — below the escalation threshold)
+
+Verdict artifact: `/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/scratchpad/verdict.json`
+
+```json
+{
+  "verdict": "fail",
+  "confidence": "high",
+  "artifact_type": "spec@1",
+  "retry_count": 2,
+  "verdict_summary": "49 criteria, no TBDs, 7 error cases flagged, single-cycle scope, 112/112 tests green. Fails condition 1 on two sibling-gap defects: AC-036's witnesses prove Serialize only, never Deserialize (confirmed by two sabotages), and render_hints/render_recovery capacity is left ambiguous against AC-004."
+}
+```
+
+### Conditions 2, 3, 4 hold
+No TBDs (regex sweep clean). All 49 criteria carry `is_error_case`; 7 are `true` and each names a genuinely abnormal-input path. Scope is one cohesive characterization pass — no split needed. Baseline confirmed at **112/112 passed**.
+
+### Blocker 1 — AC-036: witness proves 1 of 2 claimed traits
+AC-036 asserts **two** traits per type, but every witness it names proves only `Serialize`. The three trybuild fixtures each call only `serde_json::to_string(&amp;value)`; the positive-half test at `lib.rs:62-68` calls only `to_string(...).is_ok()`.
+
+Proven by sabotage in **both** directions, each leaving all 112 tests passing:
+- Adding `#[cfg_attr(feature = "serde", derive(serde::Deserialize))]` to `Health` gave it a real `Deserialize` impl — falsifying the negative half. Green.
+- Removing `serde::Deserialize` from `Hint`'s derive destroyed its impl — falsifying the positive half. Green.
+
+A control sabotage (`annotate()`'s two-space suffix → one space in `status.rs:78`) correctly turned AC-025/AC-026 **red**, so this is a real gap, not a toothless suite.
+
+This is precisely round 1's finding (5) defect class — fixed along the *types* axis (1 of 3 types → 3 fixtures) but never carried through to the *traits* axis (1 of 2 traits).
+
+### Blocker 2 — non_goals entry 6: capacity sibling gap
+The entry reads "the **two** explicitly documented buffer pre-allocation sizes (empty_state, render_hints, render_recovery)" — says two, names three. A planner cannot tell whether the latter two are in-scope-but-uncovered or excluded; the readings imply opposite work. Substantively, AC-004 asserts a capacity bound for `empty_state`, while its two exact siblings — `render_hints` (`hints.rs:42`) and `render_recovery` (`recovery.rs:43-44`) — make identical `with_capacity` commitments with **no counterpart criterion** among the 49.
+
+Both blockers carry a concrete two-option fix (exact fixture paths, criterion text, and assertions) so the drafter needs no follow-up question.
+
+### Sweeps completed clean
+- **Sibling pairs:** AC-023/AC-023a both now carry the key-newline guard. AC-022 needs none (tool/description go through `KvValue::Text`'s strip; keys are hardcoded). AC-018b/AC-018c close tool/reason/param-key; param *values* strip via `push_kv_value`. AC-027/AC-029 both have `non_exhaustive` fixtures. AC-034 lists 10 types and `test_auto_traits` instantiates all 10.
+- **Confounded witnesses:** AC-024/025/026 correctly repaired. AC-015/AC-016 use `contains()` rather than exact equality but pin their full input, so they are not confoundable — noted, not blocking.
+- **AC-035 re-verified live:** `default = []`, and `cargo tree -e normal` shows `serde v1.0.228` via `compact_str` with no `serde_json`/`schemars`.
+
+Three sabotage-and-restore cycles ran; `git diff --quiet` returned clean after each, and the final tree is clean.</result>
+<usage><subagent_tokens>92997</subagent_tokens><tool_uses>31</tool_uses><duration_ms>408806</duration_ms></usage>
+</task-notification>
