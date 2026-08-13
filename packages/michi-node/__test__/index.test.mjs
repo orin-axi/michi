@@ -134,7 +134,10 @@ void describe('standalone helpers', () => {
   })
 
   void it('nextRetryDelay throws on NaN delay input', () => {
-    assert.throws(() => nextRetryDelay(3, NaN, 1000, 0.0, 0.5, 0), /finite non-negative/)
+    assert.throws(
+      () => nextRetryDelay(3, NaN, 1000, 0.0, 0.5, 0),
+      (err) => err.message === 'expected a finite number, got NaN',
+    )
   })
 
   void it('nextRetryDelay throws on negative delay input', () => {
@@ -142,7 +145,10 @@ void describe('standalone helpers', () => {
   })
 
   void it('nextRetryDelay throws on Infinity delay input', () => {
-    assert.throws(() => nextRetryDelay(3, Infinity, 1000, 0.0, 0.5, 0), /finite non-negative/)
+    assert.throws(
+      () => nextRetryDelay(3, Infinity, 1000, 0.0, 0.5, 0),
+      (err) => err.message === 'expected a finite number, got inf',
+    )
   })
 
   void it('isRetryableStatus identifies 429 and 503 as retryable', () => {
