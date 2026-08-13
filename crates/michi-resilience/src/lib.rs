@@ -529,6 +529,24 @@ mod tests {
     }
 
     #[test]
+    fn http_date_at_unix_epoch_boundary_clamps_to_zero() {
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(1_767_225_600);
+        let delay = parse_retry_after_at("Thu, 01 Jan 1970 00:00:00 GMT", now);
+        assert_eq!(delay, Some(Duration::ZERO), "the epoch instant itself is representable and clamps to zero");
+    }
+
+    #[test]
+    fn http_date_before_unix_epoch_returns_none() {
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(1_767_225_600);
+        assert_eq!(
+            parse_retry_after_at("Mon, 01 Jan 1900 00:00:00 GMT", now),
+            None,
+            "pre-epoch dates are rejected, not clamped to zero -- epoch_secs -> u64 fails on negative seconds"
+        );
+        assert_eq!(parse_retry_after_at("Wed, 01 Jan 1969 23:59:59 GMT", now), None);
+    }
+
+    #[test]
     fn malformed_http_date_returns_none() {
         let now = std::time::SystemTime::UNIX_EPOCH;
         assert_eq!(parse_retry_after_at("not a date", now), None);
@@ -690,13 +708,11 @@ mod tests {
         assert_eq!(IdempotencyKey::from("baz").as_str(), "baz");
     }
 
-    #[test]
-    fn idempotency_key_inner_field_is_public_and_mutable() {
-        assert_eq!(IdempotencyKey("manual".to_string()).as_str(), "manual");
-        let mut k = IdempotencyKey::new("a");
-        k.0 = "b".to_string();
-        assert_eq!(k.as_str(), "b");
-    }
+    // AC-048 (IdempotencyKey's field is publicly constructible/mutable) is
+    // NOT tested here: this module is inside the crate, where field privacy
+    // is invisible -- a regression removing `pub` would still compile and
+    // pass every test in this file. See tests/public_field_access.rs for the
+    // real, external-crate proof.
 
     fn assert_send_sync_static<T: Send + Sync + 'static>() {}
 
