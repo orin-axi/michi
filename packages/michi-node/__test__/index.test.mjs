@@ -462,3 +462,48 @@ void describe('jitter_seed / jitter_factor rejection (SPEC-ARCH-004)', () => {
     assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 1.0, 0), 120)
   })
 })
+
+void describe('base_delay_ms / max_delay_ms boundary (SPEC-ARCH-004)', () => {
+  void it('rejects base_delay_ms = -1 (AC-005)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, -1, 1000, 0.2, 0.5, 0),
+      (err) => err.message === 'expected a finite non-negative number convertible to a Duration (v / 1000.0 < u64::MAX), got -1'
+    )
+  })
+
+  void it('rejects max_delay_ms = NaN with the delegated finiteness message (AC-006)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, NaN, 0.2, 0.5, 0),
+      (err) => err.message === 'expected a finite number, got NaN'
+    )
+  })
+
+  void it('rejects max_delay_ms = Infinity with the delegated finiteness message (AC-006b)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, Infinity, 0.2, 0.5, 0),
+      (err) => err.message === 'expected a finite number, got inf'
+    )
+  })
+
+  void it('rejects base_delay_ms and max_delay_ms = 2e22 as Duration-overflowing (AC-007)', () => {
+    const expected = (err) =>
+      err.message ===
+      'expected a finite non-negative number convertible to a Duration (v / 1000.0 < u64::MAX), got 20000000000000000000000'
+    assert.throws(() => nextRetryDelay(3, 2e22, 1000, 0.2, 0.5, 0), expected)
+    assert.throws(() => nextRetryDelay(3, 100, 2e22, 0.2, 0.5, 0), expected)
+  })
+
+  void it('rejects base_delay_ms = 1.8446744073709552e22, exactly 2^64 seconds-equivalent (AC-007b)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 1.8446744073709552e22, 1000, 0.2, 0.5, 0),
+      (err) =>
+        err.message ===
+        'expected a finite non-negative number convertible to a Duration (v / 1000.0 < u64::MAX), got 18446744073709552000000'
+    )
+  })
+
+  void it('accepts base_delay_ms and max_delay_ms at 1.844674407370955e22, one f64 ULP below the overflow threshold (AC-030)', () => {
+    assert.strictEqual(typeof nextRetryDelay(3, 1.844674407370955e22, 1000, 0.2, 0.5, 0), 'number')
+    assert.strictEqual(typeof nextRetryDelay(3, 100, 1.844674407370955e22, 0.2, 0.5, 0), 'number')
+  })
+})
