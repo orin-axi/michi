@@ -1701,8 +1701,8 @@ mod tests {
             }
         }
         assert!(
-            checked >= 15,
-            "expected to check at least 15 #[napi]-attributed fns/methods, only checked {checked} \
+            checked >= 20,
+            "expected to check at least 20 #[napi]-attributed fns/methods, only checked {checked} \
              (a change to how attributes are written may have broken this scan's detection)"
         );
     }
