@@ -27,7 +27,7 @@
     clippy::cast_precision_loss
 )]
 
-use self::num::{JsCount, JsDecimals, JsFloat, JsInt};
+use self::num::{JsCount, JsDecimals, JsDelayMillis, JsFloat, JsInt, JsRetryCount, JsUnitInterval};
 use napi_derive::napi;
 
 /// Validating newtypes for the NAPI numeric boundary (shared kernel for
@@ -295,45 +295,23 @@ pub fn parse_retry_after(header_value: String) -> Option<f64> {
 #[napi(catch_unwind)]
 #[allow(clippy::too_many_arguments)] // NAPI boundary: all params are scalar and directly map to the JS API
 pub fn next_retry_delay(
-    max_retries: u32,
-    base_delay_ms: f64,
-    max_delay_ms: f64,
-    jitter_factor: f64,
-    jitter_seed: f64,
-    attempt: u32,
-    retry_after_ms: Option<f64>,
+    #[napi(ts_arg_type = "number")] max_retries: JsRetryCount,
+    #[napi(ts_arg_type = "number")] base_delay_ms: JsDelayMillis,
+    #[napi(ts_arg_type = "number")] max_delay_ms: JsDelayMillis,
+    #[napi(ts_arg_type = "number")] jitter_factor: JsUnitInterval,
+    #[napi(ts_arg_type = "number")] jitter_seed: JsUnitInterval,
+    #[napi(ts_arg_type = "number")] attempt: JsRetryCount,
+    #[napi(ts_arg_type = "number | undefined | null")] retry_after_ms: Option<JsDelayMillis>,
 ) -> napi::Result<Option<f64>> {
-    for (name, val) in [("base_delay_ms", base_delay_ms), ("max_delay_ms", max_delay_ms)] {
-        if !val.is_finite() || val < 0.0 {
-            return Err(napi::Error::from_reason(format!("{name} must be a finite non-negative number, got {val}")));
-        }
-        // Duration::from_secs_f64 panics on values > ~1.8e19s; reject here so
-        // catch_unwind never has to catch a panic from untrusted JS input.
-        #[allow(clippy::as_conversions, clippy::cast_precision_loss)]
-        // resilience-domain; out of scope for SPEC-ARCH-003, removed by its sibling spec
-        if val / 1000.0 > u64::MAX as f64 {
-            return Err(napi::Error::from_reason(format!("{name} is too large to convert to a Duration, got {val}")));
-        }
-    }
-    for (name, val) in [("jitter_factor", jitter_factor), ("jitter_seed", jitter_seed)] {
-        if !val.is_finite() {
-            return Err(napi::Error::from_reason(format!("{name} must be a finite number in [0.0, 1.0], got {val}")));
-        }
-    }
-    if let Some(ms) = retry_after_ms {
-        if !ms.is_finite() || ms < 0.0 {
-            return Err(napi::Error::from_reason(format!("retry_after_ms must be finite and non-negative, got {ms}")));
-        }
-    }
-    let jitter_seed = jitter_seed.clamp(0.0, 1.0);
     let config = michi_resilience::RetryConfig::new(
-        max_retries,
-        std::time::Duration::from_secs_f64(base_delay_ms / 1000.0),
-        std::time::Duration::from_secs_f64(max_delay_ms / 1000.0),
-        jitter_factor,
+        max_retries.get_u32(),
+        base_delay_ms.as_duration(),
+        max_delay_ms.as_duration(),
+        jitter_factor.get(),
     );
-    let retry_after = retry_after_ms.map(|ms| std::time::Duration::from_secs_f64(ms / 1000.0));
-    Ok(michi_resilience::next_retry_delay(&config, attempt, jitter_seed, retry_after).map(|d| d.as_secs_f64() * 1000.0))
+    let retry_after = retry_after_ms.map(JsDelayMillis::as_duration);
+    Ok(michi_resilience::next_retry_delay(&config, attempt.get_u32(), jitter_seed.get(), retry_after)
+        .map(|d| d.as_secs_f64() * 1000.0))
 }
 
 /// Return `true` if the HTTP status code is conventionally retryable (429, 502, 503, 504).
@@ -1231,21 +1209,5 @@ mod tests {
             health: Some("degraded".into()), // missing colon and reason
         }];
         assert!(render_status("t".into(), "d".into(), items, None).is_err());
-    }
-
-    #[test]
-    fn next_retry_delay_rejects_nan_jitter_factor() {
-        let err = next_retry_delay(3, 100.0, 30_000.0, f64::NAN, 0.5, 0, None)
-            .expect_err("NaN jitter_factor must be rejected");
-        assert!(err.reason.contains("jitter_factor"), "got: {}", err.reason);
-        assert!(err.reason.contains("finite"), "got: {}", err.reason);
-    }
-
-    #[test]
-    fn next_retry_delay_rejects_nan_jitter_seed() {
-        let err =
-            next_retry_delay(3, 100.0, 30_000.0, 0.5, f64::NAN, 0, None).expect_err("NaN jitter_seed must be rejected");
-        assert!(err.reason.contains("jitter_seed"), "got: {}", err.reason);
-        assert!(err.reason.contains("finite"), "got: {}", err.reason);
     }
 }
