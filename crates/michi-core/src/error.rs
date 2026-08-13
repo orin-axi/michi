@@ -834,4 +834,21 @@ mod tests {
         let alpha_pos = json.find("\"alpha\"").expect("alpha key present");
         assert!(zebra_pos < alpha_pos, "zebra (added first) must appear before alpha, got: {json}");
     }
+
+    // AC-018: the existing multi-element witnesses above only byte-scan for
+    // substrings/relative offsets, which a missing comma separator (in either
+    // the hints loop or the params loop) does not perturb. Actually parse the
+    // output to prove both element-separator call sites are present.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac018_render_json_is_valid_with_multiple_hints_and_multiple_params() {
+        let r = RecoveryHint::new("t")
+            .param("zebra", crate::kv::KvValue::Int(1))
+            .param("alpha", crate::kv::KvValue::Int(2));
+        let e = DomainError::new(ErrorCode::NotFound, "m").hint("a").hint("b").recovery(r);
+        let raw = e.render_json();
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("must be valid JSON");
+        assert_eq!(parsed["hints"], serde_json::json!(["a", "b"]));
+        assert_eq!(parsed["recovery"]["params"], serde_json::json!({"zebra": 1, "alpha": 2}));
+    }
 }
