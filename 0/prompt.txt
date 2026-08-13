@@ -1,0 +1,109 @@
+<task-notification>
+<task-id>a09b3d6abf9f12c35</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a09b3d6abf9f12c35.output</output-file>
+<status>completed</status>
+<summary>Agent "Drift check michi-toon.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 50 criteria traced end-to-end against live source, with every exact-value claim reproduced by direct execution against the crate (debug and release profiles). Baseline is green: 22/22 in `michi-toon`, 4/4 workspace toon tests.
+
+```json
+{
+  "spec_id": "michi-toon",
+  "spec_file_path": "/Users/gabe/Projects/michi/.claude/specs/michi-toon.json",
+  "covered": [
+    {"criterion_id": "AC-001", "test_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/lib.rs", "test_line": 255, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/lib.rs", "implementation_line": 130},
+    {"criterion_id": "AC-004", "test_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/lib.rs", "test_line": 303, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/lib.rs", "implementation_line": 143},
+    {"criterion_id": "AC-005", "test_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs", "test_line": 240, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/escape.rs", "implementation_line": 77},
+    {"criterion_id": "AC-008", "test_file": "/Users/gabe/Projects/michi/tests/toon_integration.rs", "test_line": 36, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/escape.rs", "implementation_line": 28},
+    {"criterion_id": "AC-009", "test_file": "/Users/gabe/Projects/michi/tests/toon_integration.rs", "test_line": 95, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/escape.rs", "implementation_line": 35},
+    {"criterion_id": "AC-010", "test_file": "/Users/gabe/Projects/michi/tests/toon_integration.rs", "test_line": 102, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/escape.rs", "implementation_line": 33},
+    {"criterion_id": "AC-017", "test_file": "/Users/gabe/Projects/michi/tests/toon_integration.rs", "test_line": 81, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs", "implementation_line": 190},
+    {"criterion_id": "AC-019", "test_file": "/Users/gabe/Projects/michi/tests/toon_integration.rs", "test_line": 54, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs", "implementation_line": 193},
+    {"criterion_id": "AC-020", "test_file": "/Users/gabe/Projects/michi/tests/toon_integration.rs", "test_line": 17, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs", "implementation_line": 153},
+    {"criterion_id": "AC-021", "test_file": "/Users/gabe/Projects/michi/tests/proptest_toon.rs", "test_line": 60, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs", "implementation_line": 166},
+    {"criterion_id": "AC-022", "test_file": "/Users/gabe/Projects/michi/tests/toon_integration.rs", "test_line": 61, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs", "implementation_line": 201},
+    {"criterion_id": "AC-024", "test_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs", "test_line": 276, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/escape.rs", "implementation_line": 87},
+    {"criterion_id": "AC-026", "test_file": "/Users/gabe/Projects/michi/tests/toon_integration.rs", "test_line": 160, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/lib.rs", "implementation_line": 227},
+    {"criterion_id": "AC-030", "test_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/escape.rs", "test_line": 129, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/escape.rs", "implementation_line": 22},
+    {"criterion_id": "AC-041", "test_file": "/Users/gabe/Projects/michi/tests/toon_integration.rs", "test_line": 17, "implementation_file": "/Users/gabe/Projects/michi/crates/michi-toon/src/render.rs", "implementation_line": 200}
+  ],
+  "uncovered": [
+    {"criterion_id": "AC-002", "note": "PARTIAL. lib.rs:277 matches Err(InvalidTypeName { .. }) — the `name` payload the criterion pins is never asserted, and only `[` of the 7 structural chars is witnessed. Impl (lib.rs:133) verified correct."},
+    {"criterion_id": "AC-003", "note": "PARTIAL. lib.rs:290 matches Err(InvalidFieldName { .. }) — `name` payload unasserted; only `,` witnessed. Impl (lib.rs:140) verified correct."},
+    {"criterion_id": "AC-006a", "note": "UNTESTED. No #[should_panic] test exists anywhere. Verified by probe: panics with \"row length 1 does not match field count 2 (fields: [\\\"a\\\", \\\"b\\\"])\". Impl render.rs:140-147."},
+    {"criterion_id": "AC-006b", "note": "UNTESTED. No release-profile test exists. Verified by probe (--release): renders \"t[1]{a,b}:\\n  x,\\n\". Impl render.rs:172/194."},
+    {"criterion_id": "AC-007a", "note": "UNTESTED. Verified by probe: panics with \"row length 2 does not match field count 1 (fields: [\\\"a\\\"])\". Impl render.rs:140-147."},
+    {"criterion_id": "AC-007b", "note": "UNTESTED. Verified by probe (--release): renders \"t[1]{a}:\\n  x\\n\", extra cell dropped by the 0..field_count loop at render.rs:168."},
+    {"criterion_id": "AC-011", "note": "PARTIAL. tests/toon_integration.rs:112 asserts only contains(\"chars truncated\") plus a loose row_line &lt;= 90 char bound. The exact prefix-length equality (max_cell_len - suffix_chars) is unasserted; a change to the kept-prefix formula would not fail any test. Verified correct by probe."},
+    {"criterion_id": "AC-011b", "note": "UNTESTED. No CJK/multi-byte fixture exists in any toon test. Verified by probe: 300x U+65E5 at max_cell_len=200 gives a row line of exactly 202 chars / 528 bytes, as specified."},
+    {"criterion_id": "AC-011c", "note": "UNTESTED. Verified by probe: max_cell_len=10 with 50 'a' renders \"t[1]{a}:\\n   (50 chars\\n\" exactly. Impl michi-truncate/src/lib.rs:67-70 hard-cap."},
+    {"criterion_id": "AC-012a", "note": "UNTESTED. Verified by probe: output equals \"t[1]{a}:\\n  \" + 162 'a' + \" (500 chars truncated — use full=true)\" + \"\\n\" exactly."},
+    {"criterion_id": "AC-012b", "note": "PARTIAL + WEAK WITNESS. tests/toon_integration.rs:117 uses \"short\" (5 chars), not the criterion's 150-char near-boundary witness. An off-by-N regression in the render.rs:174 boundary check would escape a 5-char fixture entirely. Verified correct by probe at 150."},
+    {"criterion_id": "AC-013", "note": "UNTESTED. From&lt;u64&gt;/From&lt;usize&gt; saturation (render.rs:78/85) is exercised by no test in the repo. Verified by probe: u64::MAX and usize::MAX both render 9223372036854775807."},
+    {"criterion_id": "AC-014", "note": "UNTESTED via the criterion's stated path. tests/toon_integration.rs:158's u64 field reaches Value through list()/serde_json (lib.rs:181), not From&lt;u64&gt; (render.rs:72). Verified by probe."},
+    {"criterion_id": "AC-015", "note": "PARTIAL. render.rs:252 asserts a quote char exists and no bare NaN token; it does not pin the literal text \"NaN\". Rendering \"nan\" or \"NAN\" would still pass. Verified by probe: actual output is \"NaN\"."},
+    {"criterion_id": "AC-016", "note": "PARTIAL. render.rs:261 asserts only out.contains('\"') — it never checks the cell text at all. Verified by probe: actual output is \"inf\"."},
+    {"criterion_id": "AC-018", "note": "UNTESTED. Requires a release build; no such test exists. Verified by probe (--release): short row and explicit Null row both render \"  x,\\n\" byte-identically."},
+    {"criterion_id": "AC-023", "note": "PARTIAL. Positive half covered by tests/toon_integration.rs:70. The negative half — no line beginning with `help[` when hints is empty — is asserted nowhere (contrast AC-022, whose negative half IS tested at toon_integration.rs:61)."},
+    {"criterion_id": "AC-025a", "note": "UNTESTED. Verified by probe: exactly \"t[1]{a}:\\n   (50 chars\\ntotalCount: 5\\nhelp[1]:\\n  h\\n\"."},
+    {"criterion_id": "AC-025b", "note": "UNTESTED. Builder-order independence exercised by no test. Verified by probe: reversed chain is byte-identical."},
+    {"criterion_id": "AC-027", "note": "PARTIAL + CONFOUNDED WITNESS. lib.rs:313 uses &amp;[1u32, 2, 3] — every item is a non-object, so row_index: 0 is indistinguishable from a hardcoded 0 and the criterion's 'index of the first such item' clause is untested. Verified by probe with [{\"a\":1}, 7]: correctly returns row_index 1."},
+    {"criterion_id": "AC-028", "note": "UNTESTED. Verified by probe: list(\"t\", [{a:1,b:2},{a:3}]) =&gt; Ok(\"t[2]{a,b}:\\n  1,2\\n  3,\\n\")."},
+    {"criterion_id": "AC-029", "note": "UNTESTED. Verified by probe: list(\"t\", [{\"a,b\":1}]) =&gt; Err(InvalidFieldName { name: \"a,b\" }). Impl lib.rs:233."},
+    {"criterion_id": "AC-031", "note": "UNTESTED. escape_value_quoted has ZERO tests anywhere in the repo — it appears only at its definition (escape.rs:48) and its re-export (lib.rs:11). Verified by probe."},
+    {"criterion_id": "AC-032", "note": "UNTESTED. No compile-time or reflective assertion of the public surface exists (tests/toon_integration.rs:133 covers the michi root crate, not michi-toon). Manually verified: all 7 pub items and all 12 api_surface signatures match the live source exactly, including both #[must_use] attributes and list's `impl Into&lt;String&gt;`."},
+    {"criterion_id": "AC-033", "note": "UNTESTED. escape_value_quoted untested. Verified by probe: \"a\\\"b\" =&gt; \"\\\"a\\\\\\\"b\\\"\"."},
+    {"criterion_id": "AC-034", "note": "UNTESTED. escape_value_quoted untested. Verified by probe: \"a\\nb\\rc\" =&gt; \"\\\"abc\\\"\"."},
+    {"criterion_id": "AC-035", "note": "UNTESTED. ToonOptions::default() is called by no test in the repo. Verified by probe: renders exactly \"[0]{}:\\n\"."},
+    {"criterion_id": "AC-036", "note": "UNTESTED. From&lt;Option&lt;String&gt;&gt; (render.rs:107) is exercised by no test. Verified by probe: Some/None rows render byte-identically to Str/Null rows."},
+    {"criterion_id": "AC-037", "note": "UNTESTED. Direct post-construction field mutation is exercised by no test. Fields confirmed pub at lib.rs:76-86; #[non_exhaustive] blocks only external struct-literal construction, not field assignment."},
+    {"criterion_id": "AC-038", "note": "UNTESTED. Verified by probe: list(\"t\", [{}, {\"k\":1}]) =&gt; Err(RowLengthMismatch { row_index: 0, expected: 1, actual: 0 }). Impl lib.rs:227-233."},
+    {"criterion_id": "AC-039", "note": "PARTIAL. tests/toon_integration.rs:174 asserts starts_with(\"nothing[0]\") and a line count, but never pins the `{}:\\n` tail the criterion specifies. Verified by probe: Ok(\"t[0]{}:\\n\")."},
+    {"criterion_id": "AC-040", "note": "UNTESTED. Verified by probe: list(\"t\", [{}, {}]) =&gt; Ok(\"t[2]{}:\\n  \\n  \\n\")."},
+    {"criterion_id": "AC-042", "note": "UNTESTED. escape_value's Cow::Borrowed/Owned split — the crate's entire allocation-avoidance contract — is asserted by no test (escape.rs:94 tests sanitize_header_token, a different function). Verified by probe: Borrowed for plain, Owned(\"ab\") for \"a\\nb\", Owned for \"a,b\"."},
+    {"criterion_id": "AC-043", "note": "PARTIAL — see cross-spec note. tests/toon_integration.rs:112 asserts only contains(\"chars truncated\"). The EM DASH U+2014, the hardcoded hint \"full=true\", and the N-substitution are asserted by NO test reachable through render_toon(). michi-truncate's own tests (lib.rs:167/223) pin the format but always with a caller-supplied hint, never the render.rs:177 hardcoded \"full=true\" binding. Verified by probe."},
+    {"criterion_id": "AC-044", "note": "UNTESTED. The kept-prefix formula (max_cell_len - suffix_chars, saturating) is asserted by no test. Verified by probe. See caveat below re: the at-most-max_cell_len clause."}
+  ],
+  "drifted": [],
+  "summary": "Zero drift. Every one of michi-toon.json's 50 criteria was reproduced exactly against the live crate by direct execution in both debug and release profiles — including all pinned golden strings, panic messages, char/byte counts, Cow variants, and list() Result payloads. The spec is an accurate characterization of the shipped code. Coverage, however, is thin: only 15 criteria (30%) have a test that would actually fail if the criterion's exact condition were violated. 35 are unwitnessed — 25 with no test at all (escape_value_quoted, ToonOptions::default(), From&lt;Option&lt;String&gt;&gt;, From&lt;u64&gt;/From&lt;usize&gt; saturation, escape_value's Cow split, both debug-panic criteria, both release-profile criteria, and 4 of the 6 list() edge cases have literally zero assertions anywhere in the repo) and 10 with a test that passes while under-asserting. Two under-asserting tests are confounded witnesses of the pattern flagged for this session: lib.rs:313's list() fixture uses an all-non-object slice, so its row_index: 0 assertion cannot distinguish 'index of the first bad item' from a hardcoded zero; and tests/toon_integration.rs:117's non-truncation witness is 5 chars against a 200 boundary. The michi-truncate.json cross-spec coupling claim is only partially accurate and materially under-counts the coupled criteria.",
+  "reasoning": "Classification policy: I reserved 'drifted' strictly for genuine spec-vs-code divergence, of which there was none. Criteria whose implementation I verified correct but whose tests do not assert the criterion's exact condition are reported as uncovered with a PARTIAL note rather than drifted, because labeling them drifted would tell the caller the spec is wrong when I proved it is right. Verification was by a scratch probe crate depending on michi-toon by path with the serde feature, run under both cargo profiles plus a catch_unwind harness for the debug_assert paths."
+}
+```
+
+## Cross-spec claim: partially accurate, and it under-counts
+
+The claim lives in `michi-truncate.json`'s **`scope`** field (not on AC-004 itself, though it cites AC-004): *"The exact suffix format string ' ({N} chars truncated — use {hint})' pinned by AC-004 is duplicated verbatim as a golden value in .claude/specs/michi-toon.json (AC-043, AC-044, AC-012a, AC-012b), which hardcodes hint=\"full=true\" via render_toon()."*
+
+Checking each half against the spec as read from disk:
+
+- All four criterion IDs **exist**.
+- **AC-043 — accurate.** Duplicates the format verbatim and additionally pins U+2014 and the literal `full=true`.
+- **AC-012a — accurate.** Carries the fully-instantiated golden ` (500 chars truncated — use full=true)`.
+- **AC-044 — inaccurate as stated.** It contains no suffix string; it references *"the Unicode scalar count of the suffix text (per AC-043)"*. It is suffix-*dependent* (its arithmetic breaks if the suffix length changes) but is not a duplication.
+- **AC-012b — inaccurate, and misleading in a way that matters.** Its only occurrence of the string is the **negative** substring `" chars truncated"`, asserting *absence* of truncation for a 150-char cell. A suffix-format change would not fail AC-012b — it would silently weaken it into a vacuous assertion. It is the one criterion of the four that the pairing rule buys nothing for.
+- **"hardcodes hint=\"full=true\" via render_toon()" — accurate.** `crates/michi-toon/src/render.rs:177`:
+  ```rust
+  let truncated = michi_truncate::truncate_inline(s, max_cell_len, "full=true");
+  ```
+  (Minor: the call is to `truncate_inline`, `crates/michi-truncate/src/lib.rs:92`, which delegates to `truncate`; the `format!` is at `lib.rs:55`.)
+
+**The coupled set is larger than the claim says.** Also carrying the golden value, and unlisted: **AC-011** (verbatim ` (500 chars truncated — use full=true)` in its worked example), **AC-011c** and **AC-025a** (both pin ` (50 chars`, the hard-capped first 10 chars of the suffix — a change to the suffix's *leading* characters breaks them), and **AC-011b** (its 202-char/528-byte measurement is arithmetically derived from the 38-char suffix). The real pairing set is 7 criteria, not 4. If the pairing rule is to be relied on, `michi-truncate.json`'s scope note needs correcting to `AC-011, AC-011b, AC-011c, AC-012a, AC-025a, AC-043, AC-044` — and AC-012b dropped.
+
+## Confounded witnesses and spec defects worth flagging
+
+1. **AC-011b's stated purpose is itself confounded.** It claims to demonstrate *"that max_cell_len bounds Unicode scalar values (chars), not bytes."* But the render entry gate is **bytes** — `crates/michi-toon/src/render.rs:174` reads `if s.len() &lt;= max_cell_len`, and `CompactString::len()` is byte length. AC-011b's witness (300×日 = 300 chars / 900 bytes) exceeds the threshold on *both* measures, so it cannot discriminate the gate. Char semantics survive only because `michi_truncate::truncate` re-checks `char_count &lt;= max_chars` at `crates/michi-truncate/src/lib.rs:45-53` and returns unchanged. I verified the discriminating witness the spec lacks — 100×日 (100 chars / 300 bytes) at `max_cell_len=200` — and it renders **unmodified**, so there is no observable divergence today.
+
+   The structural hazard: `michi-toon.json`'s `non_goals[1]` explicitly declares `truncate_inline`'s internals out of scope, yet AC-011/AC-011b/AC-043's char semantics depend on exactly that internal re-check. Remove it and `render_toon` becomes byte-bounded with no michi-toon criterion failing.
+
+2. **AC-011 contains a clause its own revision_note says was removed.** The criterion still reads *"before quote-escaping is applied"*, while `revision_note` item (3) claims it *"deleted the escaping-order clause"* precisely because it named a quantity unobservable through `render_toon()`'s returned String. The defect the revision claimed to fix is still present in the text.
+
+3. **AC-044's final clause is escaping-sensitive.** *"the total rendered cell content ... is at most max_cell_len."* Its parenthetical scopes this to "kept prefix plus suffix" (pre-escape), which holds. But if read as the text actually in the output, it fails: a truncated prefix containing a comma gets quote-wrapped by `escape_value`, and I measured a rendered cell of **202 chars at max_cell_len=200**. Worth disambiguating.
+
+4. **AC-026 has an invisible external dependency.** `list()`'s field order matching the first item's key order holds only because the workspace enables `serde_json`'s `preserve_order` feature (`/Users/gabe/Projects/michi/Cargo.toml:23`). Drop that feature and keys become BTreeMap-sorted; `tests/toon_integration.rs:160` would fail, but nothing in `michi-toon`'s own manifest pins it — `crates/michi-toon/Cargo.toml` takes `serde_json` from the workspace without naming the feature.
+
+Scope note: `src/napi.rs`'s `render_toon` wrapper is **out of scope** — the spec's `scope` field covers only "the public API surface of the michi-toon crate as exposed at crate root," and no criterion references the NAPI boundary.
+
+Probe harness (disposable, outside the repo; no project files were modified): `/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/scratchpad/probe/`</result>
+<usage><subagent_tokens>101232</subagent_tokens><tool_uses>26</tool_uses><duration_ms>447988</duration_ms></usage>
+</task-notification>
