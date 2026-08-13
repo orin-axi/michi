@@ -204,4 +204,29 @@ mod tests {
         let round_tripped: CallToolResult = serde_json::from_str(&wire).unwrap();
         assert_eq!(round_tripped.structured_content, "\"not json\"");
     }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac030a_wire_keys_are_exactly_camel_case_content_iserror_structuredcontent() {
+        let result = CallToolResult::new(vec![], true, "{}");
+        let json = serde_json::to_value(&result).unwrap();
+        let obj = json.as_object().unwrap();
+        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, vec!["content", "isError", "structuredContent"]);
+        assert_eq!(json["isError"], serde_json::json!(true));
+        assert!(obj.get("is_error").is_none(), "snake_case is_error must not be present");
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac032b_missing_field_deserialization_is_an_error() {
+        for payload in [
+            r#"{"content":[],"isError":false}"#,
+            r#"{"content":[],"structuredContent":{}}"#,
+            r#"{"isError":false,"structuredContent":{}}"#,
+        ] {
+            assert!(serde_json::from_str::<CallToolResult>(payload).is_err(), "payload: {payload}");
+        }
+    }
 }

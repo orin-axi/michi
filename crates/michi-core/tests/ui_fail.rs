@@ -8,6 +8,7 @@ fn non_exhaustive_and_no_serde_types_reject_the_forbidden_construction() {
     t.compile_fail("tests/ui-fail/content_block_struct_literal.rs");
     t.compile_fail("tests/ui-fail/call_tool_result_struct_literal.rs");
     t.compile_fail("tests/ui-fail/status_response_struct_literal.rs");
+    t.compile_fail("tests/ui-fail/audience_exhaustive_match.rs");
     #[cfg(feature = "serde")]
     {
         t.compile_fail("tests/ui-fail/health_no_serde.rs");

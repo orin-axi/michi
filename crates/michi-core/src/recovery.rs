@@ -127,6 +127,13 @@ mod tests {
     }
 
     #[test]
+    fn ac018_append_recovery_on_empty_slice_leaves_initially_empty_string_empty() {
+        let mut buf = String::new();
+        append_recovery(&mut buf, &[]);
+        assert_eq!(buf, "");
+    }
+
+    #[test]
     fn ac012_builder_methods_produce_expected_fields() {
         let hint = RecoveryHint::new("tool_name").param("a", KvValue::Int(1)).param("b", KvValue::Int(2)).reason("why");
         assert_eq!(hint.tool, "tool_name");
@@ -192,6 +199,14 @@ mod tests {
         let out = render_recovery(&hints);
         assert_eq!(out, "recovery[1]:\n  t: suggestedParams: { k\nz: v }\n");
         assert_eq!(out.lines().count(), 3, "one extra line from the embedded \\n in the param key");
+    }
+
+    #[test]
+    fn ac018c_carriage_return_in_param_key_passes_through_but_does_not_change_line_count() {
+        let hints = [RecoveryHint::new("t").param("k\rz", KvValue::Text("v".to_string()))];
+        let out = render_recovery(&hints);
+        assert_eq!(out, "recovery[1]:\n  t: suggestedParams: { k\rz: v }\n");
+        assert_eq!(out.lines().count(), 2, "unchanged by the lone \\r");
     }
 
     #[test]

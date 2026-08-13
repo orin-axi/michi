@@ -27,8 +27,14 @@ mod tests {
 
     #[test]
     fn ac001_is_non_exhaustive() {
+        // Positional, not a bare `contains` -- the naive form is vacuous
+        // because include_str! also pulls in this very test module, whose
+        // own assertion text contains the literal "#[non_exhaustive]".
         let src = include_str!("audience.rs");
-        assert!(src.contains("#[non_exhaustive]"), "missing #[non_exhaustive]");
+        let idx = src.find("pub enum Audience").expect("pub enum Audience present");
+        let preceding = &src[..idx];
+        let attr_start = preceding.rfind("#[non_exhaustive]").expect("#[non_exhaustive] precedes pub enum Audience");
+        assert!(!preceding[attr_start..].contains("pub enum") && !preceding[attr_start..].contains("pub struct"));
     }
 
     #[test]

@@ -278,4 +278,55 @@ mod tests {
         let out = resp.render();
         assert_eq!(out.lines().count(), 4, "2 (tool+desc) + 1 item + 1 extra from the embedded \\n, got: {out:?}");
     }
+
+    #[test]
+    fn ac023_carriage_return_in_item_key_passes_through_but_does_not_change_line_count() {
+        let items = vec![StatusItem { key: "a\rb".into(), value: KvValue::Text("v".into()), health: None }];
+        let resp = StatusResponse::new("tool", "desc", items);
+        let out = resp.render();
+        assert!(out.contains("a\rb:"), "got: {out:?}");
+        assert_eq!(out.lines().count(), 3, "2 (tool+desc) + 1 item, unchanged by the lone \\r, got: {out:?}");
+    }
+
+    #[test]
+    fn ac023_text_value_with_newline_and_carriage_return_is_stripped_and_preserves_line_count() {
+        let items = vec![StatusItem { key: "k".into(), value: KvValue::Text("a\nb\rc".into()), health: None }];
+        let resp = StatusResponse::new("tool", "desc", items);
+        let out = resp.render();
+        assert!(out.contains("k:           abc"), "got: {out:?}");
+        assert_eq!(out.lines().count(), 3, "2 (tool+desc) + 1 item, value is stripped so count is unaffected");
+    }
+
+    #[test]
+    fn ac022a_tool_name_and_description_newlines_are_stripped() {
+        let resp = StatusResponse::new("a\nb", "c\nd", vec![]);
+        let out = resp.render();
+        assert_eq!(out, "tool:        ab\ndescription: cd\n");
+    }
+
+    #[test]
+    fn ac025a_degraded_reason_newline_is_stripped() {
+        let items = vec![StatusItem {
+            key: "x".into(),
+            value: KvValue::Text("v".into()),
+            health: Some(Health::Degraded("a\nb".into())),
+        }];
+        let resp = StatusResponse::new("tool", "desc", items);
+        let out = resp.render();
+        assert!(out.contains("[DEGRADED: ab]"), "got: {out:?}");
+        assert_eq!(out.lines().count(), 3);
+    }
+
+    #[test]
+    fn ac026a_error_reason_newline_is_stripped() {
+        let items = vec![StatusItem {
+            key: "x".into(),
+            value: KvValue::Text("v".into()),
+            health: Some(Health::Error("a\nb".into())),
+        }];
+        let resp = StatusResponse::new("tool", "desc", items);
+        let out = resp.render();
+        assert!(out.contains("[ERROR: ab]"), "got: {out:?}");
+        assert_eq!(out.lines().count(), 3);
+    }
 }

@@ -52,9 +52,20 @@ mod tests {
 
     #[test]
     fn ac033_crate_root_carries_deny_unsafe_and_warn_missing_docs() {
+        // Scoped to the crate-attribute prologue (lines before the first `//!`
+        // doc comment) -- a bare `contains` over the whole file is vacuous,
+        // since include_str! also pulls in this very test module, whose own
+        // assertion text contains both literal attribute strings.
         let src = include_str!("lib.rs");
-        assert!(src.contains("#![deny(unsafe_code)]"), "missing #![deny(unsafe_code)]");
-        assert!(src.contains("#![warn(missing_docs)]"), "missing #![warn(missing_docs)]");
+        let prologue: Vec<&str> = src.lines().take_while(|l| !l.starts_with("//!")).collect();
+        assert!(
+            prologue.iter().any(|l| l.trim() == "#![deny(unsafe_code)]"),
+            "missing #![deny(unsafe_code)] in prologue"
+        );
+        assert!(
+            prologue.iter().any(|l| l.trim() == "#![warn(missing_docs)]"),
+            "missing #![warn(missing_docs)] in prologue"
+        );
     }
 
     #[test]

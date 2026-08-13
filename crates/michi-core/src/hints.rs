@@ -90,6 +90,13 @@ mod tests {
     }
 
     #[test]
+    fn ac010_append_hints_on_empty_slice_leaves_initially_empty_string_empty() {
+        let mut buf = String::new();
+        append_hints(&mut buf, &[]);
+        assert_eq!(buf, "");
+    }
+
+    #[test]
     fn ac007_constructors_and_display_mirror_as_str() {
         assert_eq!(Hint::new("text").as_str(), "text");
         assert_eq!(Hint::from("text").as_str(), "text");
