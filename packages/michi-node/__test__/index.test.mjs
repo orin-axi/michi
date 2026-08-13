@@ -315,3 +315,39 @@ void describe('render_toon validate() surfacing (SPEC-NAPI-POINTFIX-001)', () =>
     )
   })
 })
+
+void describe('numeric boundary agreement (SPEC-ARCH-003)', () => {
+  void it('totalCount rejects out-of-domain input identically across renderToon, renderKv, and AgentResponse', () => {
+    for (const bad of [-1, 1.5]) {
+      const substring = `got ${bad}`
+      assert.throws(
+        () => renderToon({ typeName: 't', fields: ['a'], rows: [], totalCount: bad, hints: [] }),
+        (err) => err.message.includes('expected a non-negative integer no greater than 9007199254740991') && err.message.includes(substring)
+      )
+      assert.throws(
+        () => renderKv([], bad, []),
+        (err) => err.message.includes('expected a non-negative integer no greater than 9007199254740991') && err.message.includes(substring)
+      )
+      assert.throws(
+        () => new AgentResponse('t').totalCount(bad),
+        (err) => err.message.includes('expected a non-negative integer no greater than 9007199254740991') && err.message.includes(substring)
+      )
+    }
+  })
+
+  void it('totalCount entry points agree on in-domain values including 2147483648', () => {
+    for (const good of [0, 1, 100, 2147483648]) {
+      const toonOut = renderToon({ typeName: 't', fields: ['a'], rows: [], totalCount: good, hints: [] })
+      assert.ok(toonOut.includes(`totalCount: ${good}`), `renderToon disagreed for ${good}: ${toonOut}`)
+
+      const kvOut = renderKv([{ key: 'id', value: { type: 'int', intVal: 1 } }], good, [])
+      assert.ok(kvOut.includes(`totalCount: ${good}`), `renderKv disagreed for ${good}: ${kvOut}`)
+
+      const r = new AgentResponse('t')
+      r.items([[{ type: 'int', intVal: 1 }]], ['a'])
+      r.totalCount(good)
+      const agentOut = r.renderToon()
+      assert.ok(agentOut.includes(`totalCount: ${good}`), `AgentResponse.totalCount disagreed for ${good}: ${agentOut}`)
+    }
+  })
+})
