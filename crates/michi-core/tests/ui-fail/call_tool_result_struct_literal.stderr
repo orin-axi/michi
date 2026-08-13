@@ -1,0 +1,10 @@
+error[E0639]: cannot create non-exhaustive struct using struct expression
+ --> tests/ui-fail/call_tool_result_struct_literal.rs:2:13
+  |
+2 |       let _ = michi_core::CallToolResult {
+  |  _____________^
+3 | |         content: vec![],
+4 | |         is_error: false,
+5 | |         structured_content: "{}".to_string(),
+6 | |     };
+  | |_____^

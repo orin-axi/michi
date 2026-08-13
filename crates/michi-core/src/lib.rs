@@ -51,6 +51,23 @@ mod tests {
     fn assert_send_sync_static<T: Send + Sync + 'static>() {}
 
     #[test]
+    fn ac033_crate_root_carries_deny_unsafe_and_warn_missing_docs() {
+        let src = include_str!("lib.rs");
+        assert!(src.contains("#![deny(unsafe_code)]"), "missing #![deny(unsafe_code)]");
+        assert!(src.contains("#![warn(missing_docs)]"), "missing #![warn(missing_docs)]");
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac036_positive_half_types_serialize_under_serde_feature() {
+        assert!(serde_json::to_string(&Audience::Assistant).is_ok());
+        assert!(serde_json::to_string(&Hint::from("x")).is_ok());
+        assert!(serde_json::to_string(&RecoveryHint::new("t")).is_ok());
+        assert!(serde_json::to_string(&ContentBlock::new("t", vec![])).is_ok());
+        assert!(serde_json::to_string(&CallToolResult::new(vec![], false, "{}")).is_ok());
+    }
+
+    #[test]
     fn test_auto_traits() {
         assert_send_sync_static::<Audience>();
         assert_send_sync_static::<DomainError>();

@@ -23,3 +23,6 @@ default  = []
 serde    = ["dep:serde", "dep:serde_json", "michi-toon/serde"]
 schemars = ["dep:schemars", "michi-toon/schemars"]
 miette   = ["dep:miette"]
+
+[dev-dependencies]
+trybuild = "1"

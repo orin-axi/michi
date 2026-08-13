@@ -88,4 +88,46 @@ mod tests {
         append_hints(&mut buf, &[]);
         assert_eq!(buf, "prefix\n");
     }
+
+    #[test]
+    fn ac007_constructors_and_display_mirror_as_str() {
+        assert_eq!(Hint::new("text").as_str(), "text");
+        assert_eq!(Hint::from("text").as_str(), "text");
+        assert_eq!(Hint::from(String::from("text")).as_str(), "text");
+        let hint = Hint::new("display me");
+        assert_eq!(format!("{hint}"), hint.as_str());
+    }
+
+    #[test]
+    fn ac011_append_hints_appends_render_hints_output_in_place() {
+        let hints = [Hint::new("a"), Hint::new("b")];
+        let mut out = "prefix\n".to_string();
+        append_hints(&mut out, &hints);
+        assert_eq!(out, format!("prefix\n{}", render_hints(&hints)));
+    }
+
+    #[test]
+    fn ac011a_newline_in_hint_passes_through_unstripped() {
+        let hints = [Hint::new("a\nb")];
+        let out = render_hints(&hints);
+        assert_eq!(out, "help[1]:\n  a\nb\n");
+        // The embedded \n adds a line, so line count is N+2, not help[N]'s N+1.
+        assert_eq!(out.lines().count(), 3);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac037a_serializes_as_bare_json_string() {
+        assert_eq!(serde_json::to_string(&Hint::from("x")).unwrap(), "\"x\"");
+    }
+
+    #[test]
+    fn carriage_return_in_hint_passes_through_but_does_not_change_line_count() {
+        // \r alone is not a line separator for str::lines(), so line count
+        // stays at N+1 despite the character passing through unstripped.
+        let hints = [Hint::new("a\rb")];
+        let out = render_hints(&hints);
+        assert_eq!(out, "help[1]:\n  a\rb\n");
+        assert_eq!(out.lines().count(), 2);
+    }
 }

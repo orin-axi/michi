@@ -125,4 +125,66 @@ mod tests {
         append_recovery(&mut buf, &[]);
         assert_eq!(buf, "prefix\n");
     }
+
+    #[test]
+    fn ac012_builder_methods_produce_expected_fields() {
+        let hint = RecoveryHint::new("tool_name").param("a", KvValue::Int(1)).param("b", KvValue::Int(2)).reason("why");
+        assert_eq!(hint.tool, "tool_name");
+        assert_eq!(hint.params, vec![("a".to_string(), KvValue::Int(1)), ("b".to_string(), KvValue::Int(2))]);
+        assert_eq!(hint.reason, Some("why".to_string()));
+
+        let bare = RecoveryHint::new("tool_name");
+        assert_eq!(bare.tool, "tool_name");
+        assert!(bare.params.is_empty());
+        assert_eq!(bare.reason, None);
+    }
+
+    #[test]
+    fn ac015_multiple_params_are_comma_separated_in_insertion_order() {
+        let hints = [RecoveryHint::new("assign_user")
+            .param("user", KvValue::Text("alice".to_string()))
+            .param("team", KvValue::Text("backend".to_string()))];
+        let out = render_recovery(&hints);
+        assert!(out.contains("assign_user: suggestedParams: { user: alice, team: backend }"), "got: {out}");
+    }
+
+    #[test]
+    fn ac017_params_and_reason_appear_together_params_first() {
+        let hints = [RecoveryHint::new("retry").param("attempt", KvValue::Int(2)).reason("transient network error")];
+        let out = render_recovery(&hints);
+        assert_eq!(out, "recovery[1]:\n  retry: suggestedParams: { attempt: 2 } — transient network error\n");
+    }
+
+    #[test]
+    fn ac018a_append_recovery_appends_render_recovery_output_in_place() {
+        let hints = [RecoveryHint::new("step_a"), RecoveryHint::new("step_b")];
+        let mut out = "prefix\n".to_string();
+        append_recovery(&mut out, &hints);
+        assert_eq!(out, format!("prefix\n{}", render_recovery(&hints)));
+    }
+
+    #[test]
+    fn ac018b_newline_in_tool_or_reason_passes_through_unstripped() {
+        let hints = [RecoveryHint::new("a\nb").reason("c\nd")];
+        let out = render_recovery(&hints);
+        assert_eq!(out, "recovery[1]:\n  a\nb — c\nd\n");
+        assert_eq!(out.lines().count(), 4, "two embedded newlines add two extra lines beyond the fixed count");
+    }
+
+    #[test]
+    fn carriage_return_in_tool_or_reason_passes_through_but_does_not_change_line_count() {
+        let hints = [RecoveryHint::new("a\rb").reason("c\rd")];
+        let out = render_recovery(&hints);
+        assert_eq!(out, "recovery[1]:\n  a\rb — c\rd\n");
+        assert_eq!(out.lines().count(), 2);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac037b_serializes_with_null_for_unset_reason_and_no_rename() {
+        assert_eq!(
+            serde_json::to_string(&RecoveryHint::new("t")).unwrap(),
+            "{\"tool\":\"t\",\"params\":[],\"reason\":null}"
+        );
+    }
 }

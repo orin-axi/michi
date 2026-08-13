@@ -24,4 +24,11 @@ mod tests {
         assert_eq!(a, b);
         assert_ne!(Audience::Assistant, Audience::User);
     }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac037_serializes_lowercase() {
+        assert_eq!(serde_json::to_string(&Audience::Assistant).unwrap(), "\"assistant\"");
+        assert_eq!(serde_json::to_string(&Audience::User).unwrap(), "\"user\"");
+    }
 }

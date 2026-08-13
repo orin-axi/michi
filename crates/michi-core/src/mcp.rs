@@ -119,4 +119,75 @@ mod tests {
         assert_eq!(r.content.len(), 1);
         assert!(!r.is_error);
     }
+
+    #[test]
+    fn ac027_new_preserves_text_and_audience_order() {
+        let block = ContentBlock::new("body", vec![Audience::User, Audience::Assistant]);
+        assert_eq!(block.text, "body");
+        assert_eq!(block.audience, vec![Audience::User, Audience::Assistant]);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac028_type_field_is_always_the_literal_text_with_audience_nested() {
+        let block = ContentBlock::new("body", vec![Audience::Assistant]);
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "text");
+        assert_eq!(json["annotations"]["audience"], serde_json::json!(["assistant"]));
+        assert!(json.get("audience").is_none(), "audience must not be top-level");
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac028a_type_field_is_accepted_and_discarded_not_validated() {
+        let payload = r#"{"type":"image","text":"t","annotations":{"audience":["user"]}}"#;
+        let block: ContentBlock = serde_json::from_str(payload).unwrap();
+        assert_eq!(block, ContentBlock { text: "t".to_string(), audience: vec![Audience::User] });
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac028b_missing_annotations_or_text_key_is_a_deserialization_error() {
+        let missing_annotations = r#"{"type":"text","text":"t"}"#;
+        assert!(serde_json::from_str::<ContentBlock>(missing_annotations).is_err());
+        let missing_text = r#"{"type":"text","annotations":{"audience":[]}}"#;
+        assert!(serde_json::from_str::<ContentBlock>(missing_text).is_err());
+    }
+
+    #[test]
+    fn ac029a_new_accepts_str_and_string_via_into_string() {
+        let from_str = CallToolResult::new(vec![], false, "raw");
+        let from_string = CallToolResult::new(vec![], false, "raw".to_string());
+        assert_eq!(from_str.structured_content, "raw");
+        assert_eq!(from_string.structured_content, "raw");
+        assert_eq!(from_str.content, vec![]);
+        assert!(!from_str.is_error);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac030_well_formed_json_structured_content_becomes_a_parsed_value() {
+        let result = CallToolResult::new(vec![], false, r#"{"a":1}"#);
+        let wire = serde_json::to_value(&result).unwrap();
+        assert_eq!(wire["structuredContent"], serde_json::json!({"a": 1}));
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac031_malformed_json_structured_content_becomes_a_json_string_not_dropped() {
+        let result = CallToolResult::new(vec![], false, "not json");
+        let wire = serde_json::to_value(&result).unwrap();
+        assert_eq!(wire["structuredContent"], serde_json::json!("not json"));
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac032_round_trip_preserves_structured_content_modulo_formatting() {
+        let original = CallToolResult::new(vec![], false, r#"{"a":1,"b":[1,2,3]}"#);
+        let wire_json = serde_json::to_string(&original).unwrap();
+        let round_tripped: CallToolResult = serde_json::from_str(&wire_json).unwrap();
+        let original_value: serde_json::Value = serde_json::from_str(&original.structured_content).unwrap();
+        let round_tripped_value: serde_json::Value = serde_json::from_str(&round_tripped.structured_content).unwrap();
+        assert_eq!(original_value, round_tripped_value);
+    }
 }

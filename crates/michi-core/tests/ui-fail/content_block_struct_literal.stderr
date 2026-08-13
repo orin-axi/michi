@@ -1,0 +1,9 @@
+error[E0639]: cannot create non-exhaustive struct using struct expression
+ --> tests/ui-fail/content_block_struct_literal.rs:2:13
+  |
+2 |       let _ = michi_core::ContentBlock {
+  |  _____________^
+3 | |         text: "hi".to_string(),
+4 | |         audience: vec![],
+5 | |     };
+  | |_____^

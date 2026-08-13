@@ -127,6 +127,23 @@ mod tests {
     }
 
     #[test]
+    fn ac025_degraded_suffix_has_exactly_two_leading_spaces() {
+        let resp = StatusResponse::new(
+            "tool",
+            "desc",
+            vec![StatusItem {
+                key: "cache".into(),
+                value: KvValue::Text("warm".into()),
+                health: Some(Health::Degraded("slow eviction".into())),
+            }],
+        );
+        let out = resp.render();
+        let line = out.lines().find(|l| l.starts_with("cache:")).expect("cache line present");
+        assert!(line.ends_with("  [DEGRADED: slow eviction]"), "got: {line:?}");
+        assert!(!line.ends_with("   [DEGRADED: slow eviction]"), "three spaces, got: {line:?}");
+    }
+
+    #[test]
     fn health_error_annotation_appears() {
         let resp = StatusResponse::new(
             "tool",
@@ -142,6 +159,23 @@ mod tests {
     }
 
     #[test]
+    fn ac026_error_suffix_has_exactly_two_leading_spaces() {
+        let resp = StatusResponse::new(
+            "tool",
+            "desc",
+            vec![StatusItem {
+                key: "db".into(),
+                value: KvValue::Text("unreachable".into()),
+                health: Some(Health::Error("connection refused".into())),
+            }],
+        );
+        let out = resp.render();
+        let line = out.lines().find(|l| l.starts_with("db:")).expect("db line present");
+        assert!(line.ends_with("  [ERROR: connection refused]"), "got: {line:?}");
+        assert!(!line.ends_with("   [ERROR: connection refused]"), "three spaces, got: {line:?}");
+    }
+
+    #[test]
     fn multiple_items_all_appear() {
         let resp = StatusResponse::new(
             "tool",
@@ -154,5 +188,58 @@ mod tests {
         let out = resp.render();
         assert!(out.contains("alpha:"), "got: {out}");
         assert!(out.contains("beta:"), "got: {out}");
+    }
+
+    #[test]
+    fn ac021_new_defaults_hints_empty_and_with_hints_is_a_consuming_builder() {
+        let resp = StatusResponse::new("tool", "desc", vec![]);
+        assert!(resp.hints.is_empty());
+
+        let hints = vec![Hint::new("a hint")];
+        let with = resp.with_hints(hints.clone());
+        assert_eq!(with.hints, hints);
+        assert_eq!(with.tool_name, "tool");
+        assert_eq!(with.description, "desc");
+        assert!(with.items.is_empty());
+    }
+
+    #[test]
+    fn ac023_line_count_is_2_plus_n_with_default_hints() {
+        for n in 0..=3 {
+            let items: Vec<StatusItem> = (0..n)
+                .map(|i| StatusItem {
+                    key: format!("k{i}"),
+                    value: KvValue::Int(i.try_into().unwrap_or(0)),
+                    health: None,
+                })
+                .collect();
+            let resp = StatusResponse::new("tool", "desc", items);
+            let out = resp.render();
+            assert_eq!(out.lines().count(), 2 + n, "n={n}, got: {out:?}");
+        }
+    }
+
+    #[test]
+    fn ac023a_with_hints_appends_append_hints_block_after_the_2_plus_n_lines() {
+        let items = vec![StatusItem { key: "k".into(), value: KvValue::Int(1), health: None }];
+        let hints = vec![Hint::new("h1"), Hint::new("h2")];
+        let resp = StatusResponse::new("tool", "desc", items).with_hints(hints.clone());
+        let out = resp.render();
+        let no_hints = StatusResponse::new(
+            "tool",
+            "desc",
+            vec![StatusItem { key: "k".into(), value: KvValue::Int(1), health: None }],
+        )
+        .render();
+        assert!(out.starts_with(&no_hints), "got: {out:?}");
+        assert_eq!(&out[no_hints.len()..], crate::hints::render_hints(&hints));
+    }
+
+    #[test]
+    fn ac023b_newline_in_item_key_adds_a_line_beyond_the_2_plus_n_formula() {
+        let items = vec![StatusItem { key: "a\nb".into(), value: KvValue::Text("v".into()), health: None }];
+        let resp = StatusResponse::new("tool", "desc", items);
+        let out = resp.render();
+        assert_eq!(out.lines().count(), 4, "2 (tool+desc) + 1 item + 1 extra from the embedded \\n, got: {out:?}");
     }
 }
