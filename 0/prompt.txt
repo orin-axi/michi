@@ -32,3 +32,7 @@ Continue with factor for planning
 ---
 
 Let’s do it
+
+---
+
+Fix it, probably merge appropriately. I’m not at my computer so I can’t see it proper
