@@ -1,5 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 import {
   renderToon,
   emptyState,
@@ -376,5 +381,25 @@ void describe('rejection instead of coercion (SPEC-ARCH-003 AC-009)', () => {
   void it('renderKv defaults absent decimalsVal to 6', () => {
     const out = renderKv([{ key: 'score', value: { type: 'float', floatVal: 1.0 } }], null, [])
     assert.ok(out.includes('1.000000'), `expected 6 decimal places by default, got: ${out}`)
+  })
+})
+
+void describe('index.d.ts keeps plain number types (SPEC-ARCH-003 AC-012)', () => {
+  void it('declares plain number types for all converted positions and leaks no newtype names', () => {
+    const dts = fs.readFileSync(path.join(__dirname, '..', 'index.d.ts'), 'utf8')
+    for (const expected of [
+      'intVal?: number',
+      'floatVal?: number',
+      'decimalsVal?: number',
+      'totalCount?: number',
+      'totalCount: number | undefined | null',
+      'maxChars: number',
+      'totalCount(n: number): void',
+    ]) {
+      assert.ok(dts.includes(expected), `index.d.ts missing declaration: ${expected}`)
+    }
+    for (const forbidden of ['bigint', 'BigInt', 'JsCount', 'JsInt', 'JsRanged', 'JsDecimals', 'JsFloat']) {
+      assert.ok(!dts.includes(forbidden), `index.d.ts leaked forbidden string: ${forbidden}`)
+    }
   })
 })
