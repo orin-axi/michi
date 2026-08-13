@@ -288,3 +288,77 @@ Both are single-edit fixes and I supplied the exact replacement text in the bloc
 Summary: overall verdict is **fail**, on 6 issues — 1 ambiguous factual mismatch (AC-025's "ASCII whitespace" vs. actual Unicode-whitespace `str::trim()` behavior), 1 scope-overlap problem (non_goals falsely claims no NAPI bindings exist, contradicted by michi-root-napi.json's own next_retry_delay/is_retryable_status criteria and RetryConfig::new's own doc comment), 1 incomplete section (IdempotencyKey's public tuple field is documented in api_surface but never pinned by a criterion), 1 missing error case (u64-overflowing delay-seconds strings), and 2 witness-quality issues in the AC-013/AC-016 vein — most notably AC-013's `attempt=63` witness is vacuous for the same structural reason as the already-fixed AC-029 bug: `base_ms` saturates to `u64::MAX` before `exp` is ever applied, and `2^63` doesn't overflow `u64` at all, so the criterion doesn't actually exercise `saturating_pow`'s overflow-clamping; `attempt=64` is the real boundary.</result>
 <usage><subagent_tokens>85056</subagent_tokens><tool_uses>13</tool_uses><duration_ms>217181</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a08a8bdb746c0727d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a08a8bdb746c0727d.output</output-file>
+<status>completed</status>
+<summary>Agent "Fresh canon-exit-gate for michi-resilience.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All probes cleaned up, `lib.rs` verified byte-identical to HEAD. Here is the verdict.
+
+```json
+{
+  "verdict": "fail",
+  "confidence": "high",
+  "artifact_type": "spec@1",
+  "retry_count": 1,
+  "verdict_summary": "FAIL. AC-018 and AC-022 are empirically false for legal inputs (both refuted by execution); AC-022 also contradicts AC-029. Pre-epoch IMF-fixdate rejection has no criterion. AC-048's witness is vacuous — removing `pub` from IdempotencyKey leaves all 62 tests green. Not ready for planning.",
+  "blockers": [
+    {
+      "criterion": "AC-018",
+      "location": ".claude/specs/michi-resilience.json (AC-018); crates/michi-resilience/src/lib.rs:134",
+      "finding": "The criterion is FALSE for legal inputs. It states retry_after smaller than the jittered backoff yields 'Some(duration) equal to the jittered backoff delay', but states no max_delay bound. lib.rs:134 applies `.min(max_ms)` last. Refuted by execution: config = RetryConfig::try_new(10, 1s, 5s, 0.0), attempt = 5 (backoff = 32s), retry_after = Some(1s) returns Some(5s), not Some(32s). The shipped test `backoff_wins_when_larger_than_retry_after` (lib.rs:451) passes only because it picks attempt=0 with a non-binding 30s max_delay. FIX: rewrite as 'Given attempt &lt; config.max_retries, config.max_delay a whole number of milliseconds, and retry_after = Some(d) where d.as_millis() is strictly less than the jittered exponential-backoff delay in milliseconds AND the jittered backoff does not exceed config.max_delay, next_retry_delay returns Some(duration) equal to the jittered backoff delay.' Add a concrete witness: config = RetryConfig::try_new(3, Duration::from_secs(10), Duration::from_secs(30), 0.0), attempt = 0, retry_after = Some(Duration::from_secs(1)) returns Some(Duration::from_secs(10)). This is the same unbounded-claim defect the revision_note says it fixed for AC-016 and AC-019; AC-018 sits between them and was missed."
+    },
+    {
+      "criterion": "AC-022",
+      "location": ".claude/specs/michi-resilience.json (AC-022); crates/michi-resilience/src/lib.rs:181",
+      "finding": "The criterion is FALSE at the Unix epoch boundary and contradicts AC-029. It states any 'valid IMF-fixdate string representing a time at or before now returns Some(Duration::ZERO)'. lib.rs:181 (`u64::try_from(epoch_secs).ok()?`) returns None for any pre-1970 date, so parse_retry_after_at returns None, not Some(ZERO). Refuted by execution with now = 2026-01-01: 'Mon, 01 Jan 1900 00:00:00 GMT' -&gt; None, 'Wed, 01 Jan 1969 00:00:00 GMT' -&gt; None, 'Thu, 01 Jan 1970 00:00:00 GMT' -&gt; Some(0ns). AC-029's own parenthetical already asserts this ('1900 predates the Unix epoch, so parse_http_date's epoch_secs -&gt; u64 conversion rejects it'), so the spec directly contradicts itself. FIX: bound AC-022 to 'a valid IMF-fixdate string representing a time at or after 1970-01-01T00:00:00Z and at or before now'; keep the concrete witness now = UNIX_EPOCH + 1_767_225_600s with header 'Wed, 31 Dec 2025 00:00:00 GMT' -&gt; Some(Duration::ZERO), and add the epoch-boundary witness 'Thu, 01 Jan 1970 00:00:00 GMT' -&gt; Some(Duration::ZERO)."
+    },
+    {
+      "criterion": "NEW CRITERION REQUIRED (missing error case)",
+      "location": ".claude/specs/michi-resilience.json acceptance_criteria; crates/michi-resilience/src/lib.rs:181",
+      "finding": "The pre-epoch rejection path at lib.rs:181 is a real, reachable error path of the public API with no acceptance criterion covering it — AC-029 only mentions it in a parenthetical justifying a different witness, and no test in the crate exercises it. FIX: add AC-050 with is_error_case: true: 'parse_retry_after_at(header, now) returns None, without panicking, when header is a syntactically valid IMF-fixdate whose instant precedes the Unix epoch (e.g. \"Mon, 01 Jan 1900 00:00:00 GMT\" or \"Wed, 01 Jan 1969 23:59:59 GMT\"), for any now — the epoch_secs -&gt; u64 conversion rejects negative epoch seconds. This is distinct from AC-022, which covers post-epoch past dates that clamp to Duration::ZERO.'"
+    },
+    {
+      "criterion": "AC-048",
+      "location": ".claude/specs/michi-resilience.json (AC-048); crates/michi-resilience/src/lib.rs:693-699",
+      "finding": "Ambiguous phrasing produced a vacuous witness — the third instance of this session's recurring pattern, after AC-029 and AC-013. AC-048 says the proposition must hold 'from a test module outside the michi-resilience crate', but the shipped witness `idempotency_key_inner_field_is_public_and_mutable` (lib.rs:693) lives in lib.rs's `#[cfg(test)] mod tests`, which IS a test module and IS inside the crate, where field privacy is invisible. Verified by sabotage: changing `pub struct IdempotencyKey(pub String)` to `IdempotencyKey(String)` — precisely the regression AC-048 exists to catch — leaves all 62 tests passing. I confirmed the proposition does hold from a genuine integration test, but nothing in the suite enforces it. FIX: restate AC-048 naming the mechanism the way AC-008 does: 'Verified by an integration test under crates/michi-resilience/tests/ (which compiles as a separate crate), NOT by lib.rs's #[cfg(test)] mod tests, which cannot observe field privacy: IdempotencyKey(\"manual\".to_string()).as_str() == \"manual\" compiles, and given `let mut k = IdempotencyKey::new(\"a\"); k.0 = \"b\".to_string();`, k.as_str() == \"b\".'"
+    },
+    {
+      "criterion": "AC-019",
+      "location": ".claude/specs/michi-resilience.json (AC-019)",
+      "finding": "The 'Concretely' instance is under-specified and cannot be executed as written: it names config.max_delay = Duration::from_secs(5) and retry_after = Some(Duration::from_secs(999)) but supplies no attempt and no max_retries. If attempt &gt;= config.max_retries the function returns None (AC-011), so the asserted Some(Duration::from_secs(5)) does not follow from the stated inputs. FIX: state the general clause with the bound 'Given attempt &lt; config.max_retries, config.max_delay a whole number of milliseconds, and retry_after = Some(d) where d.as_millis() &gt; config.max_delay.as_millis()...' and make the witness complete: config = RetryConfig::try_new(3, Duration::from_millis(500), Duration::from_secs(5), 0.0), attempt = 0, retry_after = Some(Duration::from_secs(999)) returns Some(Duration::from_secs(5)). Apply the same attempt bound to AC-016's general clause, which has the identical gap (its witness is complete, so this is the weaker half of the fix)."
+    },
+    {
+      "criterion": "AC-049",
+      "location": ".claude/specs/michi-resilience.json (AC-049); crates/michi-resilience/src/lib.rs:156-157",
+      "finding": "The criterion's stated mechanism is misattributed — the same class of factually-wrong mechanism claim the auditor already caught in AC-025's 'ASCII whitespace'. AC-049 says the IMF-fixdate parser rejects \"99999999999999999999999\" because there is 'no ', ' weekday separator'. In fact parse_http_date's first statement is `s.strip_suffix(\" GMT\")?` (lib.rs:156), which fires and returns None before the `split_once(\", \")` check at lib.rs:157 is ever reached. The observable outcome (None) and the is_error_case: true marking are both correct; only the explanation is wrong. FIX: replace the parenthetical with '(since str::parse::&lt;u64&gt;() returns Err on overflow), which also rejects it — parse_http_date's first check is strip_suffix(\" GMT\"), which fails on a bare digit string — yielding None overall.'"
+    },
+    {
+      "criterion": "revision_note (document section)",
+      "location": ".claude/specs/michi-resilience.json, revision_note field",
+      "finding": "The revision_note is stale and now describes a document state that no longer exists, making it actively misleading to a downstream planner. It closes with 'All criteria after each insertion point were renumbered sequentially (AC-001 through AC-047)', but the spec now carries 49 criteria. It documents only the 8 contradiction-review corrections and records none of the 6 subsequent auditor fixes (AC-025 Unicode-vs-ASCII whitespace correction, the non_goals NAPI-bindings correction, the addition of AC-048, the addition of AC-049, the AC-013 attempt=63 -&gt; attempt=64 vacuous-witness fix, and the AC-016 strict-vs-non-strict 'exceeds' disambiguation). FIX: extend revision_note with those six items in the same evidence-cited style, and correct the closing range to 'AC-001 through AC-049'."
+    }
+  ],
+  "reasoning": "Conditions 2 (no TBDs) and 4 (single planning cycle) pass cleanly: grep for TBD/TODO/FIXME/'to be determined'/'as appropriate' returns nothing, and this is a characterization spec over an already-implemented 837-line crate, so 49 criteria is one cycle of test-hardening, not multi-cycle build work. Condition 3 partially fails — 12 criteria carry is_error_case: true and the marking is broadly consistent, but the pre-epoch rejection path at lib.rs:181 is an uncovered error case. Condition 1 fails outright: AC-018 and AC-022 are not merely vague, they are false for legal inputs, and I refuted both by execution rather than by reading. Suite baseline: 62 tests (61 unit + 1 trybuild harness), all green — NOT the 65 the caller expected; recounted via grep on '#[test]' in lib.rs. Sabotage-and-restore performed on three mechanisms: (1) saturating_pow -&gt; wrapping_pow made AC-013's test fail with 'attempt 64: delay 0ns wrapped to a tiny value', confirming the attempt=64 witness is genuine and the earlier attempt=63 fix was correct; (2) collapsing the Gregorian rule to 'year % 4 == 0' made AC-029's test fail pointing exactly at the century rule, confirming the 2100 witness is genuine; (3) removing pub from IdempotencyKey's field left all 62 tests green, proving AC-048's in-crate witness is vacuous. lib.rs was confirmed byte-identical to HEAD via git diff --quiet after each restore, and both temporary integration probes were deleted (git status clean apart from an unrelated untracked docs/superpowers/plans file I did not create). Spot-checked well beyond the requested 10 against real source: AC-001/002/003 against lib.rs:75-77, AC-004/005/006 against lib.rs:90-98, AC-007 against the Display impl at lib.rs:44-54, AC-009/010, AC-011/012 against lib.rs:123-125, AC-014 and AC-017 by arithmetic through lib.rs:126-135, AC-016's witness, AC-020/023/024/026/027/028/030/031/032/033 through parse_http_date, AC-034/035 against the matches! at lib.rs:233, AC-037 against the format! at lib.rs:254, AC-042/043/044 against render_already_done at lib.rs:301-319, AC-046 against line 1, and AC-047 by running cargo tree -e normal --depth 1 (exactly one line) plus the empty [dependencies] table. AC-013's attempt=64 deserves a note: because base_ms already saturates to u64::MAX before exp is applied, raw_ms is u64::MAX for any exp &gt;= 1, so the witness discriminates saturating_pow only through the exp=0 wrap case — the sabotage confirms it does discriminate, so the criterion stands, but it is thinner than its prose implies. I considered and rejected two candidate blockers: the AC-003 (is_error_case false) vs AC-015 (is_error_case true) inconsistency in how non-finite float normalization is classified, which is defensible under the spec's own stated convention; and AC-016's use of RetryConfig struct-literal syntax in its witness, which no external tester could execute given AC-008 — real friction, but a competent reader substitutes try_new. Neither changes the verdict, which is already fail on AC-018 alone."
+}
+```
+
+**Two criteria are provably false, not merely imprecise** — I refuted both by running them:
+
+- **AC-018** claims retry_after smaller than the jittered backoff yields the backoff, but omits the `max_delay` cap applied at `crates/michi-resilience/src/lib.rs:134`. With `try_new(10, 1s, 5s, 0.0)`, attempt 5, retry_after 1s: backoff is 32s, function returns **5s**. The shipped test passes only because it picks attempt 0 with a non-binding cap. This is the exact defect class `revision_note` claims it fixed for AC-016 and AC-019 — AC-018 sits between them and was skipped.
+- **AC-022** claims any valid past IMF-fixdate returns `Some(ZERO)`; pre-1970 dates return `None` via `u64::try_from(epoch_secs).ok()?` at `lib.rs:181`. AC-029's own parenthetical already states this, so **the spec contradicts itself**.
+
+**A third vacuous witness, matching the AC-029/AC-013 pattern you flagged.** AC-048 requires its proposition to hold "outside the michi-resilience crate," but the witness at `lib.rs:693` is in lib.rs's `#[cfg(test)] mod tests` — inside the crate, where field privacy is invisible. Sabotage: changing `IdempotencyKey(pub String)` to `IdempotencyKey(String)`, the precise regression AC-048 guards, leaves **all 62 tests green**. The proposition does hold from a genuine integration test; nothing enforces it.
+
+The two witnesses fixed earlier this session are sound. `wrapping_pow` failed AC-013's test with "attempt 64: delay 0ns wrapped"; collapsing the leap rule to `year % 4 == 0` failed AC-029's test at the century rule. `lib.rs` is byte-identical to HEAD (`git diff --quiet`) and both probe files are deleted.
+
+Two corrections to your brief: the suite is **62 tests (61 unit + 1 trybuild)**, not 65. And the untracked `docs/superpowers/plans/2026-08-04-edge-case-fixes.md` in `git status` predates my work — likely from `main` or `drift-truncate`.
+
+Conditions 2 (no TBDs) and 4 (single cycle) pass. Condition 3 fails on one uncovered error path, condition 1 fails outright. **Spec is blocked from planning.**</result>
+<usage><subagent_tokens>86189</subagent_tokens><tool_uses>28</tool_uses><duration_ms>350271</duration_ms></usage>
+</task-notification>
