@@ -180,6 +180,13 @@ mod tests {
     }
 
     #[test]
+    fn ac004b_render_recovery_capacity_is_at_least_16_plus_len_times_60() {
+        let hints = [RecoveryHint::new("a"), RecoveryHint::new("b")];
+        let out = render_recovery(&hints);
+        assert!(out.capacity() >= 16 + hints.len() * 60, "capacity {} too small", out.capacity());
+    }
+
+    #[test]
     fn ac018c_newline_in_param_key_passes_through_unstripped() {
         let hints = [RecoveryHint::new("t").param("k\nz", KvValue::Text("v".to_string()))];
         let out = render_recovery(&hints);

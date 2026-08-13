@@ -59,12 +59,26 @@ mod tests {
 
     #[test]
     #[cfg(feature = "serde")]
-    fn ac036_positive_half_types_serialize_under_serde_feature() {
-        assert!(serde_json::to_string(&Audience::Assistant).is_ok());
-        assert!(serde_json::to_string(&Hint::from("x")).is_ok());
-        assert!(serde_json::to_string(&RecoveryHint::new("t")).is_ok());
-        assert!(serde_json::to_string(&ContentBlock::new("t", vec![])).is_ok());
-        assert!(serde_json::to_string(&CallToolResult::new(vec![], false, "{}")).is_ok());
+    fn ac036_positive_half_types_round_trip_under_serde_feature() {
+        let audience = Audience::Assistant;
+        let json = serde_json::to_string(&audience).expect("Audience serializes");
+        assert_eq!(serde_json::from_str::<Audience>(&json).expect("Audience deserializes"), audience);
+
+        let hint = Hint::from("x");
+        let json = serde_json::to_string(&hint).expect("Hint serializes");
+        assert_eq!(serde_json::from_str::<Hint>(&json).expect("Hint deserializes"), hint);
+
+        let recovery = RecoveryHint::new("t");
+        let json = serde_json::to_string(&recovery).expect("RecoveryHint serializes");
+        assert_eq!(serde_json::from_str::<RecoveryHint>(&json).expect("RecoveryHint deserializes"), recovery);
+
+        let block = ContentBlock::new("t", vec![]);
+        let json = serde_json::to_string(&block).expect("ContentBlock serializes");
+        assert_eq!(serde_json::from_str::<ContentBlock>(&json).expect("ContentBlock deserializes"), block);
+
+        let result = CallToolResult::new(vec![], false, "{}");
+        let json = serde_json::to_string(&result).expect("CallToolResult serializes");
+        assert!(serde_json::from_str::<CallToolResult>(&json).is_ok(), "CallToolResult deserializes");
     }
 
     #[test]

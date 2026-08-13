@@ -116,6 +116,13 @@ mod tests {
     }
 
     #[test]
+    fn ac004a_render_hints_capacity_is_at_least_12_plus_len_times_50() {
+        let hints = [Hint::new("a"), Hint::new("b")];
+        let out = render_hints(&hints);
+        assert!(out.capacity() >= 12 + hints.len() * 50, "capacity {} too small", out.capacity());
+    }
+
+    #[test]
     #[cfg(feature = "serde")]
     fn ac037a_serializes_as_bare_json_string() {
         assert_eq!(serde_json::to_string(&Hint::from("x")).unwrap(), "\"x\"");

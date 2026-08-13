@@ -12,5 +12,8 @@ fn non_exhaustive_and_no_serde_types_reject_the_forbidden_construction() {
         t.compile_fail("tests/ui-fail/health_no_serde.rs");
         t.compile_fail("tests/ui-fail/status_item_no_serde.rs");
         t.compile_fail("tests/ui-fail/status_response_no_serde.rs");
+        t.compile_fail("tests/ui-fail/health_no_deserialize.rs");
+        t.compile_fail("tests/ui-fail/status_item_no_deserialize.rs");
+        t.compile_fail("tests/ui-fail/status_response_no_deserialize.rs");
     }
 }
