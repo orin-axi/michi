@@ -539,3 +539,45 @@ void describe('retry_after_ms boundary (SPEC-ARCH-004)', () => {
     assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0, 50), 110)
   })
 })
+
+void describe('max_retries / attempt boundary (SPEC-ARCH-004)', () => {
+  void it('rejects max_retries = -1 (AC-011)', () => {
+    assert.throws(
+      () => nextRetryDelay(-1, 100, 1000, 0.2, 0.5, 0),
+      (err) => err.message === 'expected an integer in [0, 4294967295], got -1'
+    )
+  })
+
+  void it('rejects attempt = -1 (AC-012)', () => {
+    assert.throws(
+      () => nextRetryDelay(3, 100, 1000, 0.2, 0.5, -1),
+      (err) => err.message === 'expected an integer in [0, 4294967295], got -1'
+    )
+  })
+
+  void it('rejects max_retries or attempt = 4294967296 (AC-013)', () => {
+    const expected = (err) => err.message === 'expected an integer in [0, 4294967295], got 4294967296'
+    assert.throws(() => nextRetryDelay(4294967296, 100, 1000, 0.2, 0.5, 0), expected)
+    assert.throws(() => nextRetryDelay(3, 100, 1000, 0.2, 0.5, 4294967296), expected)
+  })
+
+  void it('rejects max_retries or attempt = 2.5 (AC-014)', () => {
+    const expected = (err) => err.message === 'expected an integer in [0, 4294967295], got 2.5'
+    assert.throws(() => nextRetryDelay(2.5, 100, 1000, 0.2, 0.5, 0), expected)
+    assert.throws(() => nextRetryDelay(3, 100, 1000, 0.2, 0.5, 2.5), expected)
+  })
+
+  void it('succeeds with delay 220 for attempt = 1, max_retries = 3 (AC-027)', () => {
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 1), 220)
+  })
+
+  void it('returns null for max_retries = 0; delay 110 for attempt = 0, max_retries = 3 (AC-028)', () => {
+    assert.strictEqual(nextRetryDelay(0, 100, 1000, 0.2, 0.5, 0), null)
+    assert.strictEqual(nextRetryDelay(3, 100, 1000, 0.2, 0.5, 0), 110)
+  })
+
+  void it('accepts max_retries = 4294967295 (delay 110); returns null when attempt also = 4294967295 (AC-029)', () => {
+    assert.strictEqual(nextRetryDelay(4294967295, 100, 1000, 0.2, 0.5, 0), 110)
+    assert.strictEqual(nextRetryDelay(4294967295, 100, 1000, 0.2, 0.5, 4294967295), null)
+  })
+})
