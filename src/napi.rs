@@ -20,6 +20,7 @@
 //! here — only the module-level allow below permits the macro expansion.
 #![allow(unsafe_code)]
 
+use self::num::{JsCount, JsDecimals, JsFloat, JsInt};
 use napi_derive::napi;
 
 /// Validating newtypes for the NAPI numeric boundary (shared kernel for
@@ -53,17 +54,17 @@ pub struct JsToonValue {
     #[napi(js_name = "strVal")]
     pub str_val: Option<String>,
     /// The value when `type` is `"int"`.
-    #[napi(js_name = "intVal")]
-    pub int_val: Option<i64>,
+    #[napi(js_name = "intVal", ts_type = "number")]
+    pub int_val: Option<JsInt>,
     /// The value when `type` is `"float"`.
-    #[napi(js_name = "floatVal")]
-    pub float_val: Option<f64>,
+    #[napi(js_name = "floatVal", ts_type = "number")]
+    pub float_val: Option<JsFloat>,
     /// The value when `type` is `"bool"`.
     #[napi(js_name = "boolVal")]
     pub bool_val: Option<bool>,
-    /// Decimal places when `type` is `"float"` (KV render only). Clamped to [0, 20]. Defaults to 6.
-    #[napi(js_name = "decimalsVal")]
-    pub decimals_val: Option<i32>,
+    /// Decimal places when `type` is `"float"` (KV render only). Rejected if outside [0, 20]. Defaults to 6.
+    #[napi(js_name = "decimalsVal", ts_type = "number")]
+    pub decimals_val: Option<JsDecimals>,
 }
 
 /// Options for rendering a TOON document (JavaScript-friendly).
@@ -78,8 +79,8 @@ pub struct JsToonOptions {
     /// rows and `MAX_FIELDS` values per row.
     pub rows: Vec<Vec<JsToonValue>>,
     /// Total available count (may exceed `rows.len()` when paginated).
-    #[napi(js_name = "totalCount")]
-    pub total_count: Option<i32>,
+    #[napi(js_name = "totalCount", ts_type = "number")]
+    pub total_count: Option<JsCount>,
     /// Agent-facing usage hints. Capped at `MAX_HINTS` entries.
     pub hints: Vec<String>,
 }
@@ -87,8 +88,8 @@ pub struct JsToonOptions {
 fn js_value_to_rust(v: JsToonValue) -> michi_toon::Value {
     match v.r#type.as_str() {
         "str" => michi_toon::Value::Str(v.str_val.unwrap_or_default().into()),
-        "int" => michi_toon::Value::Int(v.int_val.unwrap_or(0)),
-        "float" => michi_toon::Value::Float(v.float_val.unwrap_or(0.0)),
+        "int" => michi_toon::Value::Int(v.int_val.map_or(0, JsInt::get)),
+        "float" => michi_toon::Value::Float(v.float_val.map_or(0.0, JsFloat::get)),
         "bool" => michi_toon::Value::Bool(v.bool_val.unwrap_or(false)),
         _ => michi_toon::Value::Null,
     }
@@ -137,7 +138,7 @@ pub fn render_toon(opts: JsToonOptions) -> napi::Result<String> {
     }
 
     let toon_opts = michi_toon::ToonOptions::new(opts.type_name, opts.fields, rows)
-        .total_count(opts.total_count.map(usize::try_from).and_then(Result::ok))
+        .total_count(opts.total_count.map(JsCount::get))
         .hints(opts.hints);
 
     toon_opts.validate().map_err(|e| napi::Error::from_reason(e.to_string()))?;
@@ -236,10 +237,10 @@ pub struct JsKvItem {
 fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
     match v.r#type.as_str() {
         "str" => crate::kv::KvValue::Text(v.str_val.unwrap_or_default()),
-        "int" => crate::kv::KvValue::Int(v.int_val.unwrap_or(0)),
+        "int" => crate::kv::KvValue::Int(v.int_val.map_or(0, JsInt::get)),
         "float" => {
-            let decimals = v.decimals_val.unwrap_or(6).clamp(0, 20) as u8;
-            crate::kv::KvValue::Float(v.float_val.unwrap_or(0.0), decimals)
+            let decimals = v.decimals_val.map_or(6, JsDecimals::get_u8);
+            crate::kv::KvValue::Float(v.float_val.map_or(0.0, JsFloat::get), decimals)
         }
         "bool" => crate::kv::KvValue::Bool(v.bool_val.unwrap_or(false)),
         _ => crate::kv::KvValue::Missing,
@@ -746,8 +747,11 @@ mod tests {
         let opts = JsToonOptions {
             type_name: "issue".to_string(),
             fields: vec!["id".to_string()],
-            rows: vec![vec![JsToonValue { int_val: Some(1), ..value("int") }]],
-            total_count: Some(1),
+            rows: vec![vec![JsToonValue {
+                int_val: Some(JsInt::try_from(1.0).expect("1 is a valid int")),
+                ..value("int")
+            }]],
+            total_count: Some(JsCount::try_from(1.0).expect("1 is a valid count")),
             hints: vec![],
         };
         let out = render_toon(opts).expect("valid input renders");
@@ -807,7 +811,10 @@ mod tests {
         let opts = JsToonOptions {
             type_name: "t".to_string(),
             fields: vec!["a".to_string()],
-            rows: vec![vec![JsToonValue { int_val: Some(1_755_000_000_000), ..value("int") }]],
+            rows: vec![vec![JsToonValue {
+                int_val: Some(JsInt::try_from(1_755_000_000_000.0).expect("1_755_000_000_000 is a valid int")),
+                ..value("int")
+            }]],
             total_count: None,
             hints: vec![],
         };
@@ -885,7 +892,11 @@ mod tests {
     #[test]
     fn js_agent_response_items_then_render_toon() {
         let mut r = JsAgentResponse::new("issues".to_string());
-        r.items(vec![vec![JsToonValue { int_val: Some(1), ..value("int") }]], vec!["id".to_string()]).unwrap();
+        r.items(
+            vec![vec![JsToonValue { int_val: Some(JsInt::try_from(1.0).expect("1 is a valid int")), ..value("int") }]],
+            vec!["id".to_string()],
+        )
+        .unwrap();
         let out = r.render_toon().unwrap();
         assert!(out.starts_with("issues[1]{id}:"), "got: {out}");
     }
@@ -928,9 +939,16 @@ mod tests {
     #[test]
     fn js_agent_response_render_toon_is_slot_specific_even_after_kv_items_called_last() {
         let mut r = JsAgentResponse::new("issues".to_string());
-        r.items(vec![vec![JsToonValue { int_val: Some(1), ..value("int") }]], vec!["id".to_string()]).unwrap();
-        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: JsToonValue { int_val: Some(99), ..value("int") } }])
-            .unwrap();
+        r.items(
+            vec![vec![JsToonValue { int_val: Some(JsInt::try_from(1.0).expect("1 is a valid int")), ..value("int") }]],
+            vec!["id".to_string()],
+        )
+        .unwrap();
+        r.kv_items(vec![JsKvItem {
+            key: "id".to_string(),
+            value: JsToonValue { int_val: Some(JsInt::try_from(99.0).expect("99 is a valid int")), ..value("int") },
+        }])
+        .unwrap();
         let toon = r.render_toon().unwrap();
         let kv = r.render_kv().unwrap();
         assert!(toon.starts_with("issues[1]{id}:\n  1\n"), "got: {toon}");
@@ -940,9 +958,19 @@ mod tests {
     #[test]
     fn js_agent_response_render_kv_is_slot_specific_even_after_items_called_last() {
         let mut r = JsAgentResponse::new("issue".to_string());
-        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: JsToonValue { int_val: Some(1), ..value("int") } }])
-            .unwrap();
-        r.items(vec![vec![JsToonValue { int_val: Some(99), ..value("int") }]], vec!["id".to_string()]).unwrap();
+        r.kv_items(vec![JsKvItem {
+            key: "id".to_string(),
+            value: JsToonValue { int_val: Some(JsInt::try_from(1.0).expect("1 is a valid int")), ..value("int") },
+        }])
+        .unwrap();
+        r.items(
+            vec![vec![JsToonValue {
+                int_val: Some(JsInt::try_from(99.0).expect("99 is a valid int")),
+                ..value("int")
+            }]],
+            vec!["id".to_string()],
+        )
+        .unwrap();
         let kv = r.render_kv().unwrap();
         let toon = r.render_toon().unwrap();
         assert!(kv.contains("id: 1"), "got: {kv}");
@@ -1124,7 +1152,13 @@ mod tests {
 
     #[test]
     fn render_kv_napi_float_default_decimals() {
-        let item = JsKvItem { key: "score".into(), value: JsToonValue { float_val: Some(3.14159), ..value("float") } };
+        let item = JsKvItem {
+            key: "score".into(),
+            value: JsToonValue {
+                float_val: Some(JsFloat::try_from(3.14159).expect("3.14159 is finite")),
+                ..value("float")
+            },
+        };
         let out = render_kv(vec![item], None, vec![]).unwrap();
         assert!(out.contains("score:"), "got: {out}");
         assert!(out.contains("3.141590"), "expected 6 decimal places by default, got: {out}");
@@ -1134,7 +1168,11 @@ mod tests {
     fn render_kv_napi_float_custom_decimals() {
         let item = JsKvItem {
             key: "score".into(),
-            value: JsToonValue { float_val: Some(3.14159), decimals_val: Some(2), ..value("float") },
+            value: JsToonValue {
+                float_val: Some(JsFloat::try_from(3.14159).expect("3.14159 is finite")),
+                decimals_val: Some(JsDecimals::try_from(2.0).expect("2 is a valid decimals value")),
+                ..value("float")
+            },
         };
         let out = render_kv(vec![item], None, vec![]).unwrap();
         assert!(out.contains("3.14"), "expected 2 decimal places, got: {out}");
