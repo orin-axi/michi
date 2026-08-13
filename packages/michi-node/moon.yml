@@ -7,17 +7,24 @@ tasks:
     script: "echo 'michi-node npm publish not yet configured'"
 
   build:
-    command: just build-node
+    script: "just build-node"
     inputs:
       - "src/**/*"
       - "__test__/**/*"
       - "package.json"
+      - "Cargo.toml"
+      - "/src/**/*"
+      - "/crates/**/*"
+      - "/Cargo.toml"
+      - "/Cargo.lock"
   test:
-    command: just test-node
+    script: "just test-node"
     inputs:
       - "index.js"
       - "index.d.ts"
       - "__test__/**/*"
       - "package.json"
+      - "/src/**/*"
+      - "/crates/**/*"
     deps:
       - build
