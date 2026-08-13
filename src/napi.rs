@@ -1664,7 +1664,7 @@ mod tests {
     // catch_unwind. ---
 
     #[test]
-    fn ac034a_every_napi_paren_attributed_fn_has_catch_unwind() {
+    fn ac034a_every_napi_attributed_fn_has_catch_unwind() {
         let napi_src = include_str!("napi.rs");
         let lines: Vec<&str> = napi_src.lines().collect();
         let mut checked = 0;
@@ -1673,19 +1673,24 @@ mod tests {
                 continue;
             }
             let mut j = i;
-            let mut found_napi_paren_attr: Option<&str> = None;
+            let mut found_napi_attr: Option<&str> = None;
             while j > 0 {
                 let prev = lines[j - 1].trim_start();
                 if prev.starts_with("#[") || prev.starts_with("///") || prev.starts_with("//!") {
-                    if prev.starts_with("#[napi(") {
-                        found_napi_paren_attr = Some(lines[j - 1]);
+                    // Any `#[napi` attribute directly preceding a `pub fn` — with or
+                    // without parens — must carry catch_unwind. A bare `#[napi]` with
+                    // no parens is only legitimately exempt when it precedes an `impl`
+                    // block, which by construction never precedes a `pub fn` line, so
+                    // no extra exclusion is needed here.
+                    if prev.starts_with("#[napi") {
+                        found_napi_attr = Some(lines[j - 1]);
                     }
                     j -= 1;
                 } else {
                     break;
                 }
             }
-            if let Some(attr) = found_napi_paren_attr {
+            if let Some(attr) = found_napi_attr {
                 checked += 1;
                 assert!(
                     attr.contains("catch_unwind"),
@@ -1697,7 +1702,7 @@ mod tests {
         }
         assert!(
             checked >= 15,
-            "expected to check at least 15 #[napi(...)]-attributed fns/methods, only checked {checked} \
+            "expected to check at least 15 #[napi]-attributed fns/methods, only checked {checked} \
              (a change to how attributes are written may have broken this scan's detection)"
         );
     }
