@@ -144,6 +144,28 @@ impl<const MIN: i64, const MAX: i64> JsRanged<MIN, MAX> {
         let () = Self::U8_FITS;
         u8::try_from(self.0).unwrap_or(u8::MAX)
     }
+
+    const U16_FITS: () = assert!(MIN >= 0 && MAX <= u16::MAX as i64, "JsRanged bounds do not fit in u16");
+
+    /// Returns the validated integer narrowed to `u16`. Only valid when
+    /// `MIN >= 0 && MAX <= u16::MAX`; instantiating this function with
+    /// bounds that don't fit `u16` is a compile error (`E0080`) via
+    /// `U16_FITS`.
+    pub fn get_u16(self) -> u16 {
+        let () = Self::U16_FITS;
+        u16::try_from(self.0).unwrap_or(u16::MAX)
+    }
+
+    const U32_FITS: () = assert!(MIN >= 0 && MAX <= u32::MAX as i64, "JsRanged bounds do not fit in u32");
+
+    /// Returns the validated integer narrowed to `u32`. Only valid when
+    /// `MIN >= 0 && MAX <= u32::MAX`; instantiating this function with
+    /// bounds that don't fit `u32` is a compile error (`E0080`) via
+    /// `U32_FITS`.
+    pub fn get_u32(self) -> u32 {
+        let () = Self::U32_FITS;
+        u32::try_from(self.0).unwrap_or(u32::MAX)
+    }
 }
 
 impl<const MIN: i64, const MAX: i64> TryFrom<f64> for JsRanged<MIN, MAX> {
@@ -186,6 +208,15 @@ impl<const MIN: i64, const MAX: i64> ToNapiValue for JsRanged<MIN, MAX> {
 /// The rendering-domain alias used at `JsToonValue.decimalsVal`. Consumed
 /// via `get_u8()`, which compiles because `[0, 20]` fits `u8`.
 pub type JsDecimals = JsRanged<0, 20>;
+
+/// The resilience-domain alias matching `michi_resilience::RetryConfig`'s
+/// `max_retries: u32` domain and `next_retry_delay`'s `attempt: u32`
+/// domain exactly. Consumed via `get_u32()`.
+pub type JsRetryCount = JsRanged<0, 4_294_967_295>;
+
+/// The resilience-domain alias for the conventional HTTP status-code
+/// domain. Consumed via `get_u16()`.
+pub type JsHttpStatus = JsRanged<100, 599>;
 
 /// A JavaScript number accepted only when `f64::is_finite` holds — `NaN`,
 /// `Infinity`, and `-Infinity` are rejected. Stores `f64`.
@@ -508,6 +539,38 @@ mod tests {
     fn js_delay_millis_as_duration_computes_seconds_equivalent() {
         let d = JsDelayMillis::try_from(1500.0).expect("1500 is in-domain");
         assert_eq!(d.as_duration(), std::time::Duration::from_secs_f64(1.5));
+    }
+
+    #[test]
+    fn js_retry_count_get_u32_round_trips_domain_boundaries() {
+        for (v, expected) in [(0.0, 0u32), (4_294_967_295.0, u32::MAX)] {
+            let r = JsRetryCount::try_from(v).expect("in-domain retry count");
+            assert_eq!(r.get_u32(), expected, "input {v}");
+        }
+    }
+
+    #[test]
+    fn js_retry_count_rejects_out_of_domain() {
+        for v in [-1.0, 4_294_967_296.0, 2.5] {
+            let err = JsRetryCount::try_from(v).expect_err("out-of-domain value must be rejected");
+            assert_eq!(err, format!("expected an integer in [0, 4294967295], got {v}"));
+        }
+    }
+
+    #[test]
+    fn js_http_status_get_u16_round_trips_domain_boundaries() {
+        for (v, expected) in [(100.0, 100u16), (599.0, 599u16)] {
+            let s = JsHttpStatus::try_from(v).expect("in-domain status");
+            assert_eq!(s.get_u16(), expected, "input {v}");
+        }
+    }
+
+    #[test]
+    fn js_http_status_rejects_out_of_domain() {
+        for v in [50.0, 70000.0, 429.5] {
+            let err = JsHttpStatus::try_from(v).expect_err("out-of-domain value must be rejected");
+            assert_eq!(err, format!("expected an integer in [100, 599], got {v}"));
+        }
     }
 
     #[test]
