@@ -367,16 +367,21 @@ mod tests {
 
     #[test]
     fn jitter_increases_delay() {
-        let config = RetryConfig {
-            jitter_factor: 1.0,
-            base_delay: Duration::from_millis(100),
-            max_delay: Duration::from_secs(30),
-            max_retries: 3,
-        };
-        let no_jitter = next_retry_delay(&RetryConfig { jitter_factor: 0.0, ..config.clone() }, 0, 0.0, None)
-            .expect("attempt 0 within max_retries");
+        let config = RetryConfig::new(3, Duration::from_millis(100), Duration::from_secs(30), 1.0);
         let with_jitter = next_retry_delay(&config, 0, 1.0, None).expect("attempt 0 within max_retries");
-        assert!(with_jitter > no_jitter, "jitter seed 1.0 should produce longer delay");
+        assert_eq!(with_jitter, Duration::from_millis(200));
+        let no_jitter = next_retry_delay(&config, 0, 0.0, None).expect("attempt 0 within max_retries");
+        assert_eq!(no_jitter, Duration::from_millis(100));
+    }
+
+    #[test]
+    fn non_finite_jitter_seed_treated_as_zero() {
+        let config = RetryConfig::new(3, Duration::from_millis(100), Duration::from_secs(30), 1.0);
+        let baseline = next_retry_delay(&config, 0, 0.0, None).expect("attempt 0 within max_retries");
+        let nan = next_retry_delay(&config, 0, f64::NAN, None).expect("attempt 0 within max_retries");
+        let inf = next_retry_delay(&config, 0, f64::INFINITY, None).expect("attempt 0 within max_retries");
+        assert_eq!(nan, baseline, "NaN jitter_seed must be treated as no jitter");
+        assert_eq!(inf, baseline, "INFINITY jitter_seed must be treated as no jitter");
     }
 
     #[test]
@@ -394,9 +399,27 @@ mod tests {
     #[test]
     fn extreme_duration_saturates_instead_of_wrapping() {
         let huge = Duration::from_secs(18_446_744_073_709_552);
-        let config = RetryConfig { base_delay: huge, max_delay: huge, jitter_factor: 0.0, max_retries: 10 };
-        let delay = next_retry_delay(&config, 0, 0.0, None).expect("attempt 0 within max_retries");
-        assert!(delay.as_millis() > 1_000_000_000_000, "delay {delay:?} wrapped to a tiny value");
+        let config = RetryConfig { base_delay: huge, max_delay: huge, jitter_factor: 0.0, max_retries: 100 };
+        for attempt in [0, 63] {
+            let delay = next_retry_delay(&config, attempt, 0.0, None).expect("attempt within max_retries");
+            assert!(
+                delay.as_millis() > 1_000_000_000_000,
+                "attempt {attempt}: delay {delay:?} wrapped to a tiny value"
+            );
+            assert!(
+                delay <= config.max_delay,
+                "attempt {attempt}: delay {delay:?} exceeded max_delay {:?}",
+                config.max_delay
+            );
+        }
+    }
+
+    #[test]
+    fn retry_after_sub_millisecond_truncates_toward_zero() {
+        let config = RetryConfig::new(3, Duration::from_millis(1), Duration::from_secs(30), 0.0);
+        let delay = next_retry_delay(&config, 0, 0.0, Some(Duration::from_nanos(1_500_000)))
+            .expect("attempt 0 within max_retries");
+        assert_eq!(delay, Duration::from_millis(1));
     }
 
     #[test]
@@ -443,6 +466,15 @@ mod tests {
     fn parse_retry_after_seconds() {
         assert_eq!(parse_retry_after("60"), Some(Duration::from_secs(60)));
         assert_eq!(parse_retry_after("  120  "), Some(Duration::from_secs(120)));
+    }
+
+    #[test]
+    fn parse_retry_after_at_strips_whitespace_around_http_date() {
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(1_767_225_600);
+        let unpadded = parse_retry_after_at("Thu, 01 Jan 2026 00:01:00 GMT", now);
+        let padded = parse_retry_after_at("  Thu, 01 Jan 2026 00:01:00 GMT  ", now);
+        assert_eq!(padded, unpadded);
+        assert_eq!(padded, Some(Duration::from_secs(60)));
     }
 
     #[test]
@@ -512,6 +544,31 @@ mod tests {
         // 2028 is a leap year (divisible by 4, not a century)
         let result = parse_retry_after_at("Tue, 29 Feb 2028 00:00:00 GMT", now);
         assert!(result.is_some(), "Feb 29 2028 is valid");
+        // 2000 is a leap year (divisible by 400) -- this is the case that actually
+        // distinguishes the Gregorian rule from a naive `year % 4 == 0` check.
+        let result = parse_retry_after_at("Tue, 29 Feb 2000 00:00:00 GMT", now);
+        assert!(result.is_some(), "Feb 29 2000 is valid (divisible by 400)");
+    }
+
+    #[test]
+    fn parse_http_date_rejects_feb_29_century_non_leap() {
+        let now = std::time::UNIX_EPOCH;
+        // 2100 (not 1900): 1900 predates the Unix epoch, so parse_http_date's
+        // epoch_secs -> u64 conversion rejects it regardless of leap-year status,
+        // which would make this test pass even if the century rule were broken.
+        assert!(
+            parse_retry_after_at("Mon, 29 Feb 2100 00:00:00 GMT", now).is_none(),
+            "2100 is divisible by 100 but not 400 -- not a leap year"
+        );
+    }
+
+    #[test]
+    fn parse_http_date_accepts_leap_second() {
+        let now = std::time::UNIX_EPOCH;
+        assert!(
+            parse_retry_after_at("Thu, 01 Jan 2026 00:00:60 GMT", now).is_some(),
+            "second=60 (a leap second) must be accepted"
+        );
     }
 
     #[test]
@@ -530,6 +587,19 @@ mod tests {
     #[test]
     fn public_parse_retry_after_still_handles_seconds() {
         assert_eq!(parse_retry_after("60"), Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn public_parse_retry_after_rejects_malformed_header() {
+        assert_eq!(parse_retry_after("not a valid header"), None);
+    }
+
+    #[test]
+    fn is_retryable_status_full_domain_sweep() {
+        for status in 0..=u16::MAX {
+            let expected = matches!(status, 429 | 502 | 503 | 504);
+            assert_eq!(is_retryable_status(status), expected, "status {status}");
+        }
     }
 
     #[test]
@@ -565,6 +635,30 @@ mod tests {
         assert_eq!(a, b);
     }
 
+    #[test]
+    fn from_hash_format_is_operation_colon_16_hex_chars() {
+        let key = IdempotencyKey::from_hash("op", b"data");
+        let s = key.as_str();
+        let (prefix, hex) = s.split_once(':').expect("format is operation:hex");
+        assert_eq!(prefix, "op");
+        assert_eq!(hex.len(), 16, "got: {hex}");
+        assert!(hex.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "got: {hex}");
+    }
+
+    #[test]
+    fn from_hash_different_data_yields_different_keys() {
+        let a = IdempotencyKey::from_hash("op", b"a");
+        let b = IdempotencyKey::from_hash("op", b"b");
+        assert_ne!(a.as_str(), b.as_str());
+    }
+
+    #[test]
+    fn idempotency_key_constructors() {
+        assert_eq!(IdempotencyKey::new("foo").as_str(), "foo");
+        assert_eq!(IdempotencyKey::from(String::from("bar")).as_str(), "bar");
+        assert_eq!(IdempotencyKey::from("baz").as_str(), "baz");
+    }
+
     fn assert_send_sync_static<T: Send + Sync + 'static>() {}
 
     #[test]
@@ -577,7 +671,7 @@ mod tests {
     #[test]
     fn new_clamps_jitter_factor_above_one() {
         let c = RetryConfig::new(3, Duration::from_millis(500), Duration::from_secs(30), 2.5);
-        assert!(c.jitter_factor <= 1.0, "jitter_factor must be clamped to 1.0, got {}", c.jitter_factor);
+        assert_eq!(c.jitter_factor, 1.0, "jitter_factor must clamp to exactly 1.0, got {}", c.jitter_factor);
     }
 
     #[test]
@@ -587,15 +681,23 @@ mod tests {
     }
 
     #[test]
+    fn new_clamps_non_finite_jitter_to_zero() {
+        let c_nan = RetryConfig::new(3, Duration::from_millis(500), Duration::from_secs(30), f64::NAN);
+        assert_eq!(c_nan.jitter_factor, 0.0, "NaN jitter_factor must clamp to 0.0");
+        let c_inf = RetryConfig::new(3, Duration::from_millis(500), Duration::from_secs(30), f64::INFINITY);
+        assert_eq!(c_inf.jitter_factor, 0.0, "INFINITY jitter_factor must clamp to 0.0");
+    }
+
+    #[test]
     fn new_clamps_base_delay_exceeding_max() {
-        let c = RetryConfig::new(3, Duration::from_secs(60), Duration::from_secs(10), 0.2);
-        assert!(c.base_delay <= c.max_delay, "base_delay must not exceed max_delay after normalization");
+        let c = RetryConfig::new(3, Duration::from_secs(1), Duration::from_millis(500), 0.2);
+        assert_eq!(c.base_delay, Duration::from_millis(500), "base_delay must clamp down to max_delay exactly");
     }
 
     #[test]
     fn new_floors_zero_max_delay_to_one_ms() {
         let c = RetryConfig::new(3, Duration::ZERO, Duration::ZERO, 0.0);
-        assert!(c.max_delay >= Duration::from_millis(1), "max_delay=0 must be floored to 1ms");
+        assert_eq!(c.max_delay, Duration::from_millis(1), "max_delay=0 must be floored to exactly 1ms");
     }
 
     #[test]
@@ -606,20 +708,63 @@ mod tests {
 
     #[test]
     fn try_new_rejects_base_exceeding_max() {
-        let result = RetryConfig::try_new(3, Duration::from_secs(60), Duration::from_secs(10), 0.2);
-        assert!(matches!(result, Err(RetryConfigError::BaseDelayExceedsMaxDelay { .. })));
+        let result = RetryConfig::try_new(3, Duration::from_secs(2), Duration::from_secs(1), 0.2);
+        match result {
+            Err(RetryConfigError::BaseDelayExceedsMaxDelay { base, max }) => {
+                assert_eq!(base, Duration::from_secs(2));
+                assert_eq!(max, Duration::from_secs(1));
+            }
+            other => panic!("expected BaseDelayExceedsMaxDelay {{ base: 2s, max: 1s }}, got {other:?}"),
+        }
     }
 
     #[test]
     fn try_new_rejects_out_of_range_jitter() {
-        let result = RetryConfig::try_new(3, Duration::from_millis(100), Duration::from_secs(30), 1.5);
-        assert!(matches!(result, Err(RetryConfigError::JitterFactorOutOfRange { .. })));
+        for factor in [-0.1, 1.1] {
+            let result = RetryConfig::try_new(3, Duration::from_millis(100), Duration::from_secs(30), factor);
+            match result {
+                Err(RetryConfigError::JitterFactorOutOfRange { factor: got }) => assert_eq!(got, factor),
+                other => panic!("expected JitterFactorOutOfRange {{ factor: {factor} }}, got {other:?}"),
+            }
+        }
+        let result = RetryConfig::try_new(3, Duration::from_millis(100), Duration::from_secs(30), f64::NAN);
+        match result {
+            Err(RetryConfigError::JitterFactorOutOfRange { factor }) => assert!(factor.is_nan()),
+            other => panic!("expected JitterFactorOutOfRange {{ factor: NaN }}, got {other:?}"),
+        }
     }
 
     #[test]
     fn try_new_accepts_valid_config() {
         let result = RetryConfig::try_new(3, Duration::from_millis(500), Duration::from_secs(30), 0.2);
-        assert!(result.is_ok());
+        let config = result.expect("valid config");
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.base_delay, Duration::from_millis(500));
+        assert_eq!(config.max_delay, Duration::from_secs(30));
+        assert_eq!(config.jitter_factor, 0.2);
+    }
+
+    #[test]
+    fn retry_config_error_display_strings() {
+        assert_eq!(RetryConfigError::MaxDelayIsZero.to_string(), "max_delay must be non-zero");
+        assert_eq!(
+            RetryConfigError::JitterFactorOutOfRange { factor: 1.5 }.to_string(),
+            "jitter_factor 1.5 is outside [0.0, 1.0]"
+        );
+        assert_eq!(
+            RetryConfigError::BaseDelayExceedsMaxDelay { base: Duration::from_secs(2), max: Duration::from_secs(1) }
+                .to_string(),
+            "base_delay (2s) must not exceed max_delay (1s)"
+        );
+    }
+
+    #[test]
+    fn default_config_values() {
+        let c = RetryConfig::default();
+        assert_eq!(c.max_retries, 3);
+        assert_eq!(c.base_delay, Duration::from_millis(500));
+        assert_eq!(c.max_delay, Duration::from_secs(30));
+        assert_eq!(c.jitter_factor, 0.2);
     }
 
     #[test]
@@ -640,15 +785,14 @@ mod tests {
 
     #[test]
     fn render_already_done_with_hints() {
-        let out = render_already_done("sync", "synced 10 records", &["use get_status to check".into()]);
-        assert!(out.contains("help[1]:\n  use get_status to check\n"), "got: {out}");
-        assert!(out.contains("operation: sync\n"), "got: {out}");
+        let out = render_already_done("my_op", "did the thing", &["hint one".to_string()]);
+        assert_eq!(out, "operation: my_op\nstatus:    already_done\nsummary:   did the thing\nhelp[1]:\n  hint one\n");
     }
 
     #[test]
     fn render_already_done_multiple_hints() {
         let hints = ["hint a".to_string(), "hint b".to_string()];
         let out = render_already_done("op", "done", &hints);
-        assert!(out.contains("help[2]:\n  hint a\n  hint b\n"), "got: {out}");
+        assert_eq!(out, "operation: op\nstatus:    already_done\nsummary:   done\nhelp[2]:\n  hint a\n  hint b\n");
     }
 }
