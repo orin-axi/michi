@@ -1,0 +1,58 @@
+Everything's saved. Clean git tree, both spec/plan files valid, cargo-mutants installed, and the task list (#5–#9) already persists at the project level — a fresh session will see it automatically.
+
+What's durable and where:
+- Spec — .claude/specs/napi-rendering-boundary-newtypes.json (SPEC-ARCH-003, gated through 3 compile-verified rounds)
+- Plan — .claude/plans/napi-rendering-boundary-newtypes.json (9 tasks, challenged with a real build+lint, real red phases throughout)
+- Task tracker — #7 "Implement SPEC-ARCH-003 tasks via lambda" is next up, #8 is the final exit gate, #9 is the not-yet-started resilience domain
+- Memory (auto-loaded into every future session on this project):
+  - project_michi_napi_numeric_boundary.md — exactly where this initiative stands and the precise next action
+  - feedback_validate_before_declaring_done.md — updated with today's lesson (no waived red phases, compile/build over read-only review, mutation testing) so it applies from turn one of a new session, not after re-learning it
+
+A fresh session can open with something like "pick up the michi NAPI boundary work" and it'll have full context without re-deriving any of this. Good time to start clean — the next phase is 9 real implementation tasks with commits, and that deserves fresh context rather than whatever's left of this budget.
+
+Implement SPEC-ARCH-003 (the NAPI rendering-boundary newtypes) via the lambda pipeline.
+
+Plan: .claude/plans/napi-rendering-boundary-newtypes.json (9 tasks, T1–T9)
+Spec: .claude/specs/napi-rendering-boundary-newtypes.json
+
+Check your memory for project_michi_napi_numeric_boundary.md and
+feedback_validate_before_declaring_done.md first — they have the full
+context on where this stands and the TDD rigor bar this plan was built to.
+
+Sequence:
+1. lambda-recon to confirm a clean baseline
+2. lambda-implementer for T1 through T9, strictly in dependency order
+   (T1→T2→T3→T4→T5→T6→T7→T8→T9)
+3. lambda-reviewer after every commit
+4. lambda-mutator after T1, T2, and T5 specifically (cargo-mutants is
+   installed) — treat any surviving mutant as a real finding
+5. A final lambda-exit-gate reading the spec fresh from disk after T9
+
+Non-negotiable: no task gets a waived red phase. T6–T8 already have their
+red phases spelled out in the plan as temporary, uncommitted sabotage of
+the exact mechanism each test claims to guard — follow those steps exactly,
+don't skip them because "the fix already landed." If
+doesn't actually fail the way the plan predicts, stop and report it rather
+than reinterpreting it as green.
+
+Report back after each task lands, and flag immediat
+comes back BLOCKED, NEEDS_CONTEXT, or DONE_WITH_CONCERNS on anything.
+
+This works because the two memory files carry everything else — the "why," the prior gate history, the known gap in the 8 characterization specs, and the reasoning behind eveon (why JsRanged::get_u8 isn't const, why thedeny-lint needs two scoped exemptions, etc.). The new session doesn't need any of that re-explained; it just needs to be pointed at the right files and told not to cut corners on the ple conversation fixing.
+
+---
+
+<task-notification>
+<task-id>a443449ea7cfde94f</task-id>
+<tool-use-id>toolu_0133MvM43VJ1sHfpCZ2Ga6a8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a443449ea7cfde94f.output</output-file>
+<status>completed</status>
+<summary>Agent "lambda-mutator T2" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Re-running mutation testing in the background to confirm the fix. Will report the final structured result once it completes.</result>
+<usage><subagent_tokens>52471</subagent_tokens><tool_uses>7</tool_uses><duration_ms>34360</duration_ms></usage>
+</task-notification>
+
+---
+
+Seems like you just dropped it?
