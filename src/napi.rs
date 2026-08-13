@@ -1208,4 +1208,151 @@ mod tests {
         }];
         assert!(render_status("t".into(), "d".into(), items, None).is_err());
     }
+
+    // --- AC-002: hard-cap constants are pinned to their documented values. ---
+
+    #[test]
+    fn cap_constants_are_pinned_to_documented_values() {
+        assert_eq!(MAX_ROWS, 100_000);
+        assert_eq!(MAX_FIELDS, 1_000);
+        assert_eq!(MAX_HINTS, 10_000);
+    }
+
+    // --- AC-006: render_toon accepts rows/fields/hints at exactly the cap. ---
+
+    #[test]
+    fn render_toon_accepts_exactly_at_cap_for_rows_fields_and_hints() {
+        let opts = JsToonOptions {
+            type_name: "t".to_string(),
+            fields: vec!["f".to_string(); MAX_FIELDS],
+            rows: (0..MAX_ROWS).map(|_| Vec::new()).collect(),
+            total_count: None,
+            hints: vec!["h".to_string(); MAX_HINTS],
+        };
+        match render_toon(opts) {
+            Ok(_) => {}
+            Err(e) => assert!(
+                !e.reason.contains("exceeds maximum"),
+                "at-cap call must not be rejected by a cap check, got: {}",
+                e.reason
+            ),
+        }
+    }
+
+    fn kv_item(k: &str) -> JsKvItem {
+        JsKvItem { key: k.to_string(), value: value("null") }
+    }
+
+    fn status_item(k: &str) -> JsStatusItem {
+        JsStatusItem { key: k.to_string(), value: value("null"), health: None }
+    }
+
+    // --- AC-008d/AC-009d: render_kv items cap (MAX_FIELDS). ---
+
+    #[test]
+    fn render_kv_items_cap_boundary() {
+        let too_many: Vec<JsKvItem> = (0..=MAX_FIELDS).map(|i| kv_item(&format!("k{i}"))).collect();
+        let err = render_kv(too_many, None, vec![]).expect_err("items over MAX_FIELDS must be rejected");
+        assert!(err.reason.contains("items length"), "got: {}", err.reason);
+
+        let at_cap: Vec<JsKvItem> = (0..MAX_FIELDS).map(|i| kv_item(&format!("k{i}"))).collect();
+        let out = render_kv(at_cap, None, vec![]).expect("items at exactly MAX_FIELDS must be accepted");
+        assert!(!out.is_empty());
+    }
+
+    // --- AC-008e/AC-009e: render_kv hints cap (MAX_HINTS). ---
+
+    #[test]
+    fn render_kv_hints_cap_boundary() {
+        let err = render_kv(vec![kv_item("k")], None, vec!["h".to_string(); MAX_HINTS + 1])
+            .expect_err("hints over MAX_HINTS must be rejected");
+        assert!(err.reason.contains("hints length"), "got: {}", err.reason);
+
+        let out = render_kv(vec![kv_item("k")], None, vec!["h".to_string(); MAX_HINTS])
+            .expect("hints at exactly MAX_HINTS must be accepted");
+        assert!(out.contains("help["), "got: {out}");
+    }
+
+    // --- AC-008f/AC-009f: render_status items cap (MAX_FIELDS). ---
+
+    #[test]
+    fn render_status_items_cap_boundary() {
+        let too_many: Vec<JsStatusItem> = (0..=MAX_FIELDS).map(|i| status_item(&format!("k{i}"))).collect();
+        let err =
+            render_status("t".into(), "d".into(), too_many, None).expect_err("items over MAX_FIELDS must be rejected");
+        assert!(err.reason.contains("items length"), "got: {}", err.reason);
+
+        let at_cap: Vec<JsStatusItem> = (0..MAX_FIELDS).map(|i| status_item(&format!("k{i}"))).collect();
+        let out =
+            render_status("t".into(), "d".into(), at_cap, None).expect("items at exactly MAX_FIELDS must be accepted");
+        assert!(!out.is_empty());
+    }
+
+    // --- AC-008g/AC-009g: render_status hints cap (MAX_HINTS). ---
+
+    #[test]
+    fn render_status_hints_cap_boundary() {
+        let err =
+            render_status("t".into(), "d".into(), vec![status_item("k")], Some(vec!["h".to_string(); MAX_HINTS + 1]))
+                .expect_err("hints over MAX_HINTS must be rejected");
+        assert!(err.reason.contains("hints length"), "got: {}", err.reason);
+
+        let out = render_status("t".into(), "d".into(), vec![status_item("k")], Some(vec!["h".to_string(); MAX_HINTS]))
+            .expect("hints at exactly MAX_HINTS must be accepted");
+        assert!(out.contains("help["), "got: {out}");
+    }
+
+    // --- AC-008h/AC-009h: render_domain_error hints cap (MAX_HINTS). ---
+
+    #[test]
+    fn render_domain_error_hints_cap_boundary() {
+        let err = render_domain_error("invalid_input".into(), "bad".into(), vec!["h".to_string(); MAX_HINTS + 1], None)
+            .expect_err("hints over MAX_HINTS must be rejected");
+        assert!(err.reason.contains("hints length"), "got: {}", err.reason);
+
+        let out = render_domain_error("invalid_input".into(), "bad".into(), vec!["h".to_string(); MAX_HINTS], None)
+            .expect("hints at exactly MAX_HINTS must be accepted");
+        assert!(!out.is_empty());
+    }
+
+    // --- AC-008i/AC-009i: render_already_done hints cap (MAX_HINTS). ---
+
+    #[test]
+    fn render_already_done_hints_cap_boundary() {
+        let err = render_already_done("op".into(), "sum".into(), vec!["h".to_string(); MAX_HINTS + 1])
+            .expect_err("hints over MAX_HINTS must be rejected");
+        assert!(err.reason.contains("hints length"), "got: {}", err.reason);
+
+        let out = render_already_done("op".into(), "sum".into(), vec!["h".to_string(); MAX_HINTS])
+            .expect("hints at exactly MAX_HINTS must be accepted");
+        assert!(out.contains("help["), "got: {out}");
+    }
+
+    // --- AC-009a: render_hints accepts hints at exactly MAX_HINTS. ---
+
+    #[test]
+    fn render_hints_accepts_exactly_at_cap() {
+        let out = render_hints(vec!["h".to_string(); MAX_HINTS]).expect("hints at exactly MAX_HINTS must be accepted");
+        assert!(out.contains(&format!("help[{MAX_HINTS}]")), "got starts: {}", &out[..out.len().min(40)]);
+    }
+
+    // --- AC-009b: append_hints accepts hints at exactly MAX_HINTS. ---
+
+    #[test]
+    fn append_hints_accepts_exactly_at_cap() {
+        let out = append_hints("body\n".to_string(), vec!["h".to_string(); MAX_HINTS])
+            .expect("hints at exactly MAX_HINTS must be accepted");
+        assert!(out.starts_with("body\n"), "got: {}", &out[..out.len().min(40)]);
+        assert!(out.contains(&format!("help[{MAX_HINTS}]")), "got: {}", &out[..out.len().min(60)]);
+    }
+
+    // --- AC-009c: render_recovery accepts hints at exactly MAX_HINTS. ---
+
+    #[test]
+    fn render_recovery_accepts_exactly_at_cap() {
+        let hints: Vec<JsRecoveryHint> =
+            (0..MAX_HINTS).map(|_| JsRecoveryHint { tool: "retry".to_string(), reason: None }).collect();
+        let out = render_recovery(hints).expect("hints at exactly MAX_HINTS must be accepted");
+        assert!(out.starts_with(&format!("recovery[{MAX_HINTS}]")), "got: {}", &out[..out.len().min(40)]);
+    }
 }
