@@ -604,6 +604,19 @@ mod tests {
     }
 
     #[test]
+    fn deleted_jitter_tests_do_not_reappear_in_napi_rs() {
+        let napi_src = include_str!("../napi.rs");
+        for deleted in [
+            "next_retry_delay_rejects_nan_jitter_factor",
+            "next_retry_delay_rejects_nan_jitter_seed",
+            ".contains(\"jitter_factor\")",
+            ".contains(\"jitter_seed\")",
+        ] {
+            assert!(!napi_src.contains(deleted), "deleted test artifact `{deleted}` reappeared in src/napi.rs");
+        }
+    }
+
+    #[test]
     fn js_unit_interval_type_name_is_js_unit_interval() {
         assert_eq!(JsUnitInterval::type_name(), "JsUnitInterval");
     }
