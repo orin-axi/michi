@@ -1,0 +1,37 @@
+<task-notification>
+<task-id>a9bd7ae11aa83dc4f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a9bd7ae11aa83dc4f.output</output-file>
+<status>completed</status>
+<summary>Agent "Fresh canon-exit-gate for michi-core-dtos.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**VERDICT: FAIL** (confidence: high, artifact_type `spec@1`, retry_count 1)
+
+Full verdict JSON: `/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/scratchpad/verdict-michi-core-dtos.json`
+
+## What I verified
+
+- `cargo nextest run -p michi-core --all-features` — **108/108 green**, as expected.
+- Read all 7 in-scope files fresh plus `kv/mod.rs`, both integration tests, and all 3 trybuild fixtures with their `.stderr` files. The trybuild witnesses are **unconfounded**: E0639 for both `#[non_exhaustive]` fixtures, E0277 `Health: serde::Serialize` for the serde one.
+- Spot-checked ~30 criteria against real source; ran the specific tests for AC-023/023a/023b, AC-025/026, AC-030/031/032/032a, AC-028a/028b, AC-011a/018b, and the trybuild test.
+- **2 sabotage-and-restore checks**, both restored with `git diff --quiet` confirming clean:
+  1. `annotate()` two-space suffix → one space: `ac025`/`ac026` FAIL while the looser `health_*_annotation_appears` tests still PASS — confirms the exact-suffix fix is load-bearing.
+  2. `push_kv_value`'s `\n`/`\r` strip disabled: the kv strip test FAILS — confirms the mechanism AC-023's carve-out depends on.
+- **Composition probes as instructed.** A `StatusResponse` with two health-annotated items whose reasons carry embedded `\n` and `\r`, a description carrying `\n`, AND hints attached still renders exactly 2+N lines followed by a byte-identical hints block. AC-023/023a survive composition — `annotate()` funnels the reason through `KvValue::Text`, which strips. The key-side breaker (AC-023b) is the only real one — and that is what exposed blocker 1.
+- Attacked `non_goals` #7 with out-of-range floats: `serde_json` rejects `1e400` at parse time, so the `unwrap_or_default` really is unreachable. AC-030/031/032/032a are sound.
+
+## The five blockers
+
+1. **AC-023a — false universal, precondition dropped.** It inherits AC-023's `2 + N` formula but not AC-023's guard. Verified counterexample: a `StatusItem` with key `"a\nb"` plus one hint gives **4 lines before the help block, not 3**. Fix: carry AC-023's "no item's key contains an embedded `\n`" guard into AC-023a's precondition. (Its second half — hints follow immediately and byte-exactly — is true unconditionally.)
+
+2. **AC-024 — loose `contains`, the exact defect already fixed in AC-025/026 but left in their negative counterpart.** `StatusItem { value: Text("[DEGRADED: fake]"), health: None }` renders a line containing `[DEGRADED` even though nothing was appended. Fix: restate as a differential check against the `health: None` rendering; a substring search is not valid.
+
+3. **AC-018b — missing error case, sibling gap to AC-023b.** `recovery.rs:70` does `out.push_str(k)` on param **keys** with no stripping. Verified: `.param("k\nz", …)` yields 3 lines for `recovery[1]`. The param *value* is stripped, the *key* is not. Needs a new AC-018c with `is_error_case: true`.
+
+4. **AC-035 — names `cargo public-api`, which is not installed and appears nowhere in the repo.** Same defect the auditor already fixed once for AC-036. (Its `cargo tree` half I verified true.)
+
+5. **AC-036 — witness proves 1 of 3 types.** Claims Health *and* StatusItem *and* StatusResponse lack Serialize; only `health_no_serde.rs` exists. The claim is true, but two thirds are unconfirmable as written.
+
+Conditions 2 (no TBDs), 3 (six error-case criteria, modulo blocker 3), and 4 (scope — 48 criteria, one cycle, no split) hold. The failure is condition 1 plus one missing error case. All five are single-clause spec edits plus small test/fixture additions for 2/3/5. Working tree is clean and the suite is green as I found it.</result>
+<usage><subagent_tokens>96312</subagent_tokens><tool_uses>25</tool_uses><duration_ms>391270</duration_ms></usage>
+</task-notification>
