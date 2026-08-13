@@ -650,6 +650,14 @@ mod tests {
                 );
             }
         }
+        let non_goals = root_napi["non_goals"].as_array().expect("non_goals is an array");
+        for &idx in &[1usize, 2usize] {
+            let entry = non_goals[idx].as_str().expect("non_goals entry is a string");
+            assert!(
+                entry.starts_with("SUPERSEDED BY SPEC-ARCH-004 -- "),
+                "non_goals[{idx}] should carry the SPEC-ARCH-004 supersession prefix, got: {entry}"
+            );
+        }
     }
 
     #[test]
