@@ -400,7 +400,10 @@ mod tests {
     fn extreme_duration_saturates_instead_of_wrapping() {
         let huge = Duration::from_secs(18_446_744_073_709_552);
         let config = RetryConfig { base_delay: huge, max_delay: huge, jitter_factor: 0.0, max_retries: 100 };
-        for attempt in [0, 63] {
+        // attempt=64 (not 63): 2^63 is well within u64::MAX and needs no saturation at
+        // all, so it doesn't exercise saturating_pow's overflow behavior. 2^64 does
+        // overflow a non-saturating u64::pow, making 64 the real boundary.
+        for attempt in [0, 64] {
             let delay = next_retry_delay(&config, attempt, 0.0, None).expect("attempt within max_retries");
             assert!(
                 delay.as_millis() > 1_000_000_000_000,
@@ -428,6 +431,20 @@ mod tests {
         let delay =
             next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(5))).expect("attempt 0 within max_retries");
         assert_eq!(delay, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn ac016_retry_after_strictly_exceeding_backoff_wins_exactly() {
+        let config = RetryConfig {
+            jitter_factor: 0.0,
+            base_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(30),
+            max_retries: 3,
+        };
+        // backoff at attempt=0 is 1000ms; retry_after=2000ms is strictly greater.
+        let delay =
+            next_retry_delay(&config, 0, 0.0, Some(Duration::from_secs(2))).expect("attempt 0 within max_retries");
+        assert_eq!(delay, Duration::from_secs(2));
     }
 
     #[test]
@@ -475,6 +492,20 @@ mod tests {
         let padded = parse_retry_after_at("  Thu, 01 Jan 2026 00:01:00 GMT  ", now);
         assert_eq!(padded, unpadded);
         assert_eq!(padded, Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn parse_retry_after_strips_unicode_whitespace_not_just_ascii() {
+        // U+2003 EM SPACE is Unicode whitespace but not ASCII whitespace; str::trim()
+        // strips it, so this must succeed rather than fail to parse as an integer.
+        let padded = "\u{2003}120\u{2003}";
+        assert_eq!(parse_retry_after(padded), Some(Duration::from_secs(120)));
+    }
+
+    #[test]
+    fn parse_retry_after_rejects_u64_overflowing_digit_string() {
+        let now = std::time::SystemTime::UNIX_EPOCH;
+        assert_eq!(parse_retry_after_at("99999999999999999999999", now), None);
     }
 
     #[test]
@@ -657,6 +688,14 @@ mod tests {
         assert_eq!(IdempotencyKey::new("foo").as_str(), "foo");
         assert_eq!(IdempotencyKey::from(String::from("bar")).as_str(), "bar");
         assert_eq!(IdempotencyKey::from("baz").as_str(), "baz");
+    }
+
+    #[test]
+    fn idempotency_key_inner_field_is_public_and_mutable() {
+        assert_eq!(IdempotencyKey("manual".to_string()).as_str(), "manual");
+        let mut k = IdempotencyKey::new("a");
+        k.0 = "b".to_string();
+        assert_eq!(k.as_str(), "b");
     }
 
     fn assert_send_sync_static<T: Send + Sync + 'static>() {}
