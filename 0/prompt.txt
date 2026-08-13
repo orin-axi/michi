@@ -1,0 +1,85 @@
+<task-notification>
+<task-id>a7c572d07a6cef537</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/a7c572d07a6cef537.output</output-file>
+<status>completed</status>
+<summary>Agent "Round-4 canon-exit-gate for michi-core-dtos.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All sabotages restored, tree clean, 119/119 green. Here is the binding verdict.
+
+```json
+{
+  "verdict": "fail",
+  "confidence": "high",
+  "artifact_type": "spec@1",
+  "retry_count": 4,
+  "verdict_summary": "FAIL + ESCALATE: retry budget exhausted at round 4. 8 defects found (rounds went 5/2/5/8). Round 3's own include_str! witnesses for AC-001 and AC-033 are vacuous -- both pass with the attribute deleted. Defect rate is PLATEAUING, not converging. Human review required.",
+  "blockers": [
+    {
+      "criterion": "AC-001",
+      "location": "crates/michi-core/src/audience.rs:29-32",
+      "finding": "The #[non_exhaustive] witness is VACUOUS -- it cannot fail. `include_str!(\"audience.rs\")` reads the whole file including the test module, and the literal \"#[non_exhaustive]\" appears inside the test's own `assert!` at line 31. PROVEN BY SABOTAGE: deleting `#[non_exhaustive]` from line 8 leaves `ac001_is_non_exhaustive` PASSING. Its sibling AC-019 (status.rs:194-201) uses a positional search and FAILS correctly under the same sabotage. FIX: rewrite AC-001 to require the positional form its sibling already proves -- find the first occurrence of \"pub enum Audience\", take the source slice preceding it, and rfind \"#[non_exhaustive]\" within that slice only, so the test-module occurrence is excluded. Stronger alternative (preferred, since Audience is an enum whose #[non_exhaustive] has a real external-match consequence): add a trybuild compile-fail fixture at crates/michi-core/tests/ui-fail/audience_exhaustive_match.rs performing a wildcard-free `match` on an Audience from outside the crate, expecting E0004, and register it in tests/ui_fail.rs alongside the existing fixtures."
+    },
+    {
+      "criterion": "AC-033",
+      "location": "crates/michi-core/src/lib.rs:54-58",
+      "finding": "Same vacuous-witness defect, in the criterion AC-001 explicitly cites as its template (\"mirroring AC-033's pattern\"). `include_str!(\"lib.rs\")` includes the test body, where the literals \"#![deny(unsafe_code)]\" and \"#![warn(missing_docs)]\" appear inside the assertions at lines 56-57. PROVEN BY SABOTAGE: deleting `#![deny(unsafe_code)]` from line 1 leaves `ac033_crate_root_carries_deny_unsafe_and_warn_missing_docs` PASSING. Additionally, AC-033's parenthetical claim \"and by the crate failing to compile if an `unsafe` block were introduced\" names no fixture and is verified by nothing. FIX: restate AC-033 so the assertion is scoped to the crate-attribute prologue -- e.g. assert that among the lines of lib.rs preceding the first `//!` doc-comment line, one line trims exactly to `#![deny(unsafe_code)]` and one trims exactly to `#![warn(missing_docs)]`. Separately, either delete the unverified `unsafe`-block parenthetical or replace it with a named, executable mechanism."
+    },
+    {
+      "criterion": "AC-030 / AC-031 / AC-032 (CallToolResult wire shape)",
+      "location": "crates/michi-core/src/mcp.rs:79-86",
+      "finding": "No criterion pins CallToolResult's serde wire FIELD NAMES, while its direct sibling ContentBlock has AC-028 pinning \"type\", nested \"annotations\".\"audience\", and the absence of a top-level \"audience\". PROVEN BY SABOTAGE: adding `#[serde(rename = \"is_error\")]` to CallToolResultWire.is_error -- breaking MCP wire conformance, since MCP requires `isError` -- leaves all 119 tests GREEN. (Removing the whole `rename_all = \"camelCase\"` is caught only incidentally, by AC-030/AC-031 indexing `wire[\"structuredContent\"]`.) FIX: add AC-030a asserting that serializing `CallToolResult::new(vec![], true, \"{}\")` produces a JSON object whose keys are exactly {\"content\", \"isError\", \"structuredContent\"} -- camelCase, with `isError` equal to true and no snake_case `is_error` key present."
+    },
+    {
+      "criterion": "AC-028b (missing sibling for CallToolResult)",
+      "location": "crates/michi-core/src/mcp.rs:79-86",
+      "finding": "ContentBlock has an explicit is_error_case criterion for missing-field deserialization (AC-028b), but CallToolResult -- the other serde-wire DTO in the same file, with the same no-#[serde(default)] property -- has no counterpart. VERIFIED BEHAVIOR: all three of {\"content\":[],\"isError\":false}, {\"content\":[],\"structuredContent\":{}}, and {\"isError\":false,\"structuredContent\":{}} return Err from serde_json::from_str::&lt;CallToolResult&gt;. FIX: add AC-032b, is_error_case: true, asserting that deserializing a wire payload omitting any one of content / isError / structuredContent returns Err rather than defaulting the field, because CallToolResultWire carries no #[serde(default)] on any field."
+    },
+    {
+      "criterion": "AC-023",
+      "location": "crates/michi-core/src/status.rs:216-280",
+      "finding": "AC-023 makes two explicit factual claims -- \"A Text value containing '\\n'/'\\r', or a key containing only '\\r', do NOT break this count\" -- and NEITHER has a test, while all three siblings in the same newline family each received a dedicated carriage-return test in earlier rounds (empty.rs:42, hints.rs:132, recovery.rs:175). VERIFIED TRUE BUT UNTESTED: StatusItem{key:\"a\\rb\"} renders \"a\\rb:         v\\n\" and yields 2+N lines; StatusItem{value:KvValue::Text(\"a\\rb\")} renders \"ab\" (stripped). FIX: add to status.rs's test module a `carriage_return_in_item_key_passes_through_but_does_not_change_line_count` test (assert the '\\r' is present verbatim AND lines().count() == 2 + N) and a companion asserting a KvValue::Text value containing '\\n' and '\\r' is stripped and preserves the 2 + N count -- mirroring the three sibling tests exactly."
+    },
+    {
+      "criterion": "AC-018c",
+      "location": "crates/michi-core/src/recovery.rs:190-195",
+      "finding": "AC-018c omits the carriage-return clause that its immediate sibling AC-018b states for the same function (append_recovery_lines) in the same file. AC-018b: \"A lone embedded '\\r' (no '\\n') also passes through unstripped, but does NOT change the line count.\" AC-018c stops at '\\n'. VERIFIED: RecoveryHint::new(\"t\").param(\"k\\rz\", KvValue::Text(\"v\")) renders \"recovery[1]:\\n  t: suggestedParams: { k\\rz: v }\\n\" -- 2 lines, '\\r' verbatim. FIX: append to AC-018c the same trailing sentence AC-018b carries, and add the matching assertion to `ac018c_newline_in_param_key_passes_through_unstripped` or a sibling `carriage_return_in_param_key_...` test."
+    },
+    {
+      "criterion": "AC-022 / AC-023 / AC-025 / AC-026 (unenumerated sanitized text positions)",
+      "location": "crates/michi-core/src/status.rs:59-79",
+      "finding": "The spec characterizes five UNSANITIZED text positions but is silent on three reachable public text inputs that ARE sanitized, so no criterion distinguishes them and no test would catch a regression that stopped sanitizing. VERIFIED: StatusResponse::new(\"a\\nb\", \"c\\nd\", vec![]).render() yields \"tool:        ab\\ndescription: cd\\n\" -- 2 lines, newlines stripped (they pass through KvValue::Text); Health::Degraded(\"a\\nb\") renders \"[DEGRADED: ab]\" -- also stripped, because annotate() wraps the result in KvValue::Text. AC-022's 2-line and AC-023's 2+N claims silently DEPEND on tool_name/description sanitization, which nothing asserts. FIX: add AC-022a asserting a tool_name and description containing '\\n' and '\\r' render stripped and preserve AC-022's exact 2-line count; add AC-025a/AC-026a asserting a Health::Degraded/Health::Error reason containing '\\n' and '\\r' renders stripped inside the bracketed suffix, preserving one line per item -- explicitly contrasting with RecoveryHint.reason (AC-018b), which is NOT stripped."
+    },
+    {
+      "criterion": "AC-010",
+      "location": "crates/michi-core/src/hints.rs:85-90",
+      "finding": "AC-010 explicitly requires two cases -- \"for both an initially-empty String and an initially non-empty String\" -- but `append_hints_on_empty_slice_does_nothing` covers only the non-empty case (buf = \"prefix\\n\"). The initially-empty case is asserted by nothing. Its sibling AC-018 (append_recovery) states no two-case requirement, so the pair is also inconsistent in what it demands. FIX: extend the test to also assert that a `String::new()` passed to append_hints(&amp;mut out, &amp;[]) is still empty afterwards, and either add the same clause and case to AC-018/`append_recovery_on_empty_slice_does_nothing` or drop it from AC-010 so the sibling pair states the same contract."
+    }
+  ],
+  "reasoning": "Read the spec fresh from disk (53 criteria) and every source file in scope, then ran cargo nextest run -p michi-core --all-features: 119/119 green, matching the expected count. Six sabotage-and-restore cycles, each followed by `git diff --quiet -- crates/michi-core/src crates/michi-core/tests crates/michi-core/Cargo.toml` confirming a clean tree; a seventh probe used a temporary integration-test file that was deleted and confirmed gone. Three sabotages were decisive: (a) deleting Audience's #[non_exhaustive] left AC-001's witness passing while the same sabotage on Health correctly failed AC-019's -- proving the asymmetry; (b) deleting #![deny(unsafe_code)] left AC-033 passing; (c) renaming the isError wire key left all 119 green. Confirmed AC-004's documented caveat is genuine and NOT shared by its siblings: removing with_capacity from render_hints correctly fails AC-004a (capacity 32 &lt; 112), so the &gt;= form discriminates where AC-004's exact form does not -- round 3's honesty note there stands and is not re-raised. Also confirmed AC-035 empirically (cargo tree -e normal under default features: zero serde_json, zero schemars, serde present via compact_str) and that all nine trybuild fixtures assert what AC-021a/AC-027/AC-029/AC-036 claim. Convergence assessment: rounds found 5, 2, 5, 8. The trend is flat-to-rising, not decaying. The decisive signal is not the count but the source: two of this round's eight defects were INTRODUCED by round 3's own remediation -- the include_str! witness pattern it added is unfalsifiable in two of the three places it was applied, and AC-001 propagated the flaw by explicitly citing AC-033 as its template. A repair mechanism that reproduces the family-sibling-gap shape while fixing it is the michi-resilience plateau signature, not the michi-toon convergence signature (9-&gt;9-&gt;11-&gt;4, where round 4's drop was a genuine decay). Schema note: the output contract directs verdict \"escalate\" when retry_count &gt; 3, but shared/schemas/verdict@1.json constrains verdict to the enum [pass, fail]. Emitted \"fail\" for schema conformance with retry_count 4 and the escalation stated in the first clause of verdict_summary, so the artifact validates and the human still receives the escalation signal. Under no reading does this spec pass -- eight blockers, three sabotage-proven."
+}
+```
+
+## What this means
+
+**Verdict: FAIL, escalate to human. Retry budget is exhausted.**
+
+The headline finding is that **round 3's own fix introduced two of this round's eight defects.** The `include_str!` witness pattern it added is unfalsifiable in two of the three places it was applied:
+
+- `include_str!("audience.rs")` reads the *whole file including the test module*, so `src.contains("#[non_exhaustive]")` matches the literal inside the test's own `assert!`. I deleted `#[non_exhaustive]` from `Audience` — the test still passed.
+- Identical defect in `AC-033`/`lib.rs`. I deleted `#![deny(unsafe_code)]` — the test still passed.
+- `AC-019`/`Health` is the one sound application, because it searches positionally within the slice *preceding* `pub enum Health`. Same sabotage correctly failed it.
+
+AC-001 propagated the flaw by explicitly citing AC-033 as the pattern it mirrors.
+
+Third sabotage-proven blocker: adding `#[serde(rename = "is_error")]` to `CallToolResultWire.is_error` — which breaks MCP wire conformance — leaves all **119 tests green**. `ContentBlock` has AC-028 pinning its wire keys; `CallToolResult` has no counterpart.
+
+**Convergence: plateauing, not converging.** Rounds found 5 → 2 → 5 → 8. But the count matters less than the source: a repair mechanism that reproduces the family-sibling-gap shape while fixing it has not converged. This is the `michi-resilience` signature, not `michi-toon`'s (9→9→11→4, where round 4 was a genuine decay). **My recommendation is not "one more confirming round"** — round 4 would have been that round, and it found more than round 3. If the user wants this spec sound, the next pass should be a targeted audit of *every* witness for falsifiability (does the test fail when the property is removed?), not another general defect hunt.
+
+Two notes on the artifact:
+- The output contract directs `verdict: "escalate"` at `retry_count &gt; 3`, but `/Users/gabe/Projects/agent-plugins/shared/schemas/verdict@1.json` constrains `verdict` to `[pass, fail]`. I emitted `"fail"` so the JSON validates, with the escalation in the first clause of `verdict_summary` and `retry_count: 4`.
+- Working tree is clean. All six sabotages were restored and verified with `git diff --quiet` after each; the temporary probe file `crates/michi-core/tests/zz_scratch_gate.rs` was deleted. The only untracked file, `docs/superpowers/plans/2026-08-04-edge-case-fixes.md`, predates this session.
+
+Round 3's honesty note on `AC-004` stands and I did not re-raise it — I confirmed the weakness is real and *not* shared by its siblings (removing `with_capacity` from `render_hints` correctly fails AC-004a at capacity 32 &lt; 112, so the `&gt;=` form discriminates where AC-004's exact form does not).</result>
+<usage><subagent_tokens>96553</subagent_tokens><tool_uses>25</tool_uses><duration_ms>460166</duration_ms></usage>
+</task-notification>
