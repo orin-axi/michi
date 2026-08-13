@@ -1,0 +1,94 @@
+<task-notification>
+<task-id>abd6d2cc346599a0f</task-id>
+<tool-use-id>toolu_01QQz5n9nDNuCE7Xopxd18zT</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/tasks/abd6d2cc346599a0f.output</output-file>
+<status>completed</status>
+<summary>Agent "Fresh canon-exit-gate for michi-toon.json" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both required runs are green and the tree is restored clean after all three sabotage checks. Here is the binding verdict.
+
+**verdict@1**
+
+```json
+{
+  "verdict": "fail",
+  "confidence": "high",
+  "artifact_type": "spec@1",
+  "verdict_summary": "FAIL. Both runs green (57 debug, 58 release + 2 skipped), no TBDs, scope fine. But 9 spec defects: AC-008/009/011 universal clauses empirically falsified by the truncation-then-escape interaction; AC-005/029/003/020/021/032 unguarded or ambiguous; list()'s serialize-error branch has no criterion.",
+  "blockers": [
+    {
+      "criterion": "AC-008",
+      "finding": "The universal clause is FALSE for an input satisfying its own stated precondition. Verified by execution against the live crate: a Value::Str of 499 'a' followed by ',' (contains a comma, contains no double-quote) at the default max_cell_len=200 renders as 162 'a' characters + ' (500 chars truncated — use full=true)' with NO surrounding double-quotes — render.rs truncates first and only then calls escape_value, so a comma beyond the cut point never reaches the escaper. No other criterion states this exception, and no render_toon-level test exercises it (sabotage confirmed: deleting comma-quoting from escape_value fails only escape::tests::value_with_comma_is_quoted and ac042, both escape_value-level, never a render_toon-level assertion). Fix: change AC-008 to read 'When a Value::Str cell contains a comma and no double-quote character, and the cell is not truncated (its Unicode scalar count does not exceed ToonOptions.max_cell_len), render_toon()'s output wraps that cell's rendered text in a leading and trailing double-quote character.' and add AC-008b: 'When a Value::Str cell IS truncated per AC-011, quoting is decided by the kept prefix plus suffix only: if the kept prefix contains no comma and no double-quote, the rendered cell is not wrapped in double quotes even though the original string contained one. Verified example: max_cell_len=200 and a Value::Str of 499 repeated a followed by a comma renders unquoted.'",
+      "location": "crates/michi-toon/src/render.rs:173-179; .claude/specs/michi-toon.json acceptance_criteria AC-008"
+    },
+    {
+      "criterion": "AC-009",
+      "finding": "Same falsification, verified by execution: a Value::Str of 499 'b' followed by '\"' at max_cell_len=200 renders with no wrapping double-quotes and contains no backslash-quote sequence, because the double-quote is cut away before escape_value runs. AC-009 states the wrapping/escaping unconditionally for any cell containing a double-quote. Fix: add the same non-truncation precondition — 'When a Value::Str cell contains a double-quote character and the cell is not truncated (its Unicode scalar count does not exceed ToonOptions.max_cell_len), render_toon()'s output wraps the cell in double quotes and replaces each embedded double-quote with the two-character sequence \\\".' — and cover the truncated case in AC-008b.",
+      "location": "crates/michi-toon/src/render.rs:173-179; .claude/specs/michi-toon.json acceptance_criteria AC-009"
+    },
+    {
+      "criterion": "AC-011",
+      "finding": "'equals exactly the first (max_cell_len - suffix_char_count) characters of the original string followed immediately by the suffix text, with no other characters present' is FALSE whenever the kept prefix contains a comma or double-quote, an input class fully admitted by AC-011's stated preconditions. Verified by execution: a Value::Str of \"a,\" repeated 300 times (600 chars) at max_cell_len=200 renders a 202-character cell that begins and ends with a double-quote — escape_value wraps the post-truncation text. This also contradicts AC-044, which explicitly states 'post-escape output can exceed max_cell_len when the kept prefix happens to contain a comma or double-quote' — two criteria in the same spec assert incompatible things about the same rendered cell. Fix: restate AC-011 over the pre-escape value and delegate escaping — 'the truncated cell's PRE-ESCAPE content equals exactly the first (max_cell_len - suffix_char_count) characters of the original string followed immediately by the suffix text; that content is then passed through escape_value, so the rendered cell content equals the pre-escape content when it contains no comma or double-quote (per AC-008/AC-008b), and is the quoted/escaped form of it otherwise.' Then add AC-011d pinning the verified quoted case: max_cell_len=200 with \"a,\" repeated 300 times renders a 202-char cell equal to the quoted form of 162 chars of \"a,\" plus ' (600 chars truncated — use full=true)'.",
+      "location": "crates/michi-toon/src/render.rs:177-178; .claude/specs/michi-toon.json acceptance_criteria AC-011 (conflicts with AC-044)"
+    },
+    {
+      "criterion": "AC-005",
+      "finding": "'does not panic' is FALSE for an input satisfying AC-005's stated precondition. Verified by execution in a debug build: render_toon(ToonOptions::new(\"ty[pe\", vec![\"a\",\"b\"], vec![vec![Value::from(\"x\")]])) panics with 'row length 1 does not match field count 2' — the options do have a structural character in type_name, which is all AC-005 requires. AC-005 is the only criterion in the spec asserting a general no-panic property, and it lacks the row-length guard that AC-036 carries explicitly ('in a row whose length equals fields.len() (i.e. not a short row)'). Fix: change AC-005's precondition to 'Calling render_toon() directly (without calling validate() first) on a ToonOptions whose type_name or a field name contains structural characters ([ ] { } , \\n \\r) and every one of whose rows has length equal to fields.len() does not panic and returns a String whose header line has every such character replaced by an underscore (_) in the type_name and each field name.'",
+      "location": "crates/michi-toon/src/render.rs:140-147; .claude/specs/michi-toon.json acceptance_criteria AC-005"
+    },
+    {
+      "criterion": "AC-029",
+      "finding": "'returns Err(ToonError::InvalidFieldName { name })' is FALSE when type_name is also structurally invalid, an input the stated precondition admits. Verified by execution: list(\"t[x\", &amp;[serde_json::json!({\"a,b\": 1})]) returns Err(InvalidTypeName { name: \"t[x\" }), because list() calls validate(), which checks type_name first (AC-004b's precedence). Fix: add the guard — 'Calling list(type_name, items) where type_name contains no structural character and the first non-empty serialized item's object has a key containing a structural character ([ ] { } , \\n \\r) returns Err(ToonError::InvalidFieldName { name }) …'.",
+      "location": "crates/michi-toon/src/lib.rs:230-233 and 130-142; .claude/specs/michi-toon.json acceptance_criteria AC-029"
+    },
+    {
+      "criterion": "AC-003",
+      "finding": "'where name equals the offending field name' is underdetermined when more than one field name is offending — the definite article presupposes a unique offender. AC-002 and AC-004 both pin this precisely ('the index of the first such row'), so the omission is an inconsistency, not a convention. AC-004b does not close it: its stated precondition is violation of 'more than one of the THREE invariant classes', and two bad field names are one class. Verified behavior: ToonOptions::new(\"t\", vec![\"a,b\",\"c,d\"], vec![]).validate() returns Err(InvalidFieldName { name: \"a,b\" }). Fix: change to '… returns Err(ToonError::InvalidFieldName { name }) where name equals the first field name, in fields-list order, that contains such a character.'",
+      "location": "crates/michi-toon/src/lib.rs:135-142; .claude/specs/michi-toon.json acceptance_criteria AC-003"
+    },
+    {
+      "criterion": "AC-020, AC-021",
+      "finding": "Both state universal output-shape claims without the well-formedness guard the rest of the spec applies. AC-020's parenthetical '(all structurally valid)' is attached to 'R rows' and admits two readings; under the reading that it constrains only rows, AC-020 is false for a structural type_name — verified: type_name 'ty[pe' yields the header line 'ty_pe[1]{a}:', not 'ty[pe[1]{a}:'. AC-021's 'with its cell values joined by single commas' is false for any row whose length differs from fields.len() (in release: extra cells are dropped, missing cells still emit their commas — see AC-006b/AC-007b), and AC-021 states no row-length precondition. Fix: AC-020 — 'For a ToonOptions that passes validate() (type_name T free of structural characters, N field names f1..fN free of structural characters, and R rows each of length N), the first line of render_toon()'s output is exactly T[R]{f1,f2,...,fN}: followed by a newline …'. AC-021 — prepend 'For a ToonOptions in which every row's length equals fields.len(),' and keep the rest unchanged.",
+      "location": ".claude/specs/michi-toon.json acceptance_criteria AC-020, AC-021"
+    },
+    {
+      "criterion": "missing error case: list() serialization failure",
+      "finding": "list() has two distinct InvalidItem paths and the spec covers only one. lib.rs:223-225 returns Err(ToonError::InvalidItem { row_index, reason: e.to_string() }) when serde_json::to_value(item) itself fails; AC-027 covers only the 'serializes successfully but is not a JSON object' path (lib.rs:217-222). The spec's scope explicitly claims to cover 'error conditions surfaced by validate() and list()', so this branch is in scope and uncovered, and its reason string differs from AC-027's. Fix: add AC-027b with is_error_case: true — '(serde feature) Calling list(type_name, items) where an item's Serialize implementation returns an error returns Err(ToonError::InvalidItem { row_index, reason }) where row_index is the index of the first item whose serialization failed and reason equals the Display text of the serde error, distinct from AC-027's fixed reason text \"item is not a JSON object (struct or map required)\".'",
+      "location": "crates/michi-toon/src/lib.rs:223-225; .claude/specs/michi-toon.json acceptance_criteria (no covering criterion)"
+    },
+    {
+      "criterion": "AC-032",
+      "finding": "AC-032 makes the api_surface `signature` strings load-bearing ('each of these items' signature … exactly matches the corresponding signature string'), but one api_surface entry is not the verbatim source signature: the spec records `pub fn escape_value(v: &amp;str) -&gt; Cow&lt;'_, str&gt;` while escape.rs:2 declares `pub fn escape_value(v: &amp;str) -&gt; std::borrow::Cow&lt;'_, str&gt;`. AC-032 does not define whether the match is verbatim text or path-normalized type identity, so an implementer must make a judgment call about what 'exactly matches' means — and under the literal reading AC-032 is false as written. Fix: either change the api_surface entry for escape_value to `pub fn escape_value(v: &amp;str) -&gt; std::borrow::Cow&lt;'_, str&gt;`, or add to AC-032 'signature comparison is performed on the source text after normalizing whitespace and fully-qualified type paths to their in-scope form'. Prefer the former — it keeps the criterion mechanically checkable by the existing source-scan test.",
+      "location": "crates/michi-toon/src/escape.rs:2; .claude/specs/michi-toon.json api_surface[0].signature and acceptance_criteria AC-032"
+    }
+  ]
+}
+```
+
+## What passed
+
+- **Condition 2 (no TBDs): pass.** Grep over the whole document for `TBD|TODO|FIXME|to be determined|???|XXX|as appropriate|reasonable|should behave|etc.` returns zero hits. 53 criteria, no duplicate IDs, every entry carries exactly `id`/`criterion`/`is_error_case`.
+- **Condition 4 (scope): pass.** One small crate, three files, already implemented; nothing here spans more than a single planning cycle.
+- **Condition 3: partial** — all four `ToonError` variants and both debug-panic paths carry `is_error_case: true` (9 total), but the `list()` serialization-failure branch is uncovered (blocker 8).
+
+## Verification actually performed
+
+- `cargo nextest run -p michi-toon --all-features` → **57 passed, 0 skipped**. `cargo nextest run --release -p michi-toon --all-features` → **58 run, 58 passed, 2 skipped** (the two `#[cfg_attr(not(debug_assertions), ignore)]` debug-panic tests). Both green, matching expectations exactly.
+- Read all three source files plus `crates/michi-truncate/src/lib.rs` (truncation is char-based end to end: `char_indices().nth(keep_chars)` plus a char-boundary hard cap, so AC-044's kept-prefix formula does hold for multibyte — verified 300×`日` at max_cell_len=200 keeps exactly 162 chars, total 200 chars / 526 bytes).
+- Built an out-of-repo probe crate depending on michi-toon by path and executed 12 probes against the live API. That is what produced the falsifications in blockers 1-6 — they are observed outputs, not readings.
+- Spot-checked 10 criteria by running their specific tests in release (`ac006b`, `ac007b`, `ac018`, `ac043`, `ac044`, `ac011c`, `ac004b`, `ac038`, `ac016b`, `ac013`), all passing, with test bodies read to confirm they assert the criterion's exact contract rather than merely being plausibly named.
+- Confirmed the workspace root `Cargo.toml:23` does enable `serde_json`'s `preserve_order`, and verified the consequence directly: `list("t", [{"zeta":1,"alpha":2}])` → `Ok("t[1]{zeta,alpha}:\n  1,2\n")`. The spec's scope note on this is accurate.
+
+**Three sabotage-and-restore checks, each followed by `git diff --quiet` on the three source files (all reported CLEAN):**
+1. Removed comma-triggered quoting from `escape_value` → only `escape::tests::value_with_comma_is_quoted` and `ac042` failed. No render_toon-level test caught it, which is the coverage shadow that let AC-008's defect survive.
+2. Changed the `debug_assert!` condition from `row.len() == field_count` to `&gt;=` → `ac007a_long_row_panics_in_debug` failed, confirming AC-007a's "fires on any inequality, not only when the row is shorter" claim is genuinely enforced.
+3. Appended a new `pub fn sabotage_probe()` to lib.rs → `ac032_public_surface_tests::top_level_pub_items_are_exactly_the_spec_api_surface` failed, confirming the AC-032 source scan is not a tautology.
+
+## Two non-blocking observations
+
+- The AC-032 source-scan test (`crates/michi-toon/src/lib.rs:240-277`) only recognizes `pub use` / `pub enum` / `pub struct` / `pub fn` prefixes. Changing `pub(crate) mod render;` to `pub mod render;` would widen the externally visible surface without failing the test. That is a test-hardening item for the drift checker, not a spec defect — the criterion itself is correct and checkable.
+- `git status` shows one untracked file, `docs/superpowers/plans/2026-08-04-edge-case-fixes.md`, which appeared during this session and is not mine — I touched only the three source files and restored each. Flagging it in case another agent left it behind unintentionally.
+
+The recurring pattern the sibling specs showed is present here too, and it is the same shape: a criterion pairs a universal clause with an all-ASCII, short-string, well-formed-row witness, and the clause breaks on longer strings, structurally-invalid siblings, or the truncation-before-escape ordering. Blockers 1-3 are the substantive ones; they are not phrasing nits, and a baseline built from AC-008/AC-009/AC-011 as written would encode three false propositions about the crate.</result>
+<usage><subagent_tokens>93156</subagent_tokens><tool_uses>21</tool_uses><duration_ms>482426</duration_ms></usage>
+</task-notification>
