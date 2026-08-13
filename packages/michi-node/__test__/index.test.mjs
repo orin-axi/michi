@@ -581,3 +581,28 @@ void describe('max_retries / attempt boundary (SPEC-ARCH-004)', () => {
     assert.strictEqual(nextRetryDelay(4294967295, 100, 1000, 0.2, 0.5, 4294967295), null)
   })
 })
+
+void describe('isRetryableStatus boundary (SPEC-ARCH-004)', () => {
+  void it('rejects status = 50 (AC-016)', () => {
+    assert.throws(
+      () => isRetryableStatus(50),
+      (err) => err.message === 'expected an integer in [100, 599], got 50'
+    )
+  })
+
+  void it('classifies 429/502/503/504 as retryable and 100/200/404/599 as not (AC-017)', () => {
+    for (const retryable of [429, 502, 503, 504]) {
+      assert.strictEqual(isRetryableStatus(retryable), true, `expected ${retryable} to be retryable`)
+    }
+    for (const notRetryable of [100, 200, 404, 599]) {
+      assert.strictEqual(isRetryableStatus(notRetryable), false, `expected ${notRetryable} to not be retryable`)
+    }
+  })
+
+  void it('rejects a fractional status (AC-018)', () => {
+    assert.throws(
+      () => isRetryableStatus(429.5),
+      (err) => err.message === 'expected an integer in [100, 599], got 429.5'
+    )
+  })
+})
