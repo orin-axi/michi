@@ -11,6 +11,7 @@
 //! boundary: `JsRanged` (added in a later commit) is generic over its
 //! bounds so a future resilience-domain module can define its own aliases
 //! over the same type without redefining it.
+#![allow(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
 
 use napi::bindgen_prelude::{sys, FromNapiValue, ToNapiValue, TypeName, ValidateNapiValue};
 
@@ -326,6 +327,35 @@ mod tests {
         for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let err = JsFloat::try_from(v).expect_err("non-finite value must be rejected");
             assert_eq!(err, format!("expected a finite number, got {v}"));
+        }
+    }
+
+    #[test]
+    fn module_denies_cast_lints() {
+        let src = include_str!("../napi.rs");
+        // Whitespace-stripped: rustfmt wraps this attribute's ~147-char
+        // single-line form across multiple lines under this project's
+        // pinned `max_width = 120`, so the substring check tolerates
+        // rustfmt's line-wrapping while still pinning the exact lint set
+        // and order.
+        let stripped: String = src.chars().filter(|c| !c.is_whitespace()).collect();
+        let expected: String = "#![deny(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap, clippy::cast_precision_loss)]"
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        assert!(stripped.contains(&expected), "expected the module-level deny attribute for cast lints");
+    }
+
+    #[test]
+    fn boundary_carries_exactly_one_cast_allow_and_no_residual_coercion() {
+        let napi_src = include_str!("../napi.rs");
+        assert_eq!(
+            napi_src.matches("#[allow(clippy::cast_possible_truncation").count(),
+            1,
+            "expected exactly one cast-allow attribute (is_retryable_status) to remain in src/napi.rs"
+        );
+        for residual in [".max(0)", "usize::try_from", ".clamp(0, 20)"] {
+            assert!(!napi_src.contains(residual), "residual coercion expression `{residual}` found in src/napi.rs");
         }
     }
 }

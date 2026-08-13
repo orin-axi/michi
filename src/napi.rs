@@ -19,6 +19,13 @@
 //! that needs `unsafe` to call into the N-API C ABI. No unsafe is hand-written
 //! here — only the module-level allow below permits the macro expansion.
 #![allow(unsafe_code)]
+#![deny(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss
+)]
 
 use self::num::{JsCount, JsDecimals, JsFloat, JsInt};
 use napi_derive::napi;
@@ -302,6 +309,8 @@ pub fn next_retry_delay(
         }
         // Duration::from_secs_f64 panics on values > ~1.8e19s; reject here so
         // catch_unwind never has to catch a panic from untrusted JS input.
+        #[allow(clippy::as_conversions, clippy::cast_precision_loss)]
+        // resilience-domain; out of scope for SPEC-ARCH-003, removed by its sibling spec
         if val / 1000.0 > u64::MAX as f64 {
             return Err(napi::Error::from_reason(format!("{name} is too large to convert to a Duration, got {val}")));
         }
