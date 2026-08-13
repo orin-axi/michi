@@ -606,3 +606,22 @@ void describe('isRetryableStatus boundary (SPEC-ARCH-004)', () => {
     )
   })
 })
+
+void describe('index.d.ts keeps plain number types for the resilience domain (SPEC-ARCH-004 AC-022)', () => {
+  void it('declares plain number types for nextRetryDelay and isRetryableStatus, and leaks no newtype names', () => {
+    const dts = fs.readFileSync(path.join(__dirname, '..', 'index.d.ts'), 'utf8')
+    assert.ok(
+      dts.includes(
+        'export declare function nextRetryDelay(maxRetries: number, baseDelayMs: number, maxDelayMs: number, jitterFactor: number, jitterSeed: number, attempt: number, retryAfterMs?: number | undefined | null): number | null'
+      ),
+      `index.d.ts missing exact nextRetryDelay declaration, got: ${dts.split('\n').filter((l) => l.includes('nextRetryDelay')).join('\n')}`
+    )
+    assert.ok(
+      dts.includes('export declare function isRetryableStatus(status: number): boolean'),
+      `index.d.ts missing exact isRetryableStatus declaration, got: ${dts.split('\n').filter((l) => l.includes('isRetryableStatus')).join('\n')}`
+    )
+    for (const forbidden of ['bigint', 'BigInt', 'JsRetryCount', 'JsDelayMillis', 'JsUnitInterval', 'JsHttpStatus', 'JsRanged']) {
+      assert.ok(!dts.includes(forbidden), `index.d.ts leaked forbidden string: ${forbidden}`)
+    }
+  })
+})
