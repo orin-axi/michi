@@ -1272,4 +1272,23 @@ mod tests {
         assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Failed);
         assert_eq!(pipeline.steps[2].status, michi_core::pipeline::StepStatus::Pending);
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn execute_pipeline_never_writes_skipped() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(10),
+        );
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+        ];
+        let _ = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        for step in &pipeline.steps {
+            assert_ne!(step.status, michi_core::pipeline::StepStatus::Skipped);
+        }
+    }
 }
