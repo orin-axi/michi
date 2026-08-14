@@ -77,6 +77,20 @@ The Node.js native addon lives in `packages/michi-node` because Cargo requires a
 - `packages/michi-node/src/lib.rs` re-exports `src/napi.rs` functions across the crate boundary via `pub use michi::napi::*;`.
 - `napi-derive` uses linker sections (`ctor`) to register native functions across crate boundaries without manual wrapper boilerplates.
 
+## NAPI Boundary Contract
+
+The NAPI boundary (`src/napi.rs`) has a specific constructor discipline that differs from pure-Rust callers:
+
+**NAPI functions always use normalizing constructors (`new()`), never strict ones (`try_new()`).**
+
+- `RetryConfig::new()` normalizes out-of-range inputs silently (clamps `jitter_factor`, floors `max_delay`, etc.). `napi.rs`'s resilience-domain call sites use it this way; making it fallible there would require either `unwrap()`/`expect()` (banned) or a silent fallback to `Default` (defeats validation).
+- Pure-Rust callers and tests may use `try_new()` / `validate()` for explicit error signals.
+- JS-facing functions report errors via `napi::Error`, not `Result` propagation — validation that can't be normalized (truly invalid JS input) becomes a JS exception at the boundary, not a Rust panic.
+
+This asymmetry is intentional. The NAPI layer operates in a "be maximally resilient to JS input, fail loudly only for truly unrecoverable cases" mode; the Rust library layer operates in a "signal problems explicitly through types" mode.
+
+**Error output path:** When you hold a `DomainError`, call `domain_error.to_call_tool_result()` directly. Do not wrap it in `AgentResponse::as_error()` — that double-wraps the render and loses the typed `error`/`retryable` fields from `structured_content`. Both `AgentResponse::to_call_tool_result()` and `DomainError::to_call_tool_result()` produce structurally compatible `structured_content` JSON (same top-level keys).
+
 ## WASM & Platform Targets
 
 All core workspace crates (`michi-truncate`, `michi-resilience`, `michi-toon`, `michi-core`) compile for `wasm32-unknown-unknown` and `wasm32-wasip1` targets without OS dependencies.

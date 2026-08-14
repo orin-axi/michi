@@ -107,6 +107,15 @@ Passing a component's own tests isn't "ready to ship."
 - A release gate (e.g. crates.io publish conditioned on a real consumer integration, not just internal completeness) exists for a reason.
 - Treat it as binding until the condition it names is actually met — not as a formality to route around once everything else looks finished.
 
+### 6. Invariant enforcement policy
+
+Three patterns apply at different layers. Pick the right one for the layer — don't invent a fourth.
+
+- **Infallible constructors normalize.** `new()` clamps inputs to valid ranges silently (e.g. `jitter_factor` to `[0.0, 1.0]`, `base_delay` to `≤ max_delay`). Never `unwrap()`/`expect()` in lib code. Expose a `try_new()` or `validate()` alongside for callers who want explicit error signals — but these are additive, they don't replace the normalizing constructor.
+- **Render functions always succeed.** Every `render*()` function returns `String`, never `Result`. Sanitize bad input at the render layer (strip/replace structural chars, clamp values) so output is always structurally valid. Keep `debug_assert!` alongside any graceful fallback — they're not mutually exclusive. The assert fires in `cargo nextest` for fast TDD feedback; the fallback runs in release. Removing the assert is a regression, not a cleanup.
+- **Wire it in or document it as opt-in.** A `validate()` or `try_new()` that has no caller is documentation masquerading as validation. Any new validation method must either be called from at least one mandatory code path (not just tests) or carry an explicit `/// Caller opt-in — not called automatically` doc comment.
+- **Empty strings are accepted everywhere.** michi doesn't validate business rules — constructors accept empty strings unconditionally. The render result for an empty field is an empty field, not an error. This is a deliberate contract, not an oversight; document it if adding a new constructor where it might surprise a reader.
+
 ---
 
 ## Using this document
