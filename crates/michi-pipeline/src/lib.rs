@@ -146,8 +146,14 @@ impl From<ExecutionError> for michi_core::DomainError {
             )
             .retryable(true)
             .retry_after(std::time::Duration::from_millis(retry_after_ms)),
-            ExecutionError::StepFailed { .. } => {
-                michi_core::DomainError::new(michi_core::ErrorCode::ExternalFailure, "placeholder")
+            ExecutionError::StepFailed { step_id, step_name, source } => {
+                let inner: michi_core::DomainError = (*source).into();
+                let message = format!("step {step_id} ({step_name}) failed: {}", inner.message);
+                let mut domain_err = michi_core::DomainError::new(inner.code, message).retryable(inner.retryable);
+                if let Some(retry_after) = inner.retry_after {
+                    domain_err = domain_err.retry_after(retry_after);
+                }
+                domain_err
             }
             ExecutionError::StepCountMismatch { expected, got } => michi_core::DomainError::new(
                 michi_core::ErrorCode::InvalidInput,
@@ -290,5 +296,19 @@ mod tests {
         let d: michi_core::DomainError = ExecutionError::Failed { message: "boom".into(), retryable: false }.into();
         assert_eq!(d.code, michi_core::ErrorCode::ExternalFailure);
         assert!(!d.retryable);
+    }
+
+    #[test]
+    fn step_failed_conversion_recurses_and_prefixes_message() {
+        let source = ExecutionError::Failed { message: "disk full".into(), retryable: false };
+        let err = ExecutionError::StepFailed {
+            step_id: "upload".into(),
+            step_name: "Upload".into(),
+            source: Box::new(source),
+        };
+        let d: michi_core::DomainError = err.into();
+        assert_eq!(d.code, michi_core::ErrorCode::ExternalFailure);
+        assert!(!d.retryable);
+        assert_eq!(d.message, "step upload (Upload) failed: disk full");
     }
 }
