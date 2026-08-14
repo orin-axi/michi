@@ -302,6 +302,7 @@ impl CircuitBreaker {
             };
             return match attempt_result {
                 Ok(()) => {
+                    self.phase.store(PHASE_CLOSED, Ordering::SeqCst);
                     self.record_success();
                     Ok(())
                 }
