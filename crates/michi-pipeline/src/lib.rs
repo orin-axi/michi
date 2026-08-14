@@ -164,6 +164,77 @@ impl From<ExecutionError> for michi_core::DomainError {
     }
 }
 
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
+
+const PHASE_CLOSED: u8 = 0;
+const PHASE_OPEN: u8 = 1;
+const PHASE_HALF_OPEN: u8 = 2;
+
+/// The circuit breaker's current phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BreakerPhase {
+    /// Calls are attempted normally.
+    Closed,
+    /// Calls are short-circuited without invoking the step.
+    Open,
+    /// A single probe call is allowed to test recovery.
+    HalfOpen,
+}
+
+/// A circuit breaker composing michi-resilience's retry math with
+/// tokio-clock-based async waiting, per-attempt timeout, and
+/// consecutive-failure circuit-opening. Internal state is held in
+/// lock-free atomics so [`CircuitBreaker::phase`] stays synchronous.
+#[allow(dead_code)]
+pub struct CircuitBreaker {
+    retry_config: michi_resilience::RetryConfig,
+    step_timeout: Duration,
+    failure_threshold: u32,
+    open_duration: Duration,
+    phase: AtomicU8,
+    opened_at_ms: AtomicU64,
+    consecutive_failures: AtomicU32,
+    epoch: tokio::time::Instant,
+}
+
+impl CircuitBreaker {
+    /// Infallible, normalizing constructor. `failure_threshold == 0` is
+    /// floored to 1; `step_timeout`/`open_duration` of `Duration::ZERO` are
+    /// each independently floored to `Duration::from_millis(1)`.
+    pub fn new(
+        retry_config: michi_resilience::RetryConfig,
+        step_timeout: Duration,
+        failure_threshold: u32,
+        open_duration: Duration,
+    ) -> Self {
+        let step_timeout = if step_timeout.is_zero() { Duration::from_millis(1) } else { step_timeout };
+        let open_duration = if open_duration.is_zero() { Duration::from_millis(1) } else { open_duration };
+        let failure_threshold = if failure_threshold == 0 { 1 } else { failure_threshold };
+        Self {
+            retry_config,
+            step_timeout,
+            failure_threshold,
+            open_duration,
+            phase: AtomicU8::new(PHASE_CLOSED),
+            opened_at_ms: AtomicU64::new(0),
+            consecutive_failures: AtomicU32::new(0),
+            epoch: tokio::time::Instant::now(),
+        }
+    }
+
+    /// Current phase. This early version only reflects the raw stored
+    /// phase; the elapsed-time-based Open -> HalfOpen transition is added
+    /// in a later commit once there is a real Open state to transition
+    /// from.
+    pub fn phase(&self) -> BreakerPhase {
+        match self.phase.load(Ordering::SeqCst) {
+            PHASE_OPEN => BreakerPhase::Open,
+            PHASE_HALF_OPEN => BreakerPhase::HalfOpen,
+            _ => BreakerPhase::Closed,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,5 +394,16 @@ mod tests {
         let err = ExecutionError::StepFailed { step_id: "s".into(), step_name: "S".into(), source: Box::new(source) };
         let d: michi_core::DomainError = err.into();
         assert_eq!(d.code, michi_core::ErrorCode::Timeout);
+    }
+
+    #[test]
+    fn new_is_infallible_and_fresh_breaker_is_closed() {
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            std::time::Duration::ZERO,
+            u32::MAX,
+            std::time::Duration::ZERO,
+        );
+        assert_eq!(breaker.phase(), BreakerPhase::Closed);
     }
 }
