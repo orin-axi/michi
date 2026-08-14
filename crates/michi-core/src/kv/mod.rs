@@ -158,6 +158,91 @@ mod tests {
         assert_eq!(lines.len(), 1, "newline in value must not break KV format, got:\n{out}");
     }
 
+    // AC-008: \n and \r are both removed entirely (not replaced by a space),
+    // and the surviving characters concatenate directly with no gap.
+    #[test]
+    fn ac008_newline_and_cr_are_removed_not_replaced_and_result_concatenates() {
+        let item = KvItem { key: "k".into(), value: KvValue::Text("line1\nline2\rline3".into()) };
+        let out = render_kv(&[item], None, &[]);
+        assert_eq!(out, "k: line1line2line3\n");
+    }
+
+    // AC-011: KvValue::Missing renders as the em-dash character, not empty,
+    // "null", or "N/A".
+    #[test]
+    fn ac011_missing_renders_as_em_dash() {
+        let mut out = String::new();
+        push_kv_value(&mut out, &KvValue::Missing);
+        assert_eq!(out, "—");
+    }
+
+    // AC-013: the NaN token is independent of the decimals argument.
+    #[test]
+    fn ac013_nan_token_is_independent_of_decimals() {
+        let mut two = String::new();
+        push_kv_value(&mut two, &KvValue::Float(f64::NAN, 2));
+        let mut six = String::new();
+        push_kv_value(&mut six, &KvValue::Float(f64::NAN, 6));
+        assert_eq!(two, "NaN");
+        assert_eq!(six, "NaN");
+    }
+
+    // AC-046: negative Int renders with a leading minus sign.
+    #[test]
+    fn ac046_negative_int_renders_with_minus_sign() {
+        let items = vec![KvItem { key: "n".into(), value: KvValue::Int(-7) }];
+        assert_eq!(render_kv(&items, None, &[]), "n: -7\n");
+    }
+
+    // AC-047: Bool renders lowercase and unquoted, both directions.
+    #[test]
+    fn ac047_bool_renders_lowercase_unquoted() {
+        let mut t = String::new();
+        push_kv_value(&mut t, &KvValue::Bool(true));
+        assert_eq!(t, "true");
+        let mut f = String::new();
+        push_kv_value(&mut f, &KvValue::Bool(false));
+        assert_eq!(f, "false");
+    }
+
+    // AC-048: Float with real decimal precision (not NaN/Inf) rounds and
+    // truncates trailing digits per the decimals argument.
+    #[test]
+    fn ac048_float_renders_with_given_decimal_precision() {
+        let mut two = String::new();
+        push_kv_value(&mut two, &KvValue::Float(3.14159, 2));
+        assert_eq!(two, "3.14");
+        let mut zero = String::new();
+        push_kv_value(&mut zero, &KvValue::Float(3.14159, 0));
+        assert_eq!(zero, "3");
+    }
+
+    // AC-017: total_count and hints are NOT rendered when items is empty —
+    // not just the trivial all-None/empty case, but with both set.
+    #[test]
+    fn ac017_empty_items_ignores_total_count_and_hints() {
+        assert_eq!(render_kv(&[], Some(42), &[Hint::from("x")]), "");
+    }
+
+    // AC-018: shorter and longer keys' values align to the same char offset.
+    #[test]
+    fn ac018_value_column_aligns_across_differing_key_lengths() {
+        let items = vec![
+            KvItem { key: "a".into(), value: KvValue::Text("short".into()) },
+            KvItem { key: "longer_key".into(), value: KvValue::Text("val".into()) },
+        ];
+        let out = render_kv(&items, None, &[]);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "got: {out:?}");
+        let offset_of_value = |line: &str, value: &str| line.find(value).expect("value present");
+        let a_offset = offset_of_value(lines[0], "short");
+        let b_offset = offset_of_value(lines[1], "val");
+        assert_eq!(a_offset, b_offset, "value columns must align, got:\n{out}");
+        // The longest key's own line needs zero alignment padding, so its
+        // value-start offset alone proves the separating space exists.
+        assert_eq!(b_offset, "longer_key:".chars().count() + 1, "must include at least one separating space");
+    }
+
     #[test]
     fn push_kv_value_float_nan_renders_as_nan_token() {
         // Plain-text KV is agent-readable text; NaN is an acceptable token here
@@ -222,5 +307,46 @@ mod tests {
         let mut out = String::new();
         kv_value_to_json(&mut out, &KvValue::Float(f64::NEG_INFINITY, 0));
         assert!(out.starts_with('"'), "-Inf must be JSON-quoted, got: {out}");
+    }
+
+    // AC-042/AC-043: the three prior tests above only check the leading quote
+    // byte, which any quoted string (even a wrong one) would satisfy. Pin the
+    // exact quoted content.
+    #[test]
+    fn ac042_ac043_float_special_values_render_exact_quoted_tokens() {
+        let mut nan = String::new();
+        kv_value_to_json(&mut nan, &KvValue::Float(f64::NAN, 2));
+        assert_eq!(nan, "\"NaN\"");
+        let mut inf = String::new();
+        kv_value_to_json(&mut inf, &KvValue::Float(f64::INFINITY, 0));
+        assert_eq!(inf, "\"inf\"");
+        let mut neg_inf = String::new();
+        kv_value_to_json(&mut neg_inf, &KvValue::Float(f64::NEG_INFINITY, 0));
+        assert_eq!(neg_inf, "\"-inf\"");
+    }
+
+    // AC-041: Missing renders as a bare JSON null, not a string or absent.
+    #[test]
+    fn ac041_missing_renders_as_bare_json_null() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Missing);
+        assert_eq!(out, "null");
+    }
+
+    // AC-044: Duration renders as a quoted JSON string, matching the
+    // text-mode token.
+    #[test]
+    fn ac044_duration_renders_as_quoted_json_string() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Duration(std::time::Duration::from_millis(1500)));
+        assert_eq!(out, "\"1.5s\"");
+    }
+
+    // AC-045: Bool renders as a bare JSON boolean, not a quoted string.
+    #[test]
+    fn ac045_bool_renders_as_bare_json_boolean() {
+        let mut out = String::new();
+        kv_value_to_json(&mut out, &KvValue::Bool(true));
+        assert_eq!(out, "true");
     }
 }

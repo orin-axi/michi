@@ -153,9 +153,39 @@ mod tests {
         assert!(!out.contains("skipped["), "empty skipped category must be omitted, got: {out}");
     }
 
+    // AC-032: fully-empty PartialSuccess — exact first line, no section
+    // headers at all (not just failed/skipped omitted, as the test above
+    // checks — completed[] must also be absent here since it's empty too).
+    #[test]
+    fn ac032_fully_empty_partial_success_has_exact_summary_and_no_sections() {
+        let ps = PartialSuccess { completed: vec![], failed: vec![], skipped: vec![] };
+        let out = ps.render();
+        assert_eq!(out, "partial_success: 0 completed, 0 failed, 0 skipped\n");
+        assert!(!out.contains("completed["), "got: {out}");
+        assert!(!out.contains("failed["), "got: {out}");
+        assert!(!out.contains("skipped["), "got: {out}");
+    }
+
+    // AC-033: two completed, nothing else — exact first line, exact
+    // completed[2] section listing both in order, no failed/skipped sections.
+    #[test]
+    fn ac033_two_completed_only_has_exact_summary_and_section() {
+        let ps = PartialSuccess { completed: vec!["a".into(), "b".into()], failed: vec![], skipped: vec![] };
+        let out = ps.render();
+        assert_eq!(out, "partial_success: 2 completed, 0 failed, 0 skipped\ncompleted[2]:\n  a\n  b\n");
+    }
+
     #[test]
     fn partial_success_exit_code_zero_when_no_failures() {
         let ps = PartialSuccess { completed: vec!["a".into()], failed: vec![], skipped: vec!["b".into()] };
+        assert_eq!(ps.exit_code(), 0);
+    }
+
+    // AC-036: exit_code()==0 holds for the fully-empty combination too, not
+    // just the completed+skipped-both-nonempty combination above.
+    #[test]
+    fn ac036_exit_code_zero_holds_when_completed_and_skipped_are_also_empty() {
+        let ps = PartialSuccess { completed: vec![], failed: vec![], skipped: vec![] };
         assert_eq!(ps.exit_code(), 0);
     }
 
@@ -164,6 +194,20 @@ mod tests {
         let ps = PartialSuccess {
             completed: vec![],
             failed: vec![FailedOp { operation: "x".into(), reason: "y".into(), recovery: None }],
+            skipped: vec![],
+        };
+        assert_eq!(ps.exit_code(), 1);
+    }
+
+    // AC-037: exit_code()==1 regardless of how many entries failed contains
+    // — the existing test above only proves the 1-entry case.
+    #[test]
+    fn ac037_exit_code_one_holds_for_five_failed_entries() {
+        let ps = PartialSuccess {
+            completed: vec![],
+            failed: (0..5)
+                .map(|i| FailedOp { operation: format!("op{i}"), reason: "y".into(), recovery: None })
+                .collect(),
             skipped: vec![],
         };
         assert_eq!(ps.exit_code(), 1);
@@ -193,5 +237,36 @@ mod tests {
         let out = ps.render();
         // operation contains comma — must be quoted to avoid breaking TOON column parsing
         assert!(out.contains(r#""create_issue, retry 2""#), "operation must be quoted, got: {out}");
+    }
+
+    // AC-034: a newline/CR in operation, with no comma or quote present, is
+    // silently stripped (not escaped) and does NOT by itself trigger quoting.
+    #[test]
+    fn ac034_newline_and_cr_in_operation_are_stripped_without_triggering_quoting() {
+        let ps = PartialSuccess {
+            completed: vec![],
+            failed: vec![FailedOp { operation: "step\none\rtwo".into(), reason: "y".into(), recovery: None }],
+            skipped: vec![],
+        };
+        let out = ps.render();
+        assert!(out.contains("  steponetwo,\"y\"\n"), "got: {out}");
+    }
+
+    // AC-035: recovery from a failed op appends a trailing help[] block with
+    // no duplicate leading "recovery[N]:" header line.
+    #[test]
+    fn ac035_recovery_help_block_has_no_duplicate_recovery_header() {
+        let ps = PartialSuccess {
+            completed: vec![],
+            failed: vec![FailedOp {
+                operation: "x".into(),
+                reason: "y".into(),
+                recovery: Some(RecoveryHint::new("retry_x")),
+            }],
+            skipped: vec![],
+        };
+        let out = ps.render();
+        assert!(out.contains("help[1]:\n  retry_x\n"), "got: {out}");
+        assert!(!out.contains("recovery["), "must not duplicate a recovery[N]: header, got: {out}");
     }
 }

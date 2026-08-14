@@ -282,6 +282,33 @@ mod tests {
         assert!(out.starts_with("issues[1]{id,state}:\n  1,open\n"), "got: {out}");
     }
 
+    // AC-001: Unset target (no .items()/.kv_items() call) routes to TOON
+    // rendering with zero rows/fields, not KV or an empty string.
+    #[test]
+    fn ac001_unset_target_renders_empty_toon_exactly() {
+        let r = AgentResponse::new("widget");
+        assert_eq!(r.render(OutputFormat::Text), "widget[0]{}:\n");
+    }
+
+    // AC-002: the test above (items_path_renders_toon) only checks
+    // starts_with, which would still pass if extra bytes followed the row.
+    // Pin the exact full output for a builder with no hints/recovery set.
+    #[test]
+    fn ac002_items_path_renders_exact_toon_literal() {
+        let r = AgentResponse::new("issues").items(vec![vec![Value::Int(1), Value::from("open")]], &["id", "state"]);
+        assert_eq!(r.render(OutputFormat::Text), "issues[1]{id,state}:\n  1,open\n");
+    }
+
+    // AC-003: render(Text) via kv_items() matches the direct render_kv() call
+    // for the same items, not TOON list structure.
+    #[test]
+    fn ac003_kv_items_path_matches_direct_render_kv_call() {
+        use crate::kv::{KvItem, KvValue};
+        let items = vec![KvItem { key: "id".into(), value: KvValue::Int(1) }];
+        let r = AgentResponse::new("t").kv_items(items.clone());
+        assert_eq!(r.render(OutputFormat::Text), crate::kv::render_kv(&items, None, &[]));
+    }
+
     #[test]
     fn render_json_basic_structure() {
         let r = AgentResponse::new("items").items(vec![vec![Value::from("hello world")]], &["name"]);
@@ -296,6 +323,44 @@ mod tests {
         let r = AgentResponse::new("items").items(vec![vec![Value::from("fail")]], &["name"]).as_error();
         let json = r.render_json();
         assert!(json.contains("\"isError\":true"), "got: {json}");
+    }
+
+    // AC-004: render(Json) parses as an object with exactly the 4 named
+    // top-level keys, for all three construction paths (items/kv_items/neither).
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac004_render_json_top_level_keys_are_exactly_the_specified_set_for_every_target() {
+        let unset = AgentResponse::new("t");
+        let toon = AgentResponse::new("t").items(vec![vec![Value::from("x")]], &["a"]);
+        let kv = AgentResponse::new("t")
+            .kv_items(vec![crate::kv::KvItem { key: "k".into(), value: crate::kv::KvValue::Int(1) }]);
+        for r in [unset, toon, kv] {
+            let parsed: serde_json::Value = serde_json::from_str(&r.render(OutputFormat::Json)).expect("valid JSON");
+            let obj = parsed.as_object().expect("top-level object");
+            let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            assert_eq!(keys, vec!["body", "hints", "isError", "recovery"]);
+        }
+    }
+
+    // AC-006: recovery array entries carry tool/params always, and reason
+    // only when Some — key absent (not null) when None.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac006_recovery_json_entry_shape_and_reason_presence() {
+        use crate::kv::KvValue;
+        use crate::recovery::RecoveryHint;
+        let with_reason = RecoveryHint::new("retry").param("n", KvValue::Int(1)).reason("why");
+        let without_reason = RecoveryHint::new("retry2");
+        let r = AgentResponse::new("t").recovery_hint(with_reason).recovery_hint(without_reason);
+        let parsed: serde_json::Value = serde_json::from_str(&r.render_json()).expect("valid JSON");
+        let recovery = parsed["recovery"].as_array().expect("recovery array");
+        assert_eq!(recovery.len(), 2);
+        assert_eq!(recovery[0]["tool"], serde_json::json!("retry"));
+        assert_eq!(recovery[0]["params"], serde_json::json!({"n": 1}));
+        assert_eq!(recovery[0]["reason"], serde_json::json!("why"));
+        assert_eq!(recovery[1]["tool"], serde_json::json!("retry2"));
+        assert!(recovery[1].as_object().unwrap().get("reason").is_none(), "got: {recovery:?}");
     }
 
     #[test]
@@ -317,6 +382,105 @@ mod tests {
         assert!(json.contains("\\\"get_item\\\""), "quotes in hints must be escaped, got: {json}");
     }
 
+    // AC-038: the test above only exercises the quote-escaping half; the
+    // embedded-newline half and the body-value escaping half were untested.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac038_hint_and_body_with_quote_backslash_newline_produce_valid_json() {
+        let r = AgentResponse::new("items").hint("has \"quotes\" and \\backslash\nand newline").kv_items(vec![
+            crate::kv::KvItem { key: "k".into(), value: crate::kv::KvValue::Text("body \"quoted\" \\slash".into()) },
+        ]);
+        let raw = r.render_json();
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("must be valid JSON");
+        assert_eq!(parsed["hints"][0].as_str().unwrap(), "has \"quotes\" and \\backslash\nand newline");
+        assert_eq!(parsed["body"].as_str().unwrap(), "k: body \"quoted\" \\slash\n");
+    }
+
+    // AC-009: render_toon()/render_kv() always run their own named path
+    // regardless of which builder method last set the target.
+    #[test]
+    fn ac009_render_toon_and_render_kv_diverge_when_only_items_was_set() {
+        let r = AgentResponse::new("t").items(vec![vec![Value::from("x")]], &["a"]);
+        assert_eq!(r.render_toon(), "t[1]{a}:\n  x\n");
+        assert_eq!(r.render_kv(), "");
+    }
+
+    // AC-010: render(Text) target-based dispatch agrees with render_kv()
+    // when kv_items() was the last builder call used.
+    #[test]
+    fn ac010_render_text_agrees_with_render_kv_when_kv_items_set() {
+        use crate::kv::{KvItem, KvValue};
+        let items = vec![KvItem { key: "id".into(), value: KvValue::Int(1) }];
+        let r = AgentResponse::new("t").kv_items(items);
+        assert_eq!(r.render(OutputFormat::Text), r.render_kv());
+    }
+
+    // AC-012: Missing rendered via the AgentResponse Json body is the
+    // em-dash embedded in the body string, not a nested JSON null.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac012_missing_in_kv_items_json_body_is_embedded_em_dash() {
+        use crate::kv::{KvItem, KvValue};
+        let r = AgentResponse::new("t").kv_items(vec![KvItem { key: "k".into(), value: KvValue::Missing }]);
+        let parsed: serde_json::Value = serde_json::from_str(&r.render_json()).expect("valid JSON");
+        assert_eq!(parsed["body"].as_str().unwrap(), "k: —\n");
+    }
+
+    // AC-014: NaN/Inf/-Inf via the AgentResponse Json body are the literal
+    // tokens embedded in body text, not standalone JSON string values.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac014_float_special_values_in_kv_items_json_body_are_embedded_tokens() {
+        use crate::kv::{KvItem, KvValue};
+        for (value, token) in [
+            (KvValue::Float(f64::NAN, 2), "NaN"),
+            (KvValue::Float(f64::INFINITY, 0), "inf"),
+            (KvValue::Float(f64::NEG_INFINITY, 0), "-inf"),
+        ] {
+            let r = AgentResponse::new("t").kv_items(vec![KvItem { key: "k".into(), value }]);
+            let parsed: serde_json::Value = serde_json::from_str(&r.render_json()).expect("valid JSON");
+            assert_eq!(parsed["body"].as_str().unwrap(), format!("k: {token}\n"), "token: {token}");
+        }
+    }
+
+    // AC-016: Duration via the AgentResponse Json body is the literal '1.5s'
+    // token embedded in body text.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac016_duration_in_kv_items_json_body_is_embedded_token() {
+        use crate::kv::{KvItem, KvValue};
+        let r = AgentResponse::new("t").kv_items(vec![KvItem {
+            key: "k".into(),
+            value: KvValue::Duration(std::time::Duration::from_millis(1500)),
+        }]);
+        let parsed: serde_json::Value = serde_json::from_str(&r.render_json()).expect("valid JSON");
+        assert_eq!(parsed["body"].as_str().unwrap(), "k: 1.5s\n");
+    }
+
+    // AC-041 through AC-045: RecoveryHint params through AgentResponse's Json
+    // path use kv_value_to_json (bare null/quoted-token/bare bool), in
+    // contrast to kv_items' plain-text/embedded-token body rendering above.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac041_to_ac045_recovery_params_use_kv_value_to_json_typing() {
+        use crate::kv::KvValue;
+        use crate::recovery::RecoveryHint;
+        let cases: Vec<(KvValue, serde_json::Value)> = vec![
+            (KvValue::Missing, serde_json::Value::Null),
+            (KvValue::Float(f64::NAN, 2), serde_json::json!("NaN")),
+            (KvValue::Float(f64::INFINITY, 0), serde_json::json!("inf")),
+            (KvValue::Float(f64::NEG_INFINITY, 0), serde_json::json!("-inf")),
+            (KvValue::Duration(std::time::Duration::from_millis(1500)), serde_json::json!("1.5s")),
+            (KvValue::Bool(true), serde_json::json!(true)),
+        ];
+        for (value, expected) in cases {
+            let recovery = RecoveryHint::new("x").param("p", value.clone());
+            let r = AgentResponse::new("t").recovery_hint(recovery);
+            let parsed: serde_json::Value = serde_json::from_str(&r.render_json()).expect("valid JSON");
+            assert_eq!(parsed["recovery"][0]["params"]["p"], expected, "value: {value:?}");
+        }
+    }
+
     #[test]
     fn to_call_tool_result_composes_correctly() {
         let r = AgentResponse::new("items").items(vec![vec![Value::from("ok")]], &["name"]).as_error();
@@ -326,11 +490,86 @@ mod tests {
         assert!(result.structured_content.starts_with('{'), "structured_content must be JSON object");
     }
 
+    // AC-023: the test above only checks !content.is_empty(), which would
+    // still pass with 2+ blocks or a wrong audience/text. Pin the exact shape.
+    #[test]
+    fn ac023_call_tool_result_has_exactly_one_assistant_block_matching_render_text() {
+        let r = AgentResponse::new("items").items(vec![vec![Value::from("ok")]], &["name"]);
+        let result = r.to_call_tool_result();
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.content[0].audience, vec![crate::audience::Audience::Assistant]);
+        assert_eq!(result.content[0].text, r.render(OutputFormat::Text));
+    }
+
+    // AC-024: human_content set adds a second, User-tagged block whose text
+    // equals the human_content value exactly.
+    #[test]
+    fn ac024_call_tool_result_adds_user_block_when_human_content_set() {
+        let r = AgentResponse::new("items").human_content("For humans");
+        let result = r.to_call_tool_result();
+        assert_eq!(result.content.len(), 2);
+        assert_eq!(result.content[1].audience, vec![crate::audience::Audience::User]);
+        assert_eq!(result.content[1].text, "For humans");
+    }
+
+    // AC-025: without human_content, to_call_tool_result() does NOT fall
+    // back to a text-output User block (unlike render_for, which does).
+    #[test]
+    fn ac025_call_tool_result_has_no_user_block_without_human_content() {
+        let r = AgentResponse::new("items").items(vec![vec![Value::from("x")]], &["name"]);
+        let result = r.to_call_tool_result();
+        assert_eq!(result.content.len(), 1);
+        assert!(!result.content.iter().any(|c| c.audience == vec![crate::audience::Audience::User]));
+    }
+
+    // AC-026: structured_content equals render(Json) exactly, and is_error
+    // mirrors self.is_error in both directions.
+    #[test]
+    fn ac026_call_tool_result_structured_content_and_is_error_match_exactly() {
+        let r = AgentResponse::new("items").items(vec![vec![Value::from("ok")]], &["name"]);
+        let result = r.to_call_tool_result();
+        assert_eq!(result.structured_content, r.render(OutputFormat::Json));
+        assert!(!result.is_error);
+
+        let err = r.as_error();
+        let err_result = err.to_call_tool_result();
+        assert_eq!(err_result.structured_content, err.render(OutputFormat::Json));
+        assert!(err_result.is_error);
+    }
+
     #[test]
     fn toon_body_returns_error_on_invalid_type_name() {
         let r = AgentResponse::new("items[bad]").items(vec![vec![Value::from("x")]], &["name"]);
         let out = r.render(OutputFormat::Text);
         assert!(out.contains("error:"), "expected error output for invalid type_name, got: {out}");
+    }
+
+    // AC-031: the test above only checks the generic substring "error:",
+    // which many unrelated messages could also contain. Pin the exact
+    // required prefix.
+    #[test]
+    fn ac031_invalid_type_name_produces_the_exact_error_prefix() {
+        let r = AgentResponse::new("items[bad]");
+        let out = r.render(OutputFormat::Text);
+        assert!(out.starts_with("error: toon_validation_failed\nmessage: "), "got: {out}");
+    }
+
+    // AC-039: a row whose length differs from fields.len() surfaces
+    // RowLengthMismatch with row index, expected, and actual counts.
+    #[test]
+    fn ac039_row_length_mismatch_names_indices_and_counts() {
+        let r = AgentResponse::new("t").items(vec![vec![Value::Int(1)]], &["a", "b"]);
+        let out = r.render(OutputFormat::Text);
+        assert_eq!(out, "error: toon_validation_failed\nmessage: row 0 has 1 values but 2 fields declared\n");
+    }
+
+    // AC-040: a field name with a structural character (comma) surfaces
+    // InvalidFieldName naming the offending field.
+    #[test]
+    fn ac040_invalid_field_name_names_the_offending_field() {
+        let r = AgentResponse::new("t").items(vec![], &["a,b"]);
+        let out = r.render(OutputFormat::Text);
+        assert_eq!(out, "error: toon_validation_failed\nmessage: field \"a,b\" contains a structural character\n");
     }
 
     #[test]
@@ -368,6 +607,68 @@ mod tests {
         let assistant_out = r.render_for(crate::audience::Audience::Assistant);
         let user_out = r.render_for(crate::audience::Audience::User);
         assert_eq!(assistant_out, user_out, "user render must match assistant render when no human_content set");
+    }
+
+    // AC-021: the test above only proves assistant_out == user_out; the
+    // criterion also requires both equal render(Text) — untested until now.
+    #[test]
+    fn ac021_render_for_fallback_matches_render_text_directly() {
+        let r = AgentResponse::new("items").items(vec![vec![Value::from("x")]], &["name"]);
+        let text_out = r.render(OutputFormat::Text);
+        assert_eq!(r.render_for(crate::audience::Audience::Assistant), text_out);
+        assert_eq!(r.render_for(crate::audience::Audience::User), text_out);
+    }
+
+    // AC-029: a truncated cell's total char count (including any marker)
+    // never exceeds the configured limit.
+    #[test]
+    fn ac029_truncate_cells_at_bounds_total_cell_length() {
+        let r = AgentResponse::new("t").truncate_cells_at(5).items(vec![vec![Value::from("abcdefghij")]], &["name"]);
+        let out = r.render_toon();
+        let row_line = out.lines().nth(1).expect("row line present");
+        // Strip exactly the 2-space TOON row indent (not trim_start, which
+        // would also eat the truncation marker's own leading space and
+        // silently undercount when keep_chars == 0).
+        let cell = row_line.strip_prefix("  ").expect("row indent present");
+        assert!(cell.chars().count() <= 5, "cell {} chars, got: {row_line:?}", cell.chars().count());
+    }
+
+    // AC-030: truncate_cells_at has no observable effect on the KV path.
+    #[test]
+    fn ac030_truncate_cells_at_does_not_affect_kv_path() {
+        use crate::kv::{KvItem, KvValue};
+        let long_value = "x".repeat(50);
+        let r = AgentResponse::new("t")
+            .truncate_cells_at(5)
+            .kv_items(vec![KvItem { key: "k".into(), value: KvValue::Text(long_value.clone()) }]);
+        let out = r.render_kv();
+        assert!(out.contains(&long_value), "value must be untruncated, got: {out}");
+    }
+
+    // AC-049: DEFAULT_TRUNCATE_CELLS is a public constant equal to 200.
+    #[test]
+    fn ac049_default_truncate_cells_is_200() {
+        assert_eq!(DEFAULT_TRUNCATE_CELLS, 200);
+    }
+
+    // AC-050: without an explicit .truncate_cells_at() call, the default
+    // (200) boundary holds: 199 chars untruncated, 250 chars truncated.
+    #[test]
+    fn ac050_default_truncate_boundary_holds_without_explicit_call() {
+        let untruncated = AgentResponse::new("t").items(vec![vec![Value::from("x".repeat(199))]], &["c"]);
+        let out = untruncated.render_toon();
+        let cell_line = out.lines().nth(1).expect("row line present");
+        assert!(cell_line.contains(&"x".repeat(199)), "199 chars must be untruncated, got: {cell_line:?}");
+
+        let truncated = AgentResponse::new("t").items(vec![vec![Value::from("x".repeat(250))]], &["c"]);
+        let out = truncated.render_toon();
+        let cell_line = out.lines().nth(1).expect("row line present");
+        let value_part = cell_line.trim_start();
+        assert!(
+            value_part.chars().count() <= DEFAULT_TRUNCATE_CELLS,
+            "got line with {} chars: {cell_line:?}",
+            value_part.chars().count()
+        );
     }
 
     #[test]
