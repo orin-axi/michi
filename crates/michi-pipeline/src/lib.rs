@@ -1225,8 +1225,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn pre_set_non_pending_status_does_not_skip_the_runner() {
+        // Uses Failed, not Completed, as the pre-set entry status: a review
+        // found that pre-setting Completed made the final status assertion
+        // vacuous, since a genuinely successful run also produces Completed
+        // -- indistinguishable from a bug that invokes the runner but skips
+        // the status WRITE. Failed->Completed is a real, observable
+        // transition that only a genuine overwrite produces.
         let mut pipeline = make_pipeline(&["a", "b"]);
-        pipeline.steps[0].status = michi_core::pipeline::StepStatus::Completed;
+        pipeline.steps[0].status = michi_core::pipeline::StepStatus::Failed;
         let breaker = CircuitBreaker::new(
             michi_resilience::RetryConfig::default(),
             Duration::from_secs(5),
