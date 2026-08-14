@@ -137,8 +137,8 @@ impl From<ExecutionError> for michi_core::DomainError {
                 format!("step timed out after {elapsed_ms}ms"),
             )
             .retryable(true),
-            ExecutionError::Failed { message, .. } => {
-                michi_core::DomainError::new(michi_core::ErrorCode::ExternalFailure, message)
+            ExecutionError::Failed { message, retryable } => {
+                michi_core::DomainError::new(michi_core::ErrorCode::ExternalFailure, message).retryable(retryable)
             }
             ExecutionError::CircuitOpen { retry_after_ms } => michi_core::DomainError::new(
                 michi_core::ErrorCode::Unavailable,
@@ -249,6 +249,16 @@ mod tests {
         assert!(d.retryable);
         assert_eq!(d.retry_after, None);
 
+        // Range boundaries: 502..=504 is inclusive on both ends, chosen over an
+        // OR-pattern to satisfy clippy::manual_range_patterns -- assert both
+        // edges so an accidental exclusive range (dropping 504) would be caught.
+        let d: michi_core::DomainError =
+            ExecutionError::Http { status: 502, message: "bad gateway".into(), retry_after: None }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::Unavailable);
+        let d: michi_core::DomainError =
+            ExecutionError::Http { status: 504, message: "gateway timeout".into(), retry_after: None }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::Unavailable);
+
         let d: michi_core::DomainError =
             ExecutionError::Http { status: 400, message: "bad request".into(), retry_after: None }.into();
         assert_eq!(d.code, michi_core::ErrorCode::ExternalFailure);
@@ -268,6 +278,17 @@ mod tests {
 
         let d: michi_core::DomainError = ExecutionError::StepCountMismatch { expected: 3, got: 1 }.into();
         assert_eq!(d.code, michi_core::ErrorCode::InvalidInput);
+        assert!(!d.retryable);
+    }
+
+    #[test]
+    fn failed_conversion_preserves_retryable_flag() {
+        let d: michi_core::DomainError = ExecutionError::Failed { message: "boom".into(), retryable: true }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::ExternalFailure);
+        assert!(d.retryable);
+
+        let d: michi_core::DomainError = ExecutionError::Failed { message: "boom".into(), retryable: false }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::ExternalFailure);
         assert!(!d.retryable);
     }
 }
