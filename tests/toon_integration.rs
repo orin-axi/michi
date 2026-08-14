@@ -82,6 +82,7 @@ fn mixed_numeric_row_uses_comma_separators() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn float_value_renders() {
     let opts = ToonOptions::new("measurement", vec!["value".into()], vec![vec![Value::Float(3.14)]]);
     let out = render_toon(&opts);

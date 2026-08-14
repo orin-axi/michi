@@ -1,6 +1,10 @@
 //! Structured DomainError rendering and GitHub Actions annotation example.
 //! Run with: `cargo run --example domain_errors`
 
+// Examples exist to print their output — the disallowed_macros ban on
+// println! is scoped to library code, not demonstration binaries.
+#![allow(clippy::disallowed_macros)]
+
 use michi::error::{DomainError, ErrorCode};
 use michi::recovery::RecoveryHint;
 

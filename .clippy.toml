@@ -16,8 +16,8 @@ disallowed-macros = [
     { path = "std::dbg",      reason = "debug macro must not ship in library code" },
 ]
 
-# Ban unwrap in library code
-disallowed-methods = [
-    { path = "core::option::Option::unwrap", reason = "library code must use fallible handling or error cards instead of unwrap" },
-    { path = "core::result::Result::unwrap", reason = "library code must use fallible handling or error cards instead of unwrap" },
-]
+# unwrap()/expect() in lib code are banned via clippy::unwrap_used /
+# clippy::expect_used (warned on in each crate's lib.rs), not disallowed-methods
+# above -- disallowed-methods has no test-code exemption mechanism, while
+# unwrap_used/expect_used correctly respect allow-unwrap-in-tests /
+# allow-expect-in-tests.

@@ -23,7 +23,11 @@ mod tests {
         p.count("test", 1);
     }
 
+    // AC-021 requires proving NoopProvider::default() specifically works,
+    // so the clippy suggestion (use the unit literal instead) would defeat
+    // the point of this test.
     #[test]
+    #[allow(clippy::default_constructed_unit_structs)]
     fn ac021_default_and_unit_literal_both_construct_a_copyable_provider() {
         let a = NoopProvider::default();
         let b = NoopProvider;
@@ -32,7 +36,11 @@ mod tests {
         let _ = (a, b, c);
     }
 
+    // AC-022 requires proving span()'s return type is unit via
+    // `let x: () = ...`, so the clippy suggestion (drop the binding) would
+    // defeat the point of this test.
     #[test]
+    #[allow(clippy::let_unit_value)]
     fn ac022_span_accepts_the_specified_args_and_returns_unit() {
         let p = NoopProvider;
         p.span("");

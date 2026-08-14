@@ -34,7 +34,7 @@ lint:
     moon run :lint
 
 clippy:
-    cargo clippy --workspace --all-features -- -D warnings
+    cargo clippy --workspace --all-features --all-targets -- -D warnings
 
 fmt:
     moon run :format

@@ -206,8 +206,11 @@ mod tests {
     }
 
     // AC-048: Float with real decimal precision (not NaN/Inf) rounds and
-    // truncates trailing digits per the decimals argument.
+    // truncates trailing digits per the decimals argument. 3.14159 is the
+    // spec's pinned fixture value -- coincidentally pi-adjacent, not an
+    // actual reference to std::f64::consts::PI.
     #[test]
+    #[allow(clippy::approx_constant)]
     fn ac048_float_renders_with_given_decimal_precision() {
         let mut two = String::new();
         push_kv_value(&mut two, &KvValue::Float(3.14159, 2));

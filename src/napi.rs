@@ -1206,6 +1206,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn render_kv_napi_float_default_decimals() {
         let item = JsKvItem {
             key: "score".into(),
@@ -1220,6 +1221,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn render_kv_napi_float_custom_decimals() {
         let item = JsKvItem {
             key: "score".into(),
@@ -1562,7 +1564,7 @@ mod tests {
             let after_ok = after >= bytes.len() || !(bytes[after].is_ascii_alphanumeric() || bytes[after] == b'_');
             if before_ok && after_ok {
                 let mut j = after;
-                while j < bytes.len() && (bytes[j] as char).is_whitespace() {
+                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
                     j += 1;
                 }
                 let rest = &line[j..];

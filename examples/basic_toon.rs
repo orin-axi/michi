@@ -1,6 +1,10 @@
 //! Basic TOON list rendering example.
 //! Run with: `cargo run --example basic_toon`
 
+// Examples exist to print their output — the disallowed_macros ban on
+// println! is scoped to library code, not demonstration binaries.
+#![allow(clippy::disallowed_macros)]
+
 use michi::toon::{render_toon, ToonOptions, Value};
 
 fn main() {

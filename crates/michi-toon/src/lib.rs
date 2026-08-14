@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
+#![warn(clippy::unwrap_used, clippy::expect_used)]
 
 //! # michi-toon
 //!
@@ -256,9 +257,9 @@ mod ac032_public_surface_tests {
                     top_level_pub_names.push(name.trim());
                 }
             } else if let Some(rest) = line.strip_prefix("pub enum ") {
-                top_level_pub_names.push(rest.split(|c: char| c == ' ' || c == '{').next().unwrap_or(rest));
+                top_level_pub_names.push(rest.split([' ', '{']).next().unwrap_or(rest));
             } else if let Some(rest) = line.strip_prefix("pub struct ") {
-                top_level_pub_names.push(rest.split(|c: char| c == ' ' || c == '{').next().unwrap_or(rest));
+                top_level_pub_names.push(rest.split([' ', '{']).next().unwrap_or(rest));
             } else if let Some(rest) = line.strip_prefix("pub fn ") {
                 top_level_pub_names.push(rest.split(['(', '<']).next().unwrap_or(rest));
             }
