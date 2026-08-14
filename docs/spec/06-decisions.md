@@ -161,7 +161,7 @@ A dependency stays a _feature_, not a crate, when it's low-consequence even if u
 
 - `pipeline` (the executor) becomes its own crate — heavy dependency (tokio), clean boundary (operates only on the already-public `Pipeline` data type), independent maturity.
 - The async halves of `resilience` (`CircuitBreaker`, the retry wrapper) fold _into_ that same crate rather than becoming a fourth crate of their own — they exist specifically to wrap pipeline step execution and have no independent use case, so criterion (2) fails for splitting them out further.
-- `fuzzy` and `cache` each become their own crate, downstream of `pipeline` (already true today: `Resolution<T>` is used in pipeline context, so `fuzzy` implies `pipeline` by design).
+- `fuzzy` and `cache` each become their own crate, downstream of `pipeline` — the intended coupling is a `Resolution<T>`-shaped type used in pipeline-step context, so `fuzzy` implies `pipeline` by design. Verified against current source: neither `Resolution<T>` nor any `fuzzy`/`cache` code exists yet anywhere in this workspace — this is a forward design intent, not a shipped fact, despite how an earlier version of this note read.
 - `cli` becomes its own crate too — a genuinely different kind of consumer (a terminal, not an agent) with no coupling to pipeline internals beyond calling into it like any other dependent would.
 
 None of this is scaffolded ahead of time. A crate gets created in the same work that writes its first real implementation, not before — an empty crate sitting in the workspace is the identical ambiguity problem the deleted `pipeline`/`sink`/`resilience` stub files caused, just moved up one level of granularity.
