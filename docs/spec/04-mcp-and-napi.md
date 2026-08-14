@@ -213,14 +213,9 @@ napi build --release --cross-compile --target x86_64-unknown-linux-musl
 
 Today's `.github/workflows/ci.yml` has a `napi` job with a `fail-fast: false` matrix that **builds and tests** four targets on every push: `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl` (the last cross-compiled via `cargo-zigbuild`).
 
-- There is no publish job.
-- Nothing in this repo runs `napi prepublish` or uploads to npm yet.
-- `cargo publish`/`npm publish` are still manual, gated steps (see [`docs/spec/06-decisions.md`](06-decisions.md)).
-
-A future publish job would look roughly like:
-
-- build each target as an artifact
-- a downstream job downloads them all and runs `napi prepublish` to emit the per-platform packages plus the main `@orin-axi/michi` package together
+- `.github/workflows/release.yml` ("Release & Publish") runs on every push to `main`, invoking the `orin-dx/callisto` action with `publish: "true"` — an automated publish pipeline exists.
+- As of this writing, that pipeline has never actually produced a release: neither `michi` on crates.io nor `@orin-axi/michi` on npm exists yet (verified directly against both registries, not assumed). crates.io publish is gated behind at least one real consumer integration test (see [`docs/spec/06-decisions.md`](06-decisions.md)) — the pipeline exists, but the gate condition it's waiting on hasn't been met.
+- What callisto's release job actually does internally (version detection, per-platform `.node` artifact assembly, `napi prepublish`) is external to this repo — `orin-dx/callisto`'s own source is the reference, not restated here.
 
 The `version-sync` job already asserts the npm package version equals the crate version on every push/PR (see [05-scope-and-quality.md](05-scope-and-quality.md)) — that check exists today and would gate a publish job once one is built.
 
@@ -233,7 +228,7 @@ This is auto-generated, never hand-written — `napi build` regenerates it from 
 - Every object type is `Js`-prefixed, matching its Rust struct name: `JsToonValue`, `JsToonOptions`, `JsKvItem`, `JsRecoveryHint`, `JsContentBlock`, `JsAnnotations`, `JsCallToolResult`.
 - There's no unprefixed `ToonValue`/`CallToolResult`/etc. in the real output, whatever an older sketch of this section might have suggested.
 
-What's actually in `packages/michi-node/index.d.ts` today:
+What's actually in `packages/michi-node/index.d.ts` today (rendering-domain surface; the resilience-, status-, and error-domain functions follow further down):
 
 ```typescript
 /** Scalar TOON/KV cell value. Discriminate via `type`. */
@@ -243,6 +238,8 @@ export interface JsToonValue {
   intVal?: number;
   floatVal?: number;
   boolVal?: boolean;
+  /** Decimal places when `type` is `"float"` (KV render only). Rejected if outside [0, 20]. Defaults to 6. */
+  decimalsVal?: number;
 }
 
 export interface JsToonOptions {
@@ -342,4 +339,64 @@ export declare class AgentResponse {
   toCallToolResult(): JsCallToolResult;
 }
 export type JsAgentResponse = AgentResponse;
+```
+
+The resilience-, status-, and error-domain surface, added by SPEC-ARCH-004 and the status/error NAPI wrappers — every numeric position here is validated through the newtype kernel in `src/napi/num.rs` per the "Numeric boundary" section below, not left to `ToInt32`/implicit coercion:
+
+```typescript
+/** Return `true` if the HTTP status code is conventionally retryable (429, 502, 503, 504). */
+export declare function isRetryableStatus(status: number): boolean;
+
+/**
+ * Calculate the next retry delay in milliseconds.
+ *
+ * `jitterSeed` must be in `[0.0, 1.0]`; pass a per-call random value from
+ * your preferred RNG to avoid thundering-herd retries across concurrent
+ * callers. Delay inputs must be finite and non-negative; `retryAfterMs` may
+ * be omitted or `null`. Returns `null` when `attempt >= maxRetries`.
+ */
+export declare function nextRetryDelay(
+  maxRetries: number,
+  baseDelayMs: number,
+  maxDelayMs: number,
+  jitterFactor: number,
+  jitterSeed: number,
+  attempt: number,
+  retryAfterMs?: number | undefined | null,
+): number | null;
+
+/** Parse an RFC 7231 `Retry-After` header value (delta-seconds or HTTP-date) into seconds. */
+export declare function parseRetryAfter(headerValue: string): number | null;
+
+/** Render an explicit `already_done` status block. */
+export declare function renderAlreadyDone(
+  operation: string,
+  summary: string,
+  hints: Array<string>,
+): string;
+
+/** Render a classified `DomainError` card, or a GitHub Actions annotation when `githubAnnotation` is true. */
+export declare function renderDomainError(
+  code: string,
+  message: string,
+  hints: Array<string>,
+  githubAnnotation?: boolean | undefined | null,
+): string;
+
+/** A component status item for `renderStatus`. */
+export interface JsStatusItem {
+  /** Component key. */
+  key: string;
+  value: JsToonValue;
+  /** Health state: `"ok"`, `"degraded: <reason>"`, or `"error: <reason>"`. */
+  health?: string;
+}
+
+/** Render a P8 content-first orientation response. */
+export declare function renderStatus(
+  toolName: string,
+  description: string,
+  items: Array<JsStatusItem>,
+  hints?: Array<string> | undefined | null,
+): string;
 ```

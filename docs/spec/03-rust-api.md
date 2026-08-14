@@ -101,6 +101,8 @@ impl DomainError {
     pub fn recovery(self, r: RecoveryHint) -> Self;
     pub fn retryable(self, retryable: bool) -> Self;
     pub fn retry_after(self, d: Duration) -> Self;
+    /// Always returns `1`.
+    pub fn exit_code(&self) -> i32;
     pub fn render(&self) -> String;
     pub fn render_github_annotation(&self) -> String;
     pub fn render_json(&self) -> String;
@@ -116,29 +118,41 @@ impl DomainError {
 
 ### `AgentResponse` Builder
 
-`AgentResponse` composes lists, key-value single items, hints, and audience routing:
+`AgentResponse` composes lists, key-value single items, hints, and audience routing. It is a **consuming** builder — every setter takes `self` by value and returns `Self`, so calls chain (`AgentResponse::new("t").items(...).hint(...)`), not `&mut self` mutation:
 
 ```rust
 pub struct AgentResponse { ... }
 
 impl AgentResponse {
     pub fn new(type_name: impl Into<String>) -> Self;
-    pub fn items(&mut self, rows: Vec<Vec<Value>>, fields: &[&str]);
-    pub fn kv_items(&mut self, items: Vec<KvItem>);
-    pub fn total_count(&mut self, total: usize);
-    pub fn hint(&mut self, hint: impl Into<String>);
-    pub fn recovery_hint(&mut self, r: RecoveryHint);
-    pub fn human_content(&mut self, content: impl Into<String>);
-    pub fn as_error(&mut self);
+    pub fn items(self, rows: Vec<Vec<Value>>, fields: &[&str]) -> Self;
+    pub fn total_count(self, n: usize) -> Self;
+    pub fn kv_items(self, items: Vec<KvItem>) -> Self;
+    pub fn hint(self, hint: impl Into<String>) -> Self;
+    /// Replaces the full hint list (contrast `hint()`, which appends).
+    pub fn hints(self, hints: Vec<Hint>) -> Self;
+    pub fn recovery_hint(self, r: RecoveryHint) -> Self;
+    /// Overrides the default TOON cell truncation limit (200); TOON path only.
+    pub fn truncate_cells_at(self, limit: usize) -> Self;
+    pub fn as_error(self) -> Self;
+    pub fn human_content(self, text: impl Into<String>) -> Self;
+
+    /// Dispatches on which of `.items()`/`.kv_items()` was called last.
+    pub fn render(&self, format: OutputFormat) -> String;
+    /// Reads the TOON slot unconditionally, regardless of which builder path was last set.
     pub fn render_toon(&self) -> String;
+    /// Reads the KV slot unconditionally, regardless of which builder path was last set.
     pub fn render_kv(&self) -> String;
-    pub fn render(&self) -> String;
+    /// Just the `help[N]:` block for `.hint()`/`.hints()`.
+    pub fn render_hints_only(&self) -> String;
+    /// `"user"` falls back to `render(OutputFormat::Text)` when `.human_content()` was never set.
     pub fn render_for(&self, audience: Audience) -> String;
-    pub fn render_json(&self) -> String;
     pub fn has_human_content(&self) -> bool;
     pub fn to_call_tool_result(&self) -> CallToolResult;
 }
 ```
+
+`render_json()` is not part of the public API — it's reached only via `render(OutputFormat::Json)`.
 
 ### Idempotency
 

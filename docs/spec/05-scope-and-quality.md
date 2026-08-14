@@ -54,14 +54,18 @@
 
 ```toml
 [features]
-default = []
-napi  = ["dep:napi", "dep:napi-derive", "dep:serde_json"]
-serde = ["dep:serde", "dep:serde_json"]
+default  = []
+napi     = ["dep:napi", "dep:napi-derive", "dep:serde_json", "michi-core/serde"]
+serde    = ["michi-core/serde", "michi-toon/serde"]
+schemars = ["michi-core/schemars", "michi-toon/schemars"]
+miette   = ["michi-core/miette"]
 ```
 
 No async runtime dependency, no tokio, no async-std — every public function is sync.
 
 - `serde` is opt-in Rust-side ergonomics: `Serialize`/`Deserialize` on the core value types, plus `toon::list()`. See [01-overview-and-setup.md](01-overview-and-setup.md) for the full dependency rationale.
+- `schemars` derives `JsonSchema` on DTO types (`DomainError`, `StatusResponse`, `ToonOptions`, and others) for automatic MCP `outputSchema` generation.
+- `miette` implements `miette::Diagnostic` for `DomainError` to render colorized CLI diagnostic cards.
 - `cli` is **not** a Cargo feature of this crate at all. Terminal-aware rendering (line wrapping, colour codes for the `[DEGRADED: ...]` health signals in `status::StatusResponse`) is out of scope for v1, since michi v1 targets agent consumers only.
 - When that work is actually built, it lands as its own crate, downstream of `pipeline`, rather than a feature flag here — see [ARCHITECTURE.md](../../ARCHITECTURE.md) and [06-decisions.md](06-decisions.md) for the crate-boundary rule and the v2 scope sketch.
 
@@ -90,8 +94,7 @@ Format changes are major versions. Treat the rendered string as a contract — t
 **Version sync:** the npm package version tracks the crate version exactly.
 
 - A `version-sync` CI job asserts the two are equal on every push/PR, so a `michi` crate at `0.3.1` and the `@orin-axi/michi` npm package at `0.3.1` always describe the same source.
-- There is no publish job yet — `cargo publish`/`npm publish` are manual, gated steps for now (see [06-decisions.md](06-decisions.md)).
-- A future publish job would build the per-platform `.node` artifacts, run `napi prepublish` to emit them as `optionalDependencies`, then publish the main package.
+- `.github/workflows/release.yml` runs an automated publish pipeline (via `orin-dx/callisto`) on every push to `main` — but it has not yet produced a release; crates.io publish is specifically gated behind at least one real consumer integration test (see [06-decisions.md](06-decisions.md)). Verified directly against both registries: neither `michi` nor `@orin-axi/michi` exists yet.
 - When no native binary matches a consumer's platform, the TypeScript fallback export loads instead.
 
 ---
