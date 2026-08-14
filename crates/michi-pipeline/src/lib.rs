@@ -859,4 +859,44 @@ mod tests {
         assert_eq!(step.calls.load(Ordering::SeqCst), 1, "exactly one attempt during HalfOpen");
         assert_eq!(breaker.phase(), BreakerPhase::Open);
     }
+
+    struct PanicsStep;
+    impl Step for PanicsStep {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            Box::pin(async { panic!("deliberate test panic") })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn panicking_step_leaves_breaker_state_untouched() {
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            2,
+            Duration::from_secs(60),
+        ));
+        let phase_before = breaker.phase();
+
+        let handle = {
+            let breaker = std::sync::Arc::clone(&breaker);
+            tokio::spawn(async move { breaker.call(&PanicsStep, 0.0).await })
+        };
+        let join_result = handle.await;
+        assert!(
+            join_result.is_err(),
+            "the panic must propagate out of call() as a JoinError, proving it is not caught internally"
+        );
+        assert_eq!(breaker.phase(), phase_before, "phase must be unchanged after the panic");
+
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(
+            breaker.call(&fail, 0.0).await.is_err(),
+            "one real failing call, to prove the panic did not pre-contribute to the failure count"
+        );
+        assert_eq!(breaker.phase(), BreakerPhase::Closed, "panic must not have contributed a failure count");
+
+        let ok = CountingStep { calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&ok, 0.0).await.is_ok(), "the breaker must remain usable after a panicking call");
+        assert_eq!(breaker.phase(), BreakerPhase::Closed);
+    }
 }
