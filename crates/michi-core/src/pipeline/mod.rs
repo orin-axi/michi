@@ -266,6 +266,21 @@ mod tests {
         assert_eq!(p.render(), "step[1]{id,name,status}:\n  line1line2,ok,pending\n");
     }
 
+    // AC-025's own text says "id or name" interchangeably, but every fixture
+    // in this spec's evidence only ever put a newline/CR/quote into id --
+    // name only ever appears with a comma (AC-014). escape_value() is called
+    // identically on both fields in render(), so this closes that
+    // family-sibling gap without a new criterion ID.
+    #[test]
+    fn ac025_embedded_newline_in_name_is_also_silently_stripped_not_escaped() {
+        let name: String = ['l', 'i', 'n', 'e', '1', '\n', 'l', 'i', 'n', 'e', '2'].into_iter().collect();
+        let p = Pipeline {
+            id: "p".into(),
+            steps: vec![PipelineStep { id: "ok".into(), name, status: StepStatus::Pending }],
+        };
+        assert_eq!(p.render(), "step[1]{id,name,status}:\n  ok,line1line2,pending\n");
+    }
+
     #[test]
     fn ac026_embedded_quote_in_id_is_escaped_within_quoted_field() {
         let id: String = ['a', '"', 'b'].into_iter().collect();
