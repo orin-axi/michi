@@ -77,6 +77,30 @@ pub trait Step: Send + Sync {
     fn run<'a>(&'a self, attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>>;
 }
 
+/// Adapter produced by [`step_fn`], implementing [`Step`] over an async
+/// closure for callers who don't need custom state.
+pub struct FnStep<F>(F);
+
+/// Ergonomic adapter from an async closure into a value implementing
+/// [`Step`], for callers who don't need custom state.
+pub fn step_fn<F, Fut>(f: F) -> FnStep<F>
+where
+    F: Fn(u32) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<(), ExecutionError>> + Send + 'static,
+{
+    FnStep(f)
+}
+
+impl<F, Fut> Step for FnStep<F>
+where
+    F: Fn(u32) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<(), ExecutionError>> + Send + 'static,
+{
+    fn run<'a>(&'a self, attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+        Box::pin((self.0)(attempt))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,5 +136,12 @@ mod tests {
     fn step_is_object_safe() {
         let steps: Vec<Box<dyn Step>> = vec![Box::new(AlwaysOk)];
         assert_eq!(steps.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn step_fn_adapts_closure_into_step() {
+        let s = step_fn(|_attempt: u32| async { Ok(()) });
+        let result = s.run(0).await;
+        assert!(result.is_ok());
     }
 }
