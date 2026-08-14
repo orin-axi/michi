@@ -906,4 +906,80 @@ mod tests {
         assert!(breaker.call(&ok, 0.0).await.is_ok(), "the breaker must remain usable after a panicking call");
         assert_eq!(breaker.phase(), BreakerPhase::Closed);
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn half_open_failure_bypasses_failure_counter_unconditionally() {
+        // A mutation-testing checkpoint found that swapping the HalfOpen-failure
+        // branch's open_circuit() for record_failure() survives every black-box
+        // test: by the time this branch is ever reached, consecutive_failures is
+        // already >= failure_threshold (it can only get here via a prior Closed
+        // -> Open transition), so record_failure()'s own threshold check would be
+        // trivially true too -- the two calls are behaviorally indistinguishable
+        // through call()/phase() alone. This white-box test locks in the actual
+        // contract (unconditional reopen, no counter dependency) by reading the
+        // private counter directly, documenting that open_circuit() is the
+        // intended call, not an accident that happens to also satisfy the tests.
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(10),
+        );
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+
+        let before = breaker.consecutive_failures.load(Ordering::SeqCst);
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert_eq!(
+            breaker.consecutive_failures.load(Ordering::SeqCst),
+            before,
+            "HalfOpen failure must reopen unconditionally via open_circuit(), not via record_failure()'s threshold check"
+        );
+        assert_eq!(breaker.phase(), BreakerPhase::Open);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_loop_terminates_within_bounded_attempts() {
+        // A mutation-testing checkpoint found that a regression removing
+        // `attempt += 1` from the retry loop doesn't fail cleanly -- it hangs
+        // the test runner indefinitely under start_paused=true, since
+        // next_retry_delay(attempt=0, ...) never reaches the max_retries
+        // exhaustion check. Wrapping the call in an explicit outer timeout
+        // converts that failure mode into a clean, fast assertion failure
+        // instead of a hung CI job.
+        let retry_config =
+            michi_resilience::RetryConfig::new(3, Duration::from_millis(1), Duration::from_millis(10), 0.0);
+        let breaker = CircuitBreaker::new(retry_config, Duration::from_secs(5), u32::MAX, Duration::from_secs(60));
+        let step = AlwaysFailStep { retryable: true, calls: std::sync::atomic::AtomicU32::new(0) };
+        let result = tokio::time::timeout(Duration::from_secs(5), breaker.call(&step, 0.0)).await;
+        assert!(result.is_ok(), "retry loop must terminate (exhaust retries) well within a 5s bound, not hang");
+        assert!(result.unwrap().is_err());
+        assert_eq!(step.calls.load(Ordering::SeqCst), 4, "max_retries=3 -> 4 total attempts");
+    }
+
+    #[test]
+    fn phase_reports_half_open_when_atomic_directly_holds_that_state() {
+        // The `PHASE_HALF_OPEN => BreakerPhase::HalfOpen` arm in phase() is
+        // never reached through this crate's own public API today -- HalfOpen
+        // is always derived dynamically from PHASE_OPEN plus elapsed time
+        // (T18), and nothing currently stores PHASE_HALF_OPEN directly. A
+        // mutation-testing checkpoint confirmed deleting that arm survives
+        // every other test for exactly this reason. It is kept as deliberate,
+        // forward-compatible defensive code (documented at definition site,
+        // T11) rather than dead code to delete, in case a future revision
+        // stores PHASE_HALF_OPEN explicitly (e.g. for cross-call single-trial
+        // enforcement). This white-box test exercises it directly via the
+        // private atomic so the arm has real coverage rather than resting on
+        // an argument about future-proofing alone.
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(10),
+        );
+        breaker.phase.store(PHASE_HALF_OPEN, Ordering::SeqCst);
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+    }
 }
