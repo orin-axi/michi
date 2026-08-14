@@ -645,6 +645,52 @@ mod tests {
         assert!(out.contains(&long_value), "value must be untruncated, got: {out}");
     }
 
+    // AC-051: .total_count() is threaded into the KV render path, not
+    // silently dropped.
+    #[test]
+    fn ac051_total_count_is_wired_into_kv_render_path() {
+        use crate::kv::{KvItem, KvValue};
+        let r =
+            AgentResponse::new("t").total_count(3).kv_items(vec![KvItem { key: "k".into(), value: KvValue::Int(1) }]);
+        let out = r.render_kv();
+        assert!(out.contains("totalCount: 3\n"), "got: {out}");
+    }
+
+    // AC-052: .total_count() is threaded into the TOON render path via
+    // ToonOptions::total_count(), not silently dropped.
+    #[test]
+    fn ac052_total_count_is_wired_into_toon_render_path() {
+        let r = AgentResponse::new("t").total_count(3).items(vec![vec![Value::from("x")]], &["c"]);
+        let out = r.render_toon();
+        assert!(out.contains('3'), "expected total_count 3 to surface, got: {out}");
+
+        let without_total_count = AgentResponse::new("t").items(vec![vec![Value::from("x")]], &["c"]);
+        assert_ne!(out, without_total_count.render_toon(), "total_count must change the output");
+    }
+
+    // AC-053: .hints() replaces the full hint list rather than appending to
+    // hints previously added via .hint() — contrast with .recovery_hint()'s
+    // append semantics (AC-006).
+    #[test]
+    fn ac053_hints_replaces_rather_than_appends() {
+        let r = AgentResponse::new("t").hint("a").hints(vec![Hint::from("b")]);
+        let out = r.render_hints_only();
+        assert!(out.contains('b'), "got: {out}");
+        assert!(!out.contains('a'), "got: {out}");
+    }
+
+    // AC-038 (extended): json_escape_str's generic below-0x20 control-
+    // character branch (\u00XX), distinct from the dedicated \n/\r/\t arms.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn ac038_control_character_below_0x20_is_escaped_and_json_stays_valid() {
+        let r = AgentResponse::new("t").hint("before\u{1}after");
+        let raw = r.render_json();
+        assert!(raw.contains(r"\u0001"), "got: {raw}");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("must be valid JSON");
+        assert_eq!(parsed["hints"][0].as_str().unwrap(), "before\u{1}after");
+    }
+
     // AC-049: DEFAULT_TRUNCATE_CELLS is a public constant equal to 200.
     #[test]
     fn ac049_default_truncate_cells_is_200() {
