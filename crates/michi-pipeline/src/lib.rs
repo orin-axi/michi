@@ -264,18 +264,25 @@ impl CircuitBreaker {
 }
 
 impl CircuitBreaker {
-    /// Executes `step` to completion, retrying retryable failures per
-    /// `retry_config` with `next_retry_delay`'s backoff, threading
-    /// `ExecutionError::Http`'s `retry_after` through when present. Returns
-    /// immediately on success or on a non-retryable error, and returns the
-    /// last error once `next_retry_delay` reports exhaustion. On success,
-    /// resets the consecutive-failure counter; on a call-level failure
-    /// (after retries are exhausted or the error is non-retryable),
-    /// increments the counter once and opens the circuit at
-    /// `failure_threshold`. While `phase()` is `HalfOpen`, this instead runs
-    /// `step` exactly once with no retries: success closes the circuit and
-    /// resets the counter, and any failure reopens the circuit
-    /// unconditionally, bypassing `failure_threshold`.
+    /// Executes `step`, with behavior depending on [`CircuitBreaker::phase`].
+    ///
+    /// While `Open`, returns `Err(ExecutionError::CircuitOpen { retry_after_ms })`
+    /// immediately without invoking `step` at all, where `retry_after_ms` is
+    /// the time remaining until `open_duration` has elapsed since the
+    /// breaker most recently opened.
+    ///
+    /// While `Closed`, retries retryable failures per `retry_config` with
+    /// `next_retry_delay`'s backoff, threading `ExecutionError::Http`'s
+    /// `retry_after` through when present. Returns immediately on success or
+    /// on a non-retryable error, and returns the last error once
+    /// `next_retry_delay` reports exhaustion. On success, resets the
+    /// consecutive-failure counter; on a call-level failure (after retries
+    /// are exhausted or the error is non-retryable), increments the counter
+    /// once and opens the circuit at `failure_threshold`.
+    ///
+    /// While `HalfOpen`, runs `step` exactly once with no retries: success
+    /// closes the circuit and resets the counter, and any failure reopens
+    /// the circuit unconditionally, bypassing `failure_threshold`.
     pub async fn call(&self, step: &dyn Step, jitter_seed: f64) -> Result<(), ExecutionError> {
         let phase = self.phase();
         if phase == BreakerPhase::Open {
@@ -295,7 +302,6 @@ impl CircuitBreaker {
             };
             return match attempt_result {
                 Ok(()) => {
-                    self.phase.store(PHASE_CLOSED, Ordering::SeqCst);
                     self.record_success();
                     Ok(())
                 }
