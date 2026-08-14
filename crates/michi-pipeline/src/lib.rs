@@ -65,6 +65,21 @@ pub enum ExecutionError {
     },
 }
 
+impl ExecutionError {
+    /// Classifies whether retrying is worthwhile for this error.
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Http { status, .. } => michi_resilience::is_retryable_status(*status),
+            Self::Timeout { .. } => true,
+            Self::Failed { retryable, .. } => *retryable,
+            Self::CircuitOpen { .. } => true,
+            Self::StepFailed { source, .. } => source.is_retryable(),
+            Self::StepCountMismatch { .. } => false,
+        }
+    }
+}
+
 use std::future::Future;
 use std::pin::Pin;
 
@@ -143,5 +158,34 @@ mod tests {
         let s = step_fn(|_attempt: u32| async { Ok(()) });
         let result = s.run(0).await;
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn is_retryable_per_variant() {
+        assert_eq!(
+            ExecutionError::Http { status: 429, message: "x".into(), retry_after: None }.is_retryable(),
+            michi_resilience::is_retryable_status(429)
+        );
+        assert_eq!(
+            ExecutionError::Http { status: 400, message: "x".into(), retry_after: None }.is_retryable(),
+            michi_resilience::is_retryable_status(400)
+        );
+        assert!(ExecutionError::Timeout { elapsed_ms: 1 }.is_retryable());
+        assert!(ExecutionError::Failed { message: "x".into(), retryable: true }.is_retryable());
+        assert!(!ExecutionError::Failed { message: "x".into(), retryable: false }.is_retryable());
+        assert!(ExecutionError::CircuitOpen { retry_after_ms: 1 }.is_retryable());
+        assert!(ExecutionError::StepFailed {
+            step_id: "s".into(),
+            step_name: "S".into(),
+            source: Box::new(ExecutionError::Timeout { elapsed_ms: 1 }),
+        }
+        .is_retryable());
+        assert!(!ExecutionError::StepFailed {
+            step_id: "s".into(),
+            step_name: "S".into(),
+            source: Box::new(ExecutionError::Failed { message: "x".into(), retryable: false }),
+        }
+        .is_retryable());
+        assert!(!ExecutionError::StepCountMismatch { expected: 1, got: 2 }.is_retryable());
     }
 }
