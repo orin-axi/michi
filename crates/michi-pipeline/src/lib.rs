@@ -406,6 +406,19 @@ mod tests {
     }
 
     #[test]
+    fn step_failed_conversion_inherits_inner_retry_after() {
+        // Neither of the two tests above ever produces a Some(retry_after) on
+        // the inner DomainError, so the `if let Some(retry_after) = ...`
+        // branch in the StepFailed arm was previously untested -- a review
+        // found this gap. CircuitOpen always sets retry_after, so it's used
+        // here specifically to exercise that branch.
+        let source = ExecutionError::CircuitOpen { retry_after_ms: 500 };
+        let err = ExecutionError::StepFailed { step_id: "s".into(), step_name: "S".into(), source: Box::new(source) };
+        let d: michi_core::DomainError = err.into();
+        assert_eq!(d.retry_after, Some(std::time::Duration::from_millis(500)));
+    }
+
+    #[test]
     fn new_is_infallible_and_fresh_breaker_is_closed() {
         let breaker = CircuitBreaker::new(
             michi_resilience::RetryConfig::default(),
