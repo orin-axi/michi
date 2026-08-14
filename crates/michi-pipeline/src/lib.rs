@@ -222,13 +222,22 @@ impl CircuitBreaker {
         }
     }
 
-    /// Current phase. This early version only reflects the raw stored
-    /// phase; the elapsed-time-based Open -> HalfOpen transition is added
-    /// in a later commit once there is a real Open state to transition
-    /// from.
+    /// Current phase. Open is derived dynamically: once at least
+    /// `open_duration` of tokio virtual time has elapsed since the breaker
+    /// most recently opened, this reports `HalfOpen` even though the stored
+    /// atomic still holds `PHASE_OPEN`.
     pub fn phase(&self) -> BreakerPhase {
-        match self.phase.load(Ordering::SeqCst) {
-            PHASE_OPEN => BreakerPhase::Open,
+        let raw = self.phase.load(Ordering::SeqCst);
+        if raw == PHASE_OPEN {
+            let opened_at_ms = self.opened_at_ms.load(Ordering::SeqCst);
+            let elapsed_ms = u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
+            let open_duration_ms = u64::try_from(self.open_duration.as_millis()).unwrap_or(u64::MAX);
+            if elapsed_ms.saturating_sub(opened_at_ms) >= open_duration_ms {
+                return BreakerPhase::HalfOpen;
+            }
+            return BreakerPhase::Open;
+        }
+        match raw {
             PHASE_HALF_OPEN => BreakerPhase::HalfOpen,
             _ => BreakerPhase::Closed,
         }
@@ -757,5 +766,36 @@ mod tests {
             Err(ExecutionError::CircuitOpen { retry_after_ms }) => assert_eq!(retry_after_ms, 6_000),
             other => panic!("expected CircuitOpen{{retry_after_ms: 6000}}, got {other:?}"),
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn phase_transitions_to_half_open_once_open_duration_elapses() {
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(10),
+        );
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Open);
+
+        let start = tokio::time::Instant::now();
+        tokio::time::advance(Duration::from_secs(9)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::Open, "9s < 10s open_duration");
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen, "10s >= 10s open_duration");
+        assert_eq!(start.elapsed(), Duration::from_secs(10));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn zero_open_duration_floors_to_one_millisecond() {
+        let breaker =
+            CircuitBreaker::new(michi_resilience::RetryConfig::default(), Duration::from_secs(5), 1, Duration::ZERO);
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Open, "0ms elapsed since opening, floored open_duration is 1ms");
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
     }
 }
