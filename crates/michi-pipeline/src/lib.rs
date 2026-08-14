@@ -272,15 +272,38 @@ impl CircuitBreaker {
     /// resets the consecutive-failure counter; on a call-level failure
     /// (after retries are exhausted or the error is non-retryable),
     /// increments the counter once and opens the circuit at
-    /// `failure_threshold`.
+    /// `failure_threshold`. While `phase()` is `HalfOpen`, this instead runs
+    /// `step` exactly once with no retries: success closes the circuit and
+    /// resets the counter, and any failure reopens the circuit
+    /// unconditionally, bypassing `failure_threshold`.
     pub async fn call(&self, step: &dyn Step, jitter_seed: f64) -> Result<(), ExecutionError> {
-        if self.phase() == BreakerPhase::Open {
+        let phase = self.phase();
+        if phase == BreakerPhase::Open {
             let opened_at_ms = self.opened_at_ms.load(Ordering::SeqCst);
             let elapsed_ms = u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
             let open_duration_ms = u64::try_from(self.open_duration.as_millis()).unwrap_or(u64::MAX);
             let since_opened_ms = elapsed_ms.saturating_sub(opened_at_ms);
             let retry_after_ms = open_duration_ms.saturating_sub(since_opened_ms);
             return Err(ExecutionError::CircuitOpen { retry_after_ms });
+        }
+        if phase == BreakerPhase::HalfOpen {
+            let attempt_result = match tokio::time::timeout(self.step_timeout, step.run(0)).await {
+                Ok(result) => result,
+                Err(_) => Err(ExecutionError::Timeout {
+                    elapsed_ms: u64::try_from(self.step_timeout.as_millis()).unwrap_or(u64::MAX),
+                }),
+            };
+            return match attempt_result {
+                Ok(()) => {
+                    self.phase.store(PHASE_CLOSED, Ordering::SeqCst);
+                    self.record_success();
+                    Ok(())
+                }
+                Err(err) => {
+                    self.open_circuit();
+                    Err(err)
+                }
+            };
         }
         let mut attempt = 0u32;
         loop {
@@ -797,5 +820,43 @@ mod tests {
         assert_eq!(breaker.phase(), BreakerPhase::Open, "0ms elapsed since opening, floored open_duration is 1ms");
         tokio::time::advance(Duration::from_millis(1)).await;
         assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn half_open_success_closes_circuit_and_resets_counter() {
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(10),
+        );
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+
+        let ok = CountingStep { calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&ok, 0.0).await.is_ok());
+        assert_eq!(breaker.phase(), BreakerPhase::Closed);
+
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Open);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn half_open_failure_reopens_circuit_with_exactly_one_attempt_no_retries() {
+        let retry_config =
+            michi_resilience::RetryConfig::new(5, Duration::from_millis(1), Duration::from_millis(10), 0.0);
+        let breaker = CircuitBreaker::new(retry_config, Duration::from_secs(5), 1, Duration::from_secs(10));
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+
+        let step = FlakyStep { fail_until: 1, calls: std::sync::atomic::AtomicU32::new(0) };
+        let result = breaker.call(&step, 0.0).await;
+        assert!(result.is_err(), "HalfOpen probe must not retry into the eventual success");
+        assert_eq!(step.calls.load(Ordering::SeqCst), 1, "exactly one attempt during HalfOpen");
+        assert_eq!(breaker.phase(), BreakerPhase::Open);
     }
 }
