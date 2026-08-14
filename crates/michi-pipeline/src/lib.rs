@@ -65,6 +65,18 @@ pub enum ExecutionError {
     },
 }
 
+use std::future::Future;
+use std::pin::Pin;
+
+/// What a pipeline step invokes. `attempt` is 0-indexed and supplied by
+/// [`CircuitBreaker::call`], incrementing by 1 on each retry. Object-safe by
+/// construction, so `Vec<Box<dyn Step>>` is usable without an async-trait
+/// dependency.
+pub trait Step: Send + Sync {
+    /// Runs one attempt of this step.
+    fn run<'a>(&'a self, attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,5 +96,21 @@ mod tests {
             source: Box::new(ExecutionError::Timeout { elapsed_ms: 1 }),
         };
         let _mismatch = ExecutionError::StepCountMismatch { expected: 1, got: 2 };
+    }
+
+    struct AlwaysOk;
+    impl Step for AlwaysOk {
+        fn run<'a>(
+            &'a self,
+            _attempt: u32,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[test]
+    fn step_is_object_safe() {
+        let steps: Vec<Box<dyn Step>> = vec![Box::new(AlwaysOk)];
+        assert_eq!(steps.len(), 1);
     }
 }
