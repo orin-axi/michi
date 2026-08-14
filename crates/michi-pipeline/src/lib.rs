@@ -1320,6 +1320,39 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn step_failed_reports_distinct_id_and_name_in_correct_fields() {
+        // A mutation-testing checkpoint found that every test in this module
+        // uses make_pipeline, whose fixture always sets id and name to the
+        // same string -- so a bug that swaps step_id/step_name when
+        // constructing StepFailed would go completely undetected. This test
+        // uses genuinely distinct id/name values to close that gap.
+        let mut pipeline = michi_core::pipeline::Pipeline {
+            id: "p".into(),
+            steps: vec![michi_core::pipeline::PipelineStep {
+                id: "step-id-xyz".into(),
+                name: "Human Readable Name".into(),
+                status: michi_core::pipeline::StepStatus::Pending,
+            }],
+        };
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> =
+            vec![Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) })];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::StepFailed { step_id, step_name, .. }) => {
+                assert_eq!(step_id, "step-id-xyz", "step_id must come from step.id, not step.name");
+                assert_eq!(step_name, "Human Readable Name", "step_name must come from step.name, not step.id");
+            }
+            other => panic!("expected StepFailed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn execute_pipeline_never_writes_skipped() {
         let mut pipeline = make_pipeline(&["a", "b"]);
         let breaker = CircuitBreaker::new(
