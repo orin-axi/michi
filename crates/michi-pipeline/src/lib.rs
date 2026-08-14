@@ -311,4 +311,17 @@ mod tests {
         assert!(!d.retryable);
         assert_eq!(d.message, "step upload (Upload) failed: disk full");
     }
+
+    #[test]
+    fn step_failed_conversion_preserves_inner_error_code() {
+        // Uses a source variant whose code differs from ExternalFailure so this
+        // actually exercises the recursive `inner.code` read, rather than being
+        // indistinguishable from a hardcoded ExternalFailure (as Failed's own
+        // ExternalFailure code would be) -- a mutation-testing checkpoint found
+        // the existing StepFailed test alone couldn't catch a hardcode regression.
+        let source = ExecutionError::Timeout { elapsed_ms: 5 };
+        let err = ExecutionError::StepFailed { step_id: "s".into(), step_name: "S".into(), source: Box::new(source) };
+        let d: michi_core::DomainError = err.into();
+        assert_eq!(d.code, michi_core::ErrorCode::Timeout);
+    }
 }
