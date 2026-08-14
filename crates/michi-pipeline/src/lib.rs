@@ -862,14 +862,27 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn half_open_success_closes_circuit_and_resets_counter() {
+        // Uses failure_threshold=2, not 1: a review found the original
+        // threshold=1 version made this test's reset-proof vacuous, since
+        // count>=1 holds after a single post-recovery failure whether or not
+        // the counter was actually reset (reset-then-+1=1 and
+        // leftover-then-+1=2 both satisfy >=1). Verified by mutation testing:
+        // deleting record_success() from the HalfOpen-success branch left the
+        // old version's assertions unchanged. With threshold=2, a single
+        // post-recovery failure only stays Closed if the counter was
+        // genuinely reset to 0.
         let breaker = CircuitBreaker::new(
             michi_resilience::RetryConfig::default(),
             Duration::from_secs(5),
-            1,
+            2,
             Duration::from_secs(10),
         );
         let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
         assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Closed);
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Open);
+
         tokio::time::advance(Duration::from_secs(10)).await;
         assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
 
@@ -877,6 +890,19 @@ mod tests {
         assert!(breaker.call(&ok, 0.0).await.is_ok());
         assert_eq!(breaker.phase(), BreakerPhase::Closed);
 
+        // Discriminating assertion: if the counter had NOT been reset, it
+        // would already be at 2 from the failures above, and this one more
+        // failure would push it to 3 >= 2, reopening the circuit.
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert_eq!(
+            breaker.phase(),
+            BreakerPhase::Closed,
+            "one post-recovery failure must not reopen a threshold-2 breaker if the counter was genuinely reset"
+        );
+
+        // A second post-recovery failure, from the correctly-reset baseline,
+        // does reach the threshold -- confirming the counter still counts
+        // correctly from 0, not stuck.
         assert!(breaker.call(&fail, 0.0).await.is_err());
         assert_eq!(breaker.phase(), BreakerPhase::Open);
     }
