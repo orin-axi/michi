@@ -1115,4 +1115,71 @@ mod tests {
         assert!(result.is_ok());
         assert!(pipeline.steps.is_empty());
     }
+
+    fn split_toon_row(row: &str) -> Vec<String> {
+        let mut fields = Vec::new();
+        let mut chars = row.chars().peekable();
+        while chars.peek().is_some() {
+            let mut field = String::new();
+            if chars.peek() == Some(&'"') {
+                chars.next();
+                while let Some(c) = chars.next() {
+                    if c == '\\' {
+                        if let Some(escaped) = chars.next() {
+                            field.push(escaped);
+                        }
+                    } else if c == '"' {
+                        break;
+                    } else {
+                        field.push(c);
+                    }
+                }
+            } else {
+                while let Some(&c) = chars.peek() {
+                    if c == ',' {
+                        break;
+                    }
+                    field.push(c);
+                    chars.next();
+                }
+            }
+            fields.push(field);
+            if chars.peek() == Some(&',') {
+                chars.next();
+            }
+        }
+        fields
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn all_success_pipeline_reports_completed_in_every_render_row() {
+        let mut pipeline = make_pipeline(&["fetch", "upload", "notify"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = (0..3)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        assert!(result.is_ok());
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
+        }
+
+        let rendered = pipeline.render();
+        let mut lines = rendered.lines();
+        let _header = lines.next().unwrap();
+        let mut row_count = 0;
+        for line in lines {
+            let row = line.strip_prefix("  ").unwrap_or(line);
+            let fields = split_toon_row(row);
+            assert_eq!(fields.len(), 3, "row {row:?} must have exactly 3 fields");
+            assert_eq!(fields[2], "completed", "row {row:?} third field must be exactly 'completed'");
+            row_count += 1;
+        }
+        assert_eq!(row_count, 3);
+    }
 }
