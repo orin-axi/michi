@@ -265,6 +265,14 @@ impl CircuitBreaker {
     /// increments the counter once and opens the circuit at
     /// `failure_threshold`.
     pub async fn call(&self, step: &dyn Step, jitter_seed: f64) -> Result<(), ExecutionError> {
+        if self.phase() == BreakerPhase::Open {
+            let opened_at_ms = self.opened_at_ms.load(Ordering::SeqCst);
+            let elapsed_ms = u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
+            let open_duration_ms = u64::try_from(self.open_duration.as_millis()).unwrap_or(u64::MAX);
+            let since_opened_ms = elapsed_ms.saturating_sub(opened_at_ms);
+            let retry_after_ms = open_duration_ms.saturating_sub(since_opened_ms);
+            return Err(ExecutionError::CircuitOpen { retry_after_ms });
+        }
         let mut attempt = 0u32;
         loop {
             let attempt_result = match tokio::time::timeout(self.step_timeout, step.run(attempt)).await {
@@ -726,5 +734,28 @@ mod tests {
             BreakerPhase::Closed,
             "4 total failures but never 3 consecutive - must stay Closed"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn open_circuit_short_circuits_with_exact_retry_after_ms() {
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(10),
+        );
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Open);
+
+        tokio::time::advance(Duration::from_secs(4)).await;
+
+        let probe = CountingStep { calls: std::sync::atomic::AtomicU32::new(0) };
+        let result = breaker.call(&probe, 0.0).await;
+        assert_eq!(probe.calls.load(Ordering::SeqCst), 0, "step.run must not be invoked while Open");
+        match result {
+            Err(ExecutionError::CircuitOpen { retry_after_ms }) => assert_eq!(retry_after_ms, 6_000),
+            other => panic!("expected CircuitOpen{{retry_after_ms: 6000}}, got {other:?}"),
+        }
     }
 }
