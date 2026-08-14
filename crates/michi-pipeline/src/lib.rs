@@ -1184,6 +1184,46 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn render_field_exact_parsing_is_not_fooled_by_completed_in_step_name() {
+        // The all-success fixture above never creates the condition AC-038's
+        // field-exact parsing exists to guard: a row whose id/name literally
+        // contains the substring "completed" but whose real status is NOT
+        // completed. A naive `rendered.contains("completed")` check would be
+        // fooled by this row; field-exact parsing (checking fields[2]
+        // specifically) correctly reports it as failed.
+        let mut pipeline = make_pipeline(&["get-completed-orders"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> =
+            vec![Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) })];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        assert!(result.is_err());
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
+
+        let rendered = pipeline.render();
+        assert!(
+            rendered.contains("completed"),
+            "sanity check: the row's name must literally contain the substring 'completed' for this test to exercise anything"
+        );
+
+        let mut lines = rendered.lines();
+        let _header = lines.next().unwrap();
+        let row = lines.next().unwrap();
+        let row = row.strip_prefix("  ").unwrap_or(row);
+        let fields = split_toon_row(row);
+        assert_eq!(fields.len(), 3);
+        assert_ne!(
+            fields[2], "completed",
+            "field-exact parsing must report this row's real status, not be fooled by 'completed' appearing in the name field"
+        );
+        assert_eq!(fields[2], "failed");
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn pre_set_non_pending_status_does_not_skip_the_runner() {
         let mut pipeline = make_pipeline(&["a", "b"]);
         pipeline.steps[0].status = michi_core::pipeline::StepStatus::Completed;
