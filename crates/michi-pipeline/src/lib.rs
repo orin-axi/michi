@@ -1100,4 +1100,19 @@ mod tests {
             assert_eq!(step.status, michi_core::pipeline::StepStatus::Pending);
         }
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn empty_pipeline_and_empty_runners_returns_ok() {
+        let mut pipeline = make_pipeline(&[]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = Vec::new();
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        assert!(result.is_ok());
+        assert!(pipeline.steps.is_empty());
+    }
 }
