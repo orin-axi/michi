@@ -155,8 +155,8 @@ mod tests {
 
     #[tokio::test]
     async fn step_fn_adapts_closure_into_step() {
-        let s = step_fn(|_attempt: u32| async { Ok(()) });
-        let result = s.run(0).await;
+        let steps: Vec<Box<dyn Step>> = vec![Box::new(step_fn(|_attempt: u32| async { Ok(()) }))];
+        let result = steps[0].run(0).await;
         assert!(result.is_ok());
     }
 
