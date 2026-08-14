@@ -236,11 +236,35 @@ impl CircuitBreaker {
 }
 
 impl CircuitBreaker {
-    /// Executes `step` to completion. This early version invokes the step
-    /// exactly once with no retry, timeout, or phase logic; those are added
-    /// in later commits.
-    pub async fn call(&self, step: &dyn Step, _jitter_seed: f64) -> Result<(), ExecutionError> {
-        step.run(0).await
+    /// Executes `step` to completion, retrying retryable failures per
+    /// `retry_config` with `next_retry_delay`'s backoff, threading
+    /// `ExecutionError::Http`'s `retry_after` through when present. Returns
+    /// immediately on success or on a non-retryable error, and returns the
+    /// last error once `next_retry_delay` reports exhaustion. Timeout and
+    /// phase logic are added in later commits.
+    pub async fn call(&self, step: &dyn Step, jitter_seed: f64) -> Result<(), ExecutionError> {
+        let mut attempt = 0u32;
+        loop {
+            match step.run(attempt).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    if !err.is_retryable() {
+                        return Err(err);
+                    }
+                    let retry_after = match &err {
+                        ExecutionError::Http { retry_after, .. } => *retry_after,
+                        _ => None,
+                    };
+                    match michi_resilience::next_retry_delay(&self.retry_config, attempt, jitter_seed, retry_after) {
+                        Some(delay) => {
+                            tokio::time::sleep(delay).await;
+                            attempt += 1;
+                        }
+                        None => return Err(err),
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -452,6 +476,116 @@ mod tests {
         let result = breaker.call(&step, 0.0).await;
         let elapsed = before.elapsed();
         assert!(result.is_ok());
+        assert_eq!(step.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(elapsed, Duration::ZERO);
+    }
+
+    struct FlakyStep {
+        fail_until: u32,
+        calls: std::sync::atomic::AtomicU32,
+    }
+    impl Step for FlakyStep {
+        fn run<'a>(&'a self, attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move {
+                if attempt < self.fail_until {
+                    Err(ExecutionError::Failed { message: "flaky".into(), retryable: true })
+                } else {
+                    Ok(())
+                }
+            })
+        }
+    }
+
+    struct AlwaysFailStep {
+        retryable: bool,
+        calls: std::sync::atomic::AtomicU32,
+    }
+    impl Step for AlwaysFailStep {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let retryable = self.retryable;
+            Box::pin(async move { Err(ExecutionError::Failed { message: "always".into(), retryable }) })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retries_until_success_and_sums_delay() {
+        let retry_config =
+            michi_resilience::RetryConfig::new(5, Duration::from_millis(10), Duration::from_secs(1), 0.0);
+        let breaker =
+            CircuitBreaker::new(retry_config.clone(), Duration::from_secs(5), u32::MAX, Duration::from_secs(60));
+        let step = FlakyStep { fail_until: 2, calls: std::sync::atomic::AtomicU32::new(0) };
+        let before = tokio::time::Instant::now();
+        let result = breaker.call(&step, 0.0).await;
+        let elapsed = before.elapsed();
+        assert!(result.is_ok());
+        assert_eq!(step.calls.load(Ordering::SeqCst), 3);
+        let expected: Duration =
+            (0..2).filter_map(|a| michi_resilience::next_retry_delay(&retry_config, a, 0.0, None)).sum();
+        assert_eq!(elapsed, expected);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retries_thread_http_retry_after() {
+        let retry_config =
+            michi_resilience::RetryConfig::new(5, Duration::from_millis(10), Duration::from_secs(1), 0.0);
+        let breaker =
+            CircuitBreaker::new(retry_config.clone(), Duration::from_secs(5), u32::MAX, Duration::from_secs(60));
+        let ra = Duration::from_millis(300);
+        struct HttpThenOk(std::sync::atomic::AtomicU32);
+        impl Step for HttpThenOk {
+            fn run<'a>(
+                &'a self,
+                attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move {
+                    if attempt == 0 {
+                        Err(ExecutionError::Http {
+                            status: 503,
+                            message: "x".into(),
+                            retry_after: Some(Duration::from_millis(300)),
+                        })
+                    } else {
+                        Ok(())
+                    }
+                })
+            }
+        }
+        let step = HttpThenOk(std::sync::atomic::AtomicU32::new(0));
+        let before = tokio::time::Instant::now();
+        let result = breaker.call(&step, 0.0).await;
+        let elapsed = before.elapsed();
+        assert!(result.is_ok());
+        let expected = michi_resilience::next_retry_delay(&retry_config, 0, 0.0, Some(ra)).unwrap();
+        assert_eq!(elapsed, expected);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn exhausts_retries_then_fails() {
+        let retry_config =
+            michi_resilience::RetryConfig::new(3, Duration::from_millis(1), Duration::from_millis(10), 0.0);
+        let breaker = CircuitBreaker::new(retry_config, Duration::from_secs(5), u32::MAX, Duration::from_secs(60));
+        let step = AlwaysFailStep { retryable: true, calls: std::sync::atomic::AtomicU32::new(0) };
+        let result = breaker.call(&step, 0.0).await;
+        assert!(result.is_err());
+        assert_eq!(step.calls.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn non_retryable_failure_returns_after_one_attempt_zero_time() {
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            u32::MAX,
+            Duration::from_secs(60),
+        );
+        let step = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        let before = tokio::time::Instant::now();
+        let result = breaker.call(&step, 0.0).await;
+        let elapsed = before.elapsed();
+        assert!(result.is_err());
         assert_eq!(step.calls.load(Ordering::SeqCst), 1);
         assert_eq!(elapsed, Duration::ZERO);
     }
