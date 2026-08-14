@@ -350,6 +350,37 @@ impl CircuitBreaker {
     }
 }
 
+/// Runs the steps of `pipeline` sequentially in declaration order through
+/// `breaker`, writing each step's real outcome into `PipelineStep.status`.
+pub async fn execute_pipeline(
+    pipeline: &mut michi_core::pipeline::Pipeline,
+    runners: Vec<Box<dyn Step>>,
+    breaker: &CircuitBreaker,
+    jitter_seed: f64,
+) -> Result<(), ExecutionError> {
+    if runners.len() != pipeline.steps.len() {
+        return Err(ExecutionError::StepCountMismatch { expected: pipeline.steps.len(), got: runners.len() });
+    }
+    for (idx, runner) in runners.iter().enumerate() {
+        let outcome = breaker.call(runner.as_ref(), jitter_seed).await;
+        let step = &mut pipeline.steps[idx];
+        match outcome {
+            Ok(()) => {
+                step.status = michi_core::pipeline::StepStatus::Completed;
+            }
+            Err(err) => {
+                step.status = michi_core::pipeline::StepStatus::Failed;
+                return Err(ExecutionError::StepFailed {
+                    step_id: step.id.clone(),
+                    step_name: step.name.clone(),
+                    source: Box::new(err),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -981,5 +1012,66 @@ mod tests {
         );
         breaker.phase.store(PHASE_HALF_OPEN, Ordering::SeqCst);
         assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+    }
+
+    fn make_pipeline(ids: &[&str]) -> michi_core::pipeline::Pipeline {
+        michi_core::pipeline::Pipeline {
+            id: "p".into(),
+            steps: ids
+                .iter()
+                .map(|id| michi_core::pipeline::PipelineStep {
+                    id: (*id).into(),
+                    name: (*id).into(),
+                    status: michi_core::pipeline::StepStatus::Pending,
+                })
+                .collect(),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn runner_count_greater_than_steps_returns_mismatch_without_mutating_statuses() {
+        let mut pipeline = make_pipeline(&["a"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+        ];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::StepCountMismatch { expected, got }) => {
+                assert_eq!(expected, 1);
+                assert_eq!(got, 2);
+            }
+            other => panic!("expected StepCountMismatch{{expected: 1, got: 2}}, got {other:?}"),
+        }
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Pending);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn runner_count_less_than_steps_returns_mismatch_without_mutating_statuses() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = vec![Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) })];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::StepCountMismatch { expected, got }) => {
+                assert_eq!(expected, 2);
+                assert_eq!(got, 1);
+            }
+            other => panic!("expected StepCountMismatch{{expected: 2, got: 1}}, got {other:?}"),
+        }
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Pending);
+        }
     }
 }
