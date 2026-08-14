@@ -629,4 +629,21 @@ mod tests {
             other => panic!("expected Timeout, got {other:?}"),
         }
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn jitter_seed_forwarded_unmodified_for_non_finite_values() {
+        for seed in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 7.5, -3.0] {
+            let retry_config =
+                michi_resilience::RetryConfig::new(2, Duration::from_millis(10), Duration::from_secs(1), 0.5);
+            let breaker =
+                CircuitBreaker::new(retry_config.clone(), Duration::from_secs(5), u32::MAX, Duration::from_secs(60));
+            let step = FlakyStep { fail_until: 1, calls: std::sync::atomic::AtomicU32::new(0) };
+            let before = tokio::time::Instant::now();
+            let result = breaker.call(&step, seed).await;
+            let elapsed = before.elapsed();
+            assert!(result.is_ok(), "seed {seed} should not panic or fail construction");
+            let expected = michi_resilience::next_retry_delay(&retry_config, 0, seed, None).unwrap();
+            assert_eq!(elapsed, expected, "seed {seed} elapsed mismatch");
+        }
+    }
 }
