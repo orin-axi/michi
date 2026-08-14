@@ -1428,4 +1428,40 @@ mod tests {
             "all 3 steps must have used the same jitter_seed, producing 3 identical delays"
         );
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn panicking_kth_step_propagates_and_leaves_correct_partial_state() {
+        let pipeline = std::sync::Arc::new(tokio::sync::Mutex::new(make_pipeline(&["a", "b", "c"])));
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            10,
+            Duration::from_secs(60),
+        ));
+
+        let handle = {
+            let pipeline = std::sync::Arc::clone(&pipeline);
+            let breaker = std::sync::Arc::clone(&breaker);
+            tokio::spawn(async move {
+                let mut guard = pipeline.lock().await;
+                let runners: Vec<Box<dyn Step>> = vec![
+                    Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+                    Box::new(PanicsStep),
+                    Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+                ];
+                let _ = execute_pipeline(&mut guard, runners, &breaker, 0.0).await;
+            })
+        };
+        let join_result = handle.await;
+        assert!(join_result.is_err(), "the panic must propagate out of execute_pipeline uncaught");
+
+        let guard = pipeline.lock().await;
+        assert_eq!(guard.steps[0].status, michi_core::pipeline::StepStatus::Completed);
+        assert_eq!(
+            guard.steps[1].status,
+            michi_core::pipeline::StepStatus::Pending,
+            "step K's status must be untouched, not Failed"
+        );
+        assert_eq!(guard.steps[2].status, michi_core::pipeline::StepStatus::Pending);
+    }
 }
