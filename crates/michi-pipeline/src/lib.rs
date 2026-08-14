@@ -1182,4 +1182,39 @@ mod tests {
         }
         assert_eq!(row_count, 3);
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn pre_set_non_pending_status_does_not_skip_the_runner() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        pipeline.steps[0].status = michi_core::pipeline::StepStatus::Completed;
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runner0 = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(SpyStep(std::sync::Arc::clone(&runner0))),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+        ];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            runner0.load(Ordering::SeqCst),
+            1,
+            "the pre-Completed step's runner must still be invoked exactly once"
+        );
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
+    }
 }
