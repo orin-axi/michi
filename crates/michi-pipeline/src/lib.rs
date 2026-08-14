@@ -1389,4 +1389,43 @@ mod tests {
             ]
         );
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn jitter_seed_is_identical_across_every_step() {
+        let mut pipeline = make_pipeline(&["a", "b", "c"]);
+        let retry_config =
+            michi_resilience::RetryConfig::new(1, Duration::from_millis(10), Duration::from_millis(100), 0.5);
+        let breaker = CircuitBreaker::new(retry_config.clone(), Duration::from_secs(5), 10, Duration::from_secs(60));
+
+        struct SeedSpyStep;
+        impl Step for SeedSpyStep {
+            fn run<'a>(
+                &'a self,
+                attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                Box::pin(async move {
+                    if attempt == 0 {
+                        Err(ExecutionError::Failed { message: "retry once".into(), retryable: true })
+                    } else {
+                        Ok(())
+                    }
+                })
+            }
+        }
+
+        let runners: Vec<Box<dyn Step>> = (0..3).map(|_| Box::new(SeedSpyStep) as Box<dyn Step>).collect();
+
+        let call_seed = 0.42_f64;
+        let before = tokio::time::Instant::now();
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, call_seed).await;
+        let elapsed = before.elapsed();
+        assert!(result.is_ok());
+
+        let per_step_delay = michi_resilience::next_retry_delay(&retry_config, 0, call_seed, None).unwrap();
+        assert_eq!(
+            elapsed,
+            per_step_delay * 3,
+            "all 3 steps must have used the same jitter_seed, producing 3 identical delays"
+        );
+    }
 }
