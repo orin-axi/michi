@@ -1217,4 +1217,59 @@ mod tests {
         );
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn nth_step_failure_is_fail_fast_with_exact_source_and_statuses() {
+        let mut pipeline = make_pipeline(&["a", "b", "c"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            u32::MAX,
+            Duration::from_secs(10),
+        );
+        let after_calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        struct AlwaysFailsNonRetryableStep;
+        impl Step for AlwaysFailsNonRetryableStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                Box::pin(async { Err(ExecutionError::Failed { message: "boom".into(), retryable: false }) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(AlwaysFailsNonRetryableStep),
+            Box::new(SpyStep(std::sync::Arc::clone(&after_calls))),
+        ];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        assert_eq!(after_calls.load(Ordering::SeqCst), 0, "no runner after the failing step may be invoked");
+        match result {
+            Err(ExecutionError::StepFailed { step_id, step_name, source }) => {
+                assert_eq!(step_id, "b");
+                assert_eq!(step_name, "b");
+                match *source {
+                    ExecutionError::Failed { ref message, retryable } => {
+                        assert_eq!(message, "boom");
+                        assert!(!retryable);
+                    }
+                    other => panic!("expected the exact Failed source, got {other:?}"),
+                }
+            }
+            other => panic!("expected StepFailed, got {other:?}"),
+        }
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Failed);
+        assert_eq!(pipeline.steps[2].status, michi_core::pipeline::StepStatus::Pending);
+    }
 }
