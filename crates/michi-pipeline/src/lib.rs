@@ -140,15 +140,20 @@ impl From<ExecutionError> for michi_core::DomainError {
             ExecutionError::Failed { message, .. } => {
                 michi_core::DomainError::new(michi_core::ErrorCode::ExternalFailure, message)
             }
-            ExecutionError::CircuitOpen { .. } => {
-                michi_core::DomainError::new(michi_core::ErrorCode::Unavailable, "placeholder")
-            }
+            ExecutionError::CircuitOpen { retry_after_ms } => michi_core::DomainError::new(
+                michi_core::ErrorCode::Unavailable,
+                format!("circuit open, retry after {retry_after_ms}ms"),
+            )
+            .retryable(true)
+            .retry_after(std::time::Duration::from_millis(retry_after_ms)),
             ExecutionError::StepFailed { .. } => {
                 michi_core::DomainError::new(michi_core::ErrorCode::ExternalFailure, "placeholder")
             }
-            ExecutionError::StepCountMismatch { .. } => {
-                michi_core::DomainError::new(michi_core::ErrorCode::InvalidInput, "placeholder")
-            }
+            ExecutionError::StepCountMismatch { expected, got } => michi_core::DomainError::new(
+                michi_core::ErrorCode::InvalidInput,
+                format!("expected {expected} runners, got {got}"),
+            )
+            .retryable(false),
         }
     }
 }
@@ -247,6 +252,22 @@ mod tests {
         let d: michi_core::DomainError =
             ExecutionError::Http { status: 400, message: "bad request".into(), retry_after: None }.into();
         assert_eq!(d.code, michi_core::ErrorCode::ExternalFailure);
+        assert!(!d.retryable);
+    }
+
+    #[test]
+    fn timeout_circuit_open_and_mismatch_conversions() {
+        let d: michi_core::DomainError = ExecutionError::Timeout { elapsed_ms: 250 }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::Timeout);
+        assert!(d.retryable);
+
+        let d: michi_core::DomainError = ExecutionError::CircuitOpen { retry_after_ms: 750 }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::Unavailable);
+        assert!(d.retryable);
+        assert_eq!(d.retry_after, Some(std::time::Duration::from_millis(750)));
+
+        let d: michi_core::DomainError = ExecutionError::StepCountMismatch { expected: 3, got: 1 }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::InvalidInput);
         assert!(!d.retryable);
     }
 }
