@@ -1291,4 +1291,62 @@ mod tests {
             assert_ne!(step.status, michi_core::pipeline::StepStatus::Skipped);
         }
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn steps_execute_strictly_sequentially_with_a_sleep_window() {
+        let mut pipeline = make_pipeline(&["s0", "s1", "s2"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let log: std::sync::Arc<std::sync::Mutex<Vec<(&'static str, String)>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        struct MarkerStep {
+            id: String,
+            log: std::sync::Arc<std::sync::Mutex<Vec<(&'static str, String)>>>,
+            sleep: Option<Duration>,
+        }
+        impl Step for MarkerStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                Box::pin(async move {
+                    self.log.lock().unwrap_or_else(|e| e.into_inner()).push(("start", self.id.clone()));
+                    if let Some(sleep) = self.sleep {
+                        tokio::time::sleep(sleep).await;
+                    }
+                    self.log.lock().unwrap_or_else(|e| e.into_inner()).push(("end", self.id.clone()));
+                    Ok(())
+                })
+            }
+        }
+
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(MarkerStep {
+                id: "s0".into(),
+                log: std::sync::Arc::clone(&log),
+                sleep: Some(Duration::from_millis(50)),
+            }),
+            Box::new(MarkerStep { id: "s1".into(), log: std::sync::Arc::clone(&log), sleep: None }),
+            Box::new(MarkerStep { id: "s2".into(), log: std::sync::Arc::clone(&log), sleep: None }),
+        ];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        assert!(result.is_ok());
+        let recorded = log.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        assert_eq!(
+            recorded,
+            vec![
+                ("start", "s0".to_string()),
+                ("end", "s0".to_string()),
+                ("start", "s1".to_string()),
+                ("end", "s1".to_string()),
+                ("start", "s2".to_string()),
+                ("end", "s2".to_string()),
+            ]
+        );
+    }
 }
