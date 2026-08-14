@@ -116,6 +116,43 @@ where
     }
 }
 
+impl From<ExecutionError> for michi_core::DomainError {
+    fn from(err: ExecutionError) -> Self {
+        match err {
+            ExecutionError::Http { status, message, retry_after } => {
+                let code = match status {
+                    429 => michi_core::ErrorCode::RateLimited,
+                    502..=504 => michi_core::ErrorCode::Unavailable,
+                    _ => michi_core::ErrorCode::ExternalFailure,
+                };
+                let retryable = michi_resilience::is_retryable_status(status);
+                let mut domain_err = michi_core::DomainError::new(code, message).retryable(retryable);
+                if let Some(retry_after) = retry_after {
+                    domain_err = domain_err.retry_after(retry_after);
+                }
+                domain_err
+            }
+            ExecutionError::Timeout { elapsed_ms } => michi_core::DomainError::new(
+                michi_core::ErrorCode::Timeout,
+                format!("step timed out after {elapsed_ms}ms"),
+            )
+            .retryable(true),
+            ExecutionError::Failed { message, .. } => {
+                michi_core::DomainError::new(michi_core::ErrorCode::ExternalFailure, message)
+            }
+            ExecutionError::CircuitOpen { .. } => {
+                michi_core::DomainError::new(michi_core::ErrorCode::Unavailable, "placeholder")
+            }
+            ExecutionError::StepFailed { .. } => {
+                michi_core::DomainError::new(michi_core::ErrorCode::ExternalFailure, "placeholder")
+            }
+            ExecutionError::StepCountMismatch { .. } => {
+                michi_core::DomainError::new(michi_core::ErrorCode::InvalidInput, "placeholder")
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,5 +224,29 @@ mod tests {
         }
         .is_retryable());
         assert!(!ExecutionError::StepCountMismatch { expected: 1, got: 2 }.is_retryable());
+    }
+
+    #[test]
+    fn http_conversion_maps_status_groups() {
+        let d: michi_core::DomainError = ExecutionError::Http {
+            status: 429,
+            message: "rate limited".into(),
+            retry_after: Some(Duration::from_secs(2)),
+        }
+        .into();
+        assert_eq!(d.code, michi_core::ErrorCode::RateLimited);
+        assert!(d.retryable);
+        assert_eq!(d.retry_after, Some(Duration::from_secs(2)));
+
+        let d: michi_core::DomainError =
+            ExecutionError::Http { status: 503, message: "unavailable".into(), retry_after: None }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::Unavailable);
+        assert!(d.retryable);
+        assert_eq!(d.retry_after, None);
+
+        let d: michi_core::DomainError =
+            ExecutionError::Http { status: 400, message: "bad request".into(), retry_after: None }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::ExternalFailure);
+        assert!(!d.retryable);
     }
 }
