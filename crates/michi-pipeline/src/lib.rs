@@ -245,7 +245,13 @@ impl CircuitBreaker {
     pub async fn call(&self, step: &dyn Step, jitter_seed: f64) -> Result<(), ExecutionError> {
         let mut attempt = 0u32;
         loop {
-            match step.run(attempt).await {
+            let attempt_result = match tokio::time::timeout(self.step_timeout, step.run(attempt)).await {
+                Ok(result) => result,
+                Err(_) => Err(ExecutionError::Timeout {
+                    elapsed_ms: u64::try_from(self.step_timeout.as_millis()).unwrap_or(u64::MAX),
+                }),
+            };
+            match attempt_result {
                 Ok(()) => return Ok(()),
                 Err(err) => {
                     if !err.is_retryable() {
@@ -588,5 +594,39 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(step.calls.load(Ordering::SeqCst), 1);
         assert_eq!(elapsed, Duration::ZERO);
+    }
+
+    struct NeverCompletes;
+    impl Step for NeverCompletes {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_secs(3600)).await;
+                Ok(())
+            })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn attempt_exceeding_step_timeout_fails_with_timeout_elapsed_ms() {
+        let retry_config =
+            michi_resilience::RetryConfig::try_new(0, Duration::from_millis(1), Duration::from_millis(1), 0.0).unwrap();
+        let breaker = CircuitBreaker::new(retry_config, Duration::from_millis(500), u32::MAX, Duration::from_secs(60));
+        let result = breaker.call(&NeverCompletes, 0.0).await;
+        match result {
+            Err(ExecutionError::Timeout { elapsed_ms }) => assert_eq!(elapsed_ms, 500),
+            other => panic!("expected Timeout, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn zero_step_timeout_floors_to_one_millisecond() {
+        let retry_config =
+            michi_resilience::RetryConfig::try_new(0, Duration::from_millis(1), Duration::from_millis(1), 0.0).unwrap();
+        let breaker = CircuitBreaker::new(retry_config, Duration::ZERO, u32::MAX, Duration::from_secs(60));
+        let result = breaker.call(&NeverCompletes, 0.0).await;
+        match result {
+            Err(ExecutionError::Timeout { elapsed_ms }) => assert_eq!(elapsed_ms, 1),
+            other => panic!("expected Timeout, got {other:?}"),
+        }
     }
 }
