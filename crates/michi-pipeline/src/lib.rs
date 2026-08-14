@@ -84,7 +84,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 /// What a pipeline step invokes. `attempt` is 0-indexed and supplied by
-/// [`CircuitBreaker::call`], incrementing by 1 on each retry. Object-safe by
+/// `CircuitBreaker::call`, incrementing by 1 on each retry. Object-safe by
 /// construction, so `Vec<Box<dyn Step>>` is usable without an async-trait
 /// dependency.
 pub trait Step: Send + Sync {
