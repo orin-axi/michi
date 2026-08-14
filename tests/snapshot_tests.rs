@@ -1,7 +1,9 @@
 use michi::empty::empty_state_with_hints;
 use michi::error::{DomainError, ErrorCode};
 use michi::hints::Hint;
+use michi::idempotency::{FailedOp, PartialSuccess};
 use michi::kv::{render_kv, KvItem, KvValue};
+use michi::recovery::RecoveryHint;
 use michi::response::{AgentResponse, OutputFormat};
 use michi::status::{Health, StatusItem, StatusResponse};
 use michi::toon::{render_toon, ToonOptions, Value};
@@ -95,6 +97,20 @@ fn snapshot_call_tool_result_kv() {
         .human_content("Issue abc-123 is currently open.");
     let result = r.to_call_tool_result();
     insta::assert_debug_snapshot!(result);
+}
+
+#[test]
+fn snapshot_partial_success_full() {
+    let ps = PartialSuccess {
+        completed: vec!["create_issue".into(), "add_label".into()],
+        failed: vec![FailedOp {
+            operation: "assign_user".into(),
+            reason: "User 'ghost' not found".into(),
+            recovery: Some(RecoveryHint::new("assign_user").param("user", KvValue::Text("alice".into()))),
+        }],
+        skipped: vec!["notify_team".into()],
+    };
+    insta::assert_snapshot!(ps.render());
 }
 
 #[test]
