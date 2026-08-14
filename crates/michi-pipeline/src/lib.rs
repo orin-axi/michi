@@ -235,6 +235,15 @@ impl CircuitBreaker {
     }
 }
 
+impl CircuitBreaker {
+    /// Executes `step` to completion. This early version invokes the step
+    /// exactly once with no retry, timeout, or phase logic; those are added
+    /// in later commits.
+    pub async fn call(&self, step: &dyn Step, _jitter_seed: f64) -> Result<(), ExecutionError> {
+        step.run(0).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,5 +414,32 @@ mod tests {
             std::time::Duration::ZERO,
         );
         assert_eq!(breaker.phase(), BreakerPhase::Closed);
+    }
+
+    struct CountingStep {
+        calls: std::sync::atomic::AtomicU32,
+    }
+    impl Step for CountingStep {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn call_succeeds_in_one_attempt_with_zero_virtual_time() {
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(1),
+            u32::MAX,
+            Duration::from_secs(60),
+        );
+        let step = CountingStep { calls: std::sync::atomic::AtomicU32::new(0) };
+        let before = tokio::time::Instant::now();
+        let result = breaker.call(&step, 0.0).await;
+        let elapsed = before.elapsed();
+        assert!(result.is_ok());
+        assert_eq!(step.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(elapsed, Duration::ZERO);
     }
 }
