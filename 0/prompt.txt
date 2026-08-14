@@ -1,0 +1,33 @@
+Continue the michi characterization-spec "full works" initiative: check on canon-drift-checker for michi-core-error.json (task #49). If completed, close gaps directly (write missing tests, fix spec text), then canon-auditor, then canon-exit-gate rounds, applying the same escalation policy as prior specs (stop and consult user if defect count plateaus after ~3-4 rounds rather than converging; push for a confirming round if clearly converging). If still running, re-schedule.
+
+---
+
+It's been iddling for a while, it means it's not coming back with data. You missed it
+
+---
+
+You stayed here overnight, nothing came back. You keep doing this. WTF
+
+---
+
+Nudged won’t help
+
+---
+
+I’m telling you, you lost track and you lost the plot. This thing is not coming back with data. You wasted my money and tokens without any results. wtf
+
+---
+
+What's next?
+
+---
+
+debris file? What of the stashes? Of the features we implemented what is done and what is left?
+
+---
+
+Let’s proceed with the plan
+
+---
+
+Did we land the stashed doc actions? Are all of the docs clean and up-to-date? Have we cleaned up the plan?
