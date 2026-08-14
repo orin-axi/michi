@@ -236,12 +236,34 @@ impl CircuitBreaker {
 }
 
 impl CircuitBreaker {
+    fn record_failure(&self) {
+        let count = self.consecutive_failures.fetch_add(1, Ordering::SeqCst) + 1;
+        if count >= self.failure_threshold {
+            self.open_circuit();
+        }
+    }
+
+    fn record_success(&self) {
+        self.consecutive_failures.store(0, Ordering::SeqCst);
+    }
+
+    fn open_circuit(&self) {
+        let elapsed_ms = u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.opened_at_ms.store(elapsed_ms, Ordering::SeqCst);
+        self.phase.store(PHASE_OPEN, Ordering::SeqCst);
+    }
+}
+
+impl CircuitBreaker {
     /// Executes `step` to completion, retrying retryable failures per
     /// `retry_config` with `next_retry_delay`'s backoff, threading
     /// `ExecutionError::Http`'s `retry_after` through when present. Returns
     /// immediately on success or on a non-retryable error, and returns the
-    /// last error once `next_retry_delay` reports exhaustion. Timeout and
-    /// phase logic are added in later commits.
+    /// last error once `next_retry_delay` reports exhaustion. On success,
+    /// resets the consecutive-failure counter; on a call-level failure
+    /// (after retries are exhausted or the error is non-retryable),
+    /// increments the counter once and opens the circuit at
+    /// `failure_threshold`.
     pub async fn call(&self, step: &dyn Step, jitter_seed: f64) -> Result<(), ExecutionError> {
         let mut attempt = 0u32;
         loop {
@@ -252,9 +274,13 @@ impl CircuitBreaker {
                 }),
             };
             match attempt_result {
-                Ok(()) => return Ok(()),
+                Ok(()) => {
+                    self.record_success();
+                    return Ok(());
+                }
                 Err(err) => {
                     if !err.is_retryable() {
+                        self.record_failure();
                         return Err(err);
                     }
                     let retry_after = match &err {
@@ -266,7 +292,10 @@ impl CircuitBreaker {
                             tokio::time::sleep(delay).await;
                             attempt += 1;
                         }
-                        None => return Err(err),
+                        None => {
+                            self.record_failure();
+                            return Err(err);
+                        }
                     }
                 }
             }
@@ -645,5 +674,57 @@ mod tests {
             let expected = michi_resilience::next_retry_delay(&retry_config, 0, seed, None).unwrap();
             assert_eq!(elapsed, expected, "seed {seed} elapsed mismatch");
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn threshold_consecutive_failures_opens_circuit_once_per_call_not_per_attempt() {
+        let retry_config =
+            michi_resilience::RetryConfig::new(5, Duration::from_millis(1), Duration::from_millis(10), 0.0);
+        let breaker = CircuitBreaker::new(retry_config, Duration::from_secs(5), 2, Duration::from_secs(60));
+        let step = AlwaysFailStep { retryable: true, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&step, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Closed, "one failing call must not open a threshold-2 breaker");
+        assert_eq!(
+            step.calls.load(Ordering::SeqCst),
+            6,
+            "first call() must still exhaust all 6 attempts (max_retries=5)"
+        );
+        assert!(breaker.call(&step, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Open, "second failing call() must open the threshold-2 breaker");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn zero_failure_threshold_behaves_like_one() {
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            0,
+            Duration::from_secs(60),
+        );
+        let step = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&step, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Open);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn success_resets_counter_so_four_non_consecutive_failures_never_open_a_threshold_three_breaker() {
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            3,
+            Duration::from_secs(60),
+        );
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        let ok = CountingStep { calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert!(breaker.call(&ok, 0.0).await.is_ok());
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        assert_eq!(
+            breaker.phase(),
+            BreakerPhase::Closed,
+            "4 total failures but never 3 consecutive - must stay Closed"
+        );
     }
 }
