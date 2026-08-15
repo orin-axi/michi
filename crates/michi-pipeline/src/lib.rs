@@ -225,6 +225,14 @@ impl StepDependencies {
         }
         Ok(Self { ids: seen, edges: HashMap::new() })
     }
+
+    /// Declares that dependent must not be invoked until dependency has
+    /// reached StepStatus::Completed. Calling this repeatedly for the same
+    /// dependent accumulates additional prerequisite edges rather than
+    /// overwriting prior ones.
+    pub fn depends_on(&mut self, dependent: &str, dependency: &str) {
+        self.edges.entry(dependent.to_string()).or_default().push(dependency.to_string());
+    }
 }
 
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
@@ -1603,5 +1611,17 @@ mod tests {
         let deps = StepDependencies::new(&ids).expect("distinct ids must construct");
         assert!(deps.edges.is_empty());
         assert_eq!(deps.ids.len(), 2);
+    }
+
+    #[test]
+    fn depends_on_accumulates_multiple_edges_for_the_same_dependent() {
+        let ids = vec!["a1".to_string(), "a2".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a1");
+        deps.depends_on("b", "a2");
+        let edges = deps.edges.get("b").expect("b must have edges");
+        assert_eq!(edges.len(), 2, "the second call must add a second edge, not overwrite the first");
+        assert!(edges.contains(&"a1".to_string()));
+        assert!(edges.contains(&"a2".to_string()));
     }
 }
