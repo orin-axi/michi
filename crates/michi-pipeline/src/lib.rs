@@ -2437,4 +2437,98 @@ mod tests {
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
         assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Completed);
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn dependent_waits_for_both_declared_prerequisites_to_complete() {
+        let mut pipeline = make_pipeline(&["a1", "a2", "b"]);
+        let ids = vec!["a1".to_string(), "a2".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a1");
+        deps.depends_on("b", "a2");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..3)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(result.is_ok());
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
+        }
+    }
+
+    struct GatedNeverResolves(std::sync::Arc<tokio::sync::Notify>);
+    impl Step for GatedNeverResolves {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            let notify = std::sync::Arc::clone(&self.0);
+            Box::pin(async move {
+                notify.notified().await;
+                Ok(())
+            })
+        }
+    }
+
+    struct CountingSkippableStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+    impl Step for CountingSkippableStep {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn dependent_is_skipped_as_soon_as_either_prerequisite_fails_without_waiting_for_the_other() {
+        let mut pipeline = make_pipeline(&["a1", "a2", "b"]);
+        let ids = vec!["a1".to_string(), "a2".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a1");
+        deps.depends_on("b", "a2");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::new(0, Duration::from_millis(1), Duration::from_secs(1), 0.0),
+            Duration::from_secs(3600),
+            u32::MAX,
+            Duration::from_secs(60),
+        ));
+        let a2_notify = std::sync::Arc::new(tokio::sync::Notify::new());
+        let b_calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(GatedNeverResolves(std::sync::Arc::clone(&a2_notify))),
+            Box::new(CountingSkippableStep(std::sync::Arc::clone(&b_calls))),
+        ];
+
+        let result = {
+            let fut = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0);
+            tokio::pin!(fut);
+            let waker = std::task::Waker::noop();
+            let mut cx = std::task::Context::from_waker(waker);
+
+            for _ in 0..8 {
+                let poll = fut.as_mut().poll(&mut cx);
+                assert!(matches!(poll, std::task::Poll::Pending), "the run must not resolve before a2 is notified");
+                tokio::task::yield_now().await;
+            }
+            assert_eq!(
+                b_calls.load(Ordering::SeqCst),
+                0,
+                "b must not be invoked while a1 has failed but a2 has not yet been released - this is the witness that b's skip does not wait on a2"
+            );
+
+            a2_notify.notify_one();
+            fut.await
+        };
+
+        assert!(matches!(result, Err(ExecutionError::StepFailed { .. })));
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
+        assert_eq!(pipeline.steps[2].status, michi_core::pipeline::StepStatus::Skipped);
+        assert_eq!(
+            b_calls.load(Ordering::SeqCst),
+            0,
+            "b's runner must never have been invoked at all, even after the run completed"
+        );
+    }
 }
