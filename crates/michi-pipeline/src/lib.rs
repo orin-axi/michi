@@ -42,7 +42,13 @@ pub enum ExecutionError {
     /// The circuit breaker short-circuited the call without invoking the step.
     #[error("circuit open, retry after {retry_after_ms}ms")]
     CircuitOpen {
-        /// Milliseconds remaining until the circuit may allow a probe call.
+        /// Milliseconds until the circuit may allow a probe call. On the
+        /// Open-phase short-circuit path this is a precise remaining wait.
+        /// On a losing concurrent HalfOpen caller's path (see
+        /// [`CircuitBreaker::call`]'s HalfOpen single-flight gate) this is
+        /// instead a conservative fixed estimate equal to the breaker's
+        /// configured `open_duration_ms`, since the in-flight probe's
+        /// outcome (and thus the true wait) is not yet known.
         retry_after_ms: u64,
     },
     /// A pipeline step failed, wrapping which step and its underlying cause.
@@ -309,6 +315,7 @@ pub struct CircuitBreaker {
     phase: AtomicU8,
     opened_at_ms: AtomicU64,
     consecutive_failures: AtomicU32,
+    half_open_claimed: std::sync::atomic::AtomicBool,
     epoch: tokio::time::Instant,
 }
 
@@ -333,6 +340,7 @@ impl CircuitBreaker {
             phase: AtomicU8::new(PHASE_CLOSED),
             opened_at_ms: AtomicU64::new(0),
             consecutive_failures: AtomicU32::new(0),
+            half_open_claimed: std::sync::atomic::AtomicBool::new(false),
             epoch: tokio::time::Instant::now(),
         }
     }
@@ -378,6 +386,16 @@ impl CircuitBreaker {
     }
 }
 
+struct HalfOpenGuard<'a> {
+    claimed: &'a std::sync::atomic::AtomicBool,
+}
+
+impl Drop for HalfOpenGuard<'_> {
+    fn drop(&mut self) {
+        self.claimed.store(false, Ordering::SeqCst);
+    }
+}
+
 impl CircuitBreaker {
     /// Executes `step`, with behavior depending on [`CircuitBreaker::phase`].
     ///
@@ -409,6 +427,11 @@ impl CircuitBreaker {
             return Err(ExecutionError::CircuitOpen { retry_after_ms });
         }
         if phase == BreakerPhase::HalfOpen {
+            if self.half_open_claimed.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+                let open_duration_ms = u64::try_from(self.open_duration.as_millis()).unwrap_or(u64::MAX);
+                return Err(ExecutionError::CircuitOpen { retry_after_ms: open_duration_ms });
+            }
+            let _gate_guard = HalfOpenGuard { claimed: &self.half_open_claimed };
             let attempt_result = match tokio::time::timeout(self.step_timeout, step.run(0)).await {
                 Ok(result) => result,
                 Err(_) => Err(ExecutionError::Timeout {
@@ -1207,6 +1230,59 @@ mod tests {
         assert!(result.is_err(), "HalfOpen probe must not retry into the eventual success");
         assert_eq!(step.calls.load(Ordering::SeqCst), 1, "exactly one attempt during HalfOpen");
         assert_eq!(breaker.phase(), BreakerPhase::Open);
+    }
+
+    struct GatedProbe {
+        release: std::sync::Arc<tokio::sync::Notify>,
+        calls: std::sync::atomic::AtomicU32,
+    }
+    impl Step for GatedProbe {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let release = std::sync::Arc::clone(&self.release);
+            Box::pin(async move {
+                release.notified().await;
+                Ok(())
+            })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn only_one_concurrent_half_open_caller_invokes_the_probe() {
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(60),
+            1,
+            Duration::from_secs(10),
+        ));
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+
+        let release = std::sync::Arc::new(tokio::sync::Notify::new());
+        let probe = std::sync::Arc::new(GatedProbe {
+            release: std::sync::Arc::clone(&release),
+            calls: std::sync::atomic::AtomicU32::new(0),
+        });
+
+        let b1 = std::sync::Arc::clone(&breaker);
+        let p1 = std::sync::Arc::clone(&probe);
+        let winner = tokio::spawn(async move { b1.call(p1.as_ref(), 0.0).await });
+        tokio::task::yield_now().await;
+
+        let loser_result = breaker.call(probe.as_ref(), 0.0).await;
+        match loser_result {
+            Err(ExecutionError::CircuitOpen { retry_after_ms }) => assert_eq!(retry_after_ms, 10_000),
+            other => panic!(
+                "expected the losing concurrent caller to get CircuitOpen{{retry_after_ms: 10000}} immediately, got {other:?}"
+            ),
+        }
+        assert_eq!(probe.calls.load(Ordering::SeqCst), 1, "only the winner may have invoked Step::run");
+
+        release.notify_one();
+        assert!(winner.await.unwrap().is_ok());
+        assert_eq!(breaker.phase(), BreakerPhase::Closed);
     }
 
     struct PanicsStep;
