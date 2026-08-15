@@ -2890,4 +2890,68 @@ mod tests {
             execute_pipeline(p, r, b, j).await
         }
     }
+
+    struct NeverResolvesStep;
+    impl Step for NeverResolvesStep {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            Box::pin(std::future::pending())
+        }
+    }
+
+    struct DelayedPanicStep;
+    impl Step for DelayedPanicStep {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                panic!("deliberate test panic");
+            })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn panicking_step_contributes_neither_success_nor_failure_to_the_shared_breaker() {
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(60),
+            2,
+            Duration::from_secs(60),
+        ));
+        let pipeline = std::sync::Arc::new(tokio::sync::Mutex::new(make_pipeline(&["a", "b", "c"])));
+        let ids = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+
+        let breaker_for_task = std::sync::Arc::clone(&breaker);
+        let pipeline_for_task = std::sync::Arc::clone(&pipeline);
+        let handle = tokio::spawn(async move {
+            let mut guard = pipeline_for_task.lock().await;
+            let runners: Vec<Box<dyn Step>> = vec![
+                Box::new(DelayedPanicStep),
+                Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+                Box::new(NeverResolvesStep),
+            ];
+            execute_pipeline_parallel(&mut guard, &deps, runners, breaker_for_task, 0.0).await
+        });
+        let join_result = handle.await;
+        assert!(
+            join_result.is_err(),
+            "the panic must propagate out of execute_pipeline_parallel uncaught, surfacing as a JoinError on this outer spawn"
+        );
+        assert_eq!(
+            breaker.phase(),
+            BreakerPhase::Closed,
+            "b's single failure alone must not reach failure_threshold=2 - proving a's panic contributed no failure count of its own"
+        );
+
+        let guard = pipeline.lock().await;
+        assert_eq!(
+            guard.steps[0].status,
+            michi_core::pipeline::StepStatus::Pending,
+            "a, the panicking step's own status, must be left untouched"
+        );
+        assert_eq!(
+            guard.steps[2].status,
+            michi_core::pipeline::StepStatus::Pending,
+            "c, a third step never drained before the panic was observed, must also be left untouched"
+        );
+    }
 }
