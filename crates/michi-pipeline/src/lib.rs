@@ -202,6 +202,31 @@ impl From<ExecutionError> for michi_core::DomainError {
     }
 }
 
+use std::collections::{HashMap, HashSet};
+
+/// A dependency graph over step ids, consumed by [`execute_pipeline_parallel`].
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct StepDependencies {
+    ids: HashSet<String>,
+    edges: HashMap<String, Vec<String>>,
+}
+
+impl StepDependencies {
+    /// Constructs an empty dependency graph (no edges) over ids. Fails
+    /// with ExecutionError::DuplicateStepId if ids contains the same
+    /// id more than once.
+    pub fn new(ids: &[String]) -> Result<Self, ExecutionError> {
+        let mut seen = HashSet::new();
+        for id in ids {
+            if !seen.insert(id.clone()) {
+                return Err(ExecutionError::DuplicateStepId { step_id: id.clone() });
+            }
+        }
+        Ok(Self { ids: seen, edges: HashMap::new() })
+    }
+}
+
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 const PHASE_CLOSED: u8 = 0;
@@ -1561,5 +1586,22 @@ mod tests {
         let d: michi_core::DomainError = ExecutionError::CyclicDependency { step_id: "c".into() }.into();
         assert_eq!(d.code, michi_core::ErrorCode::InvalidInput);
         assert!(!d.retryable);
+    }
+
+    #[test]
+    fn step_dependencies_new_rejects_duplicate_ids() {
+        let ids = vec!["a".to_string(), "b".to_string(), "a".to_string()];
+        match StepDependencies::new(&ids) {
+            Err(ExecutionError::DuplicateStepId { step_id }) => assert_eq!(step_id, "a"),
+            other => panic!("expected DuplicateStepId, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn step_dependencies_new_accepts_distinct_ids_with_zero_edges() {
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let deps = StepDependencies::new(&ids).expect("distinct ids must construct");
+        assert!(deps.edges.is_empty());
+        assert_eq!(deps.ids.len(), 2);
     }
 }
