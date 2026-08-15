@@ -498,6 +498,24 @@ pub async fn execute_pipeline(
     Ok(())
 }
 
+/// Executes pipeline.steps concurrently, honoring the dependency edges in
+/// deps. Full scheduling semantics land in later commits; this version
+/// only implements the two eager fast paths that require no scheduling at
+/// all.
+pub async fn execute_pipeline_parallel(
+    pipeline: &mut michi_core::pipeline::Pipeline,
+    deps: &StepDependencies,
+    runners: Vec<Box<dyn Step>>,
+    breaker: std::sync::Arc<CircuitBreaker>,
+    jitter_seed: f64,
+) -> Result<(), ExecutionError> {
+    let _ = (deps, breaker, jitter_seed);
+    if runners.len() != pipeline.steps.len() {
+        return Err(ExecutionError::StepCountMismatch { expected: pipeline.steps.len(), got: runners.len() });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1699,5 +1717,42 @@ mod tests {
         deps.depends_on("b", "a");
         deps.depends_on("c", "b");
         assert_eq!(detect_cycle(&deps), None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn parallel_runner_count_mismatch_returns_error_without_mutating_statuses() {
+        let mut pipeline = make_pipeline(&["a"]);
+        let deps = StepDependencies::new(&["a".to_string()]).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::StepCountMismatch { expected, got }) => {
+                assert_eq!(expected, 1);
+                assert_eq!(got, 0);
+            }
+            other => panic!("expected StepCountMismatch, got {other:?}"),
+        }
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Pending);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn parallel_empty_pipeline_returns_ok_immediately() {
+        let mut pipeline = make_pipeline(&[]);
+        let deps = StepDependencies::new(&[]).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(result.is_ok());
     }
 }
