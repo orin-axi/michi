@@ -497,7 +497,6 @@ pub async fn execute_pipeline(
 }
 
 #[derive(Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 enum StepRunState {
     Pending,
     Running,
@@ -523,6 +522,18 @@ fn spawn_ready_steps(
                 let result = breaker.call(runner.as_ref(), jitter_seed).await;
                 (i, result)
             });
+        }
+    }
+}
+
+fn propagate_skip(idx: usize, state: &mut [StepRunState], dependents_of: &[Vec<usize>]) {
+    let mut stack = vec![idx];
+    while let Some(i) = stack.pop() {
+        for &d in &dependents_of[i] {
+            if state[d] == StepRunState::Pending {
+                state[d] = StepRunState::Skipped;
+                stack.push(d);
+            }
         }
     }
 }
@@ -608,6 +619,7 @@ pub async fn execute_pipeline_parallel(
     let runners: Vec<std::sync::Arc<dyn Step>> = runners.into_iter().map(std::sync::Arc::from).collect();
 
     let mut join_set: tokio::task::JoinSet<(usize, Result<(), ExecutionError>)> = tokio::task::JoinSet::new();
+    let mut first_failure: Option<(usize, ExecutionError)> = None;
 
     spawn_ready_steps(&mut state, &remaining_prereqs, &runners, &breaker, jitter_seed, &mut join_set);
 
@@ -626,19 +638,32 @@ pub async fn execute_pipeline_parallel(
                     }
                 }
             }
-            Err(_err) => {
-                // Failure surfacing (first_failure) and transitive Skip
-                // propagation land in T09c; for now this arm only marks
-                // the step Failed so the match stays exhaustive and the
-                // loop still terminates once every task drains.
+            Err(err) => {
                 state[i] = StepRunState::Failed;
                 pipeline.steps[i].status = michi_core::pipeline::StepStatus::Failed;
+                if first_failure.is_none() {
+                    first_failure = Some((i, err));
+                }
+                propagate_skip(i, &mut state, &dependents_of);
             }
         }
         spawn_ready_steps(&mut state, &remaining_prereqs, &runners, &breaker, jitter_seed, &mut join_set);
     }
 
-    Ok(())
+    for (i, st) in state.iter().enumerate() {
+        if *st == StepRunState::Skipped {
+            pipeline.steps[i].status = michi_core::pipeline::StepStatus::Skipped;
+        }
+    }
+
+    match first_failure {
+        None => Ok(()),
+        Some((i, err)) => Err(ExecutionError::StepFailed {
+            step_id: pipeline.steps[i].id.clone(),
+            step_name: pipeline.steps[i].name.clone(),
+            source: Box::new(err),
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -2155,5 +2180,26 @@ mod tests {
         for step in &pipeline.steps {
             assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn single_independent_step_failure_returns_step_failed_identifying_it() {
+        let mut pipeline = make_pipeline(&["a"]);
+        let ids = vec!["a".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::new(0, Duration::from_millis(1), Duration::from_secs(1), 0.0),
+            Duration::from_secs(5),
+            u32::MAX,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> =
+            vec![Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) })];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::StepFailed { step_id, .. }) => assert_eq!(step_id, "a"),
+            other => panic!("expected StepFailed{{step_id: a}}, got {other:?}"),
+        }
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
     }
 }
