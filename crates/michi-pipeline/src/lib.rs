@@ -2381,4 +2381,60 @@ mod tests {
             other => panic!("expected StepFailed{{source: Timeout}}, got {other:?}"),
         }
     }
+
+    struct SetsFlagAfterYield {
+        flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl Step for SetsFlagAfterYield {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            let flag = std::sync::Arc::clone(&self.flag);
+            Box::pin(async move {
+                tokio::task::yield_now().await;
+                flag.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+        }
+    }
+
+    struct RecordsFlagOnInvocation {
+        flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        observed_flag_at_invocation: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl Step for RecordsFlagOnInvocation {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            self.observed_flag_at_invocation.store(self.flag.load(Ordering::SeqCst), Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn dependent_step_is_not_invoked_until_its_dependency_completes() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let a_completed_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let b_observed_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(SetsFlagAfterYield { flag: std::sync::Arc::clone(&a_completed_flag) }),
+            Box::new(RecordsFlagOnInvocation {
+                flag: std::sync::Arc::clone(&a_completed_flag),
+                observed_flag_at_invocation: std::sync::Arc::clone(&b_observed_flag),
+            }),
+        ];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(result.is_ok());
+        assert!(
+            b_observed_flag.load(Ordering::SeqCst),
+            "B's Step::run must not be invoked until A's flag was set, i.e. until A reached Completed"
+        );
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Completed);
+    }
 }
