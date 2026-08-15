@@ -206,7 +206,6 @@ use std::collections::{HashMap, HashSet};
 
 /// A dependency graph over step ids, consumed by [`execute_pipeline_parallel`].
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct StepDependencies {
     ids: HashSet<String>,
     edges: HashMap<String, Vec<String>>,
@@ -530,6 +529,29 @@ pub async fn execute_pipeline_parallel(
                 if dup_ids.contains(p.as_str()) {
                     return Err(ExecutionError::DuplicateStepId { step_id: p.clone() });
                 }
+            }
+        }
+    }
+
+    let pipeline_ids: HashSet<&str> = pipeline.steps.iter().map(|s| s.id.as_str()).collect();
+    let graph_ids: HashSet<&str> = deps.ids.iter().map(|s| s.as_str()).collect();
+    for id in &pipeline_ids {
+        if !graph_ids.contains(id) {
+            return Err(ExecutionError::UnknownStepId { step_id: (*id).to_string() });
+        }
+    }
+    for id in &graph_ids {
+        if !pipeline_ids.contains(id) {
+            return Err(ExecutionError::UnknownStepId { step_id: (*id).to_string() });
+        }
+    }
+    for (dependent, prereqs) in &deps.edges {
+        if !pipeline_ids.contains(dependent.as_str()) {
+            return Err(ExecutionError::UnknownStepId { step_id: dependent.clone() });
+        }
+        for p in prereqs {
+            if !pipeline_ids.contains(p.as_str()) {
+                return Err(ExecutionError::UnknownStepId { step_id: p.clone() });
             }
         }
     }
@@ -1800,5 +1822,105 @@ mod tests {
         for step in &pipeline.steps {
             assert_eq!(step.status, michi_core::pipeline::StepStatus::Pending);
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn id_set_mismatch_between_graph_and_pipeline_is_rejected() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "c".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..2)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(matches!(result, Err(ExecutionError::UnknownStepId { .. })), "expected UnknownStepId, got {result:?}");
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Pending);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn edge_endpoint_absent_from_pipeline_is_rejected() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "ghost");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> =
+            (0..2).map(|_| Box::new(SpyStep(std::sync::Arc::clone(&calls))) as Box<dyn Step>).collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::UnknownStepId { step_id }) => assert_eq!(step_id, "ghost"),
+            other => panic!("expected UnknownStepId{{step_id: ghost}}, got {other:?}"),
+        }
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Pending);
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "no Step::run may be invoked before UnknownStepId validation returns"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pipeline_superset_step_absent_from_graph_is_rejected() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> =
+            (0..2).map(|_| Box::new(SpyStep(std::sync::Arc::clone(&calls))) as Box<dyn Step>).collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::UnknownStepId { step_id }) => assert_eq!(step_id, "b"),
+            other => panic!("expected UnknownStepId{{step_id: b}}, got {other:?}"),
+        }
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Pending);
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "no Step::run may be invoked before UnknownStepId validation returns, including the pipeline-superset direction"
+        );
     }
 }
