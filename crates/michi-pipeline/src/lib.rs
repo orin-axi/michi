@@ -2827,4 +2827,35 @@ mod tests {
             "a's Step::run must never be invoked once the circuit is already Open"
         );
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn half_open_gate_releases_after_probe_panics_and_admits_a_real_subsequent_probe() {
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(60),
+            1,
+            Duration::from_secs(10),
+        ));
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+
+        let handle = {
+            let breaker = std::sync::Arc::clone(&breaker);
+            tokio::spawn(async move { breaker.call(&PanicsStep, 0.0).await })
+        };
+        assert!(handle.await.is_err(), "the panic must propagate out of call() as a JoinError");
+
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+
+        let probe2 = CountingStep { calls: std::sync::atomic::AtomicU32::new(0) };
+        let result = breaker.call(&probe2, 0.0).await;
+        assert!(result.is_ok(), "a real subsequent probe must be admitted after the panic, got {result:?}");
+        assert_eq!(
+            probe2.calls.load(Ordering::SeqCst),
+            1,
+            "the subsequent probe's Step::run must actually have been invoked, not rejected as CircuitOpen"
+        );
+    }
 }
