@@ -496,6 +496,16 @@ pub async fn execute_pipeline(
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+enum StepRunState {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Skipped,
+}
+
 /// Executes pipeline.steps concurrently, honoring the dependency edges in
 /// deps. Full scheduling semantics land in later commits; this version
 /// only implements the two eager fast paths that require no scheduling at
@@ -558,6 +568,29 @@ pub async fn execute_pipeline_parallel(
     if let Some(step_id) = detect_cycle(deps) {
         return Err(ExecutionError::CyclicDependency { step_id });
     }
+
+    let id_at: Vec<String> = pipeline.steps.iter().map(|s| s.id.clone()).collect();
+    let index_of: HashMap<&str, usize> = id_at.iter().enumerate().map(|(i, id)| (id.as_str(), i)).collect();
+
+    let mut prereqs_of: Vec<Vec<usize>> = vec![Vec::new(); id_at.len()];
+    let mut dependents_of: Vec<Vec<usize>> = vec![Vec::new(); id_at.len()];
+    for (dependent, prereqs) in &deps.edges {
+        let d_idx = index_of[dependent.as_str()];
+        for p in prereqs {
+            let p_idx = index_of[p.as_str()];
+            prereqs_of[d_idx].push(p_idx);
+            dependents_of[p_idx].push(d_idx);
+        }
+    }
+
+    let state: Vec<StepRunState> = vec![StepRunState::Pending; id_at.len()];
+    let remaining_prereqs: Vec<usize> = prereqs_of.iter().map(Vec::len).collect();
+    let runners: Vec<std::sync::Arc<dyn Step>> = runners.into_iter().map(std::sync::Arc::from).collect();
+    // The scheduling loop that actually drives these structures lands in
+    // T09b; this task only builds them. The explicit `let _ = (...)` below
+    // is temporary scaffolding removed by T09b once every value here is
+    // genuinely read.
+    let _ = (&state, &remaining_prereqs, &runners, &dependents_of, &breaker, jitter_seed);
 
     Ok(())
 }
