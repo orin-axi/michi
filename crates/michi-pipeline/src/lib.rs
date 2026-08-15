@@ -1989,4 +1989,71 @@ mod tests {
         );
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Pending);
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn simultaneous_violations_resolve_in_fixed_order() {
+        let mut pipeline = make_pipeline(&["a", "a"]);
+        let ids = vec!["a".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("a", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) })];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(
+            matches!(result, Err(ExecutionError::StepCountMismatch { .. })),
+            "StepCountMismatch must be checked first, got {result:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn duplicate_beats_unknown_step_id() {
+        let mut pipeline = make_pipeline(&["a", "a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..3)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::DuplicateStepId { step_id }) => assert_eq!(step_id, "a"),
+            other => panic!(
+                "expected DuplicateStepId to win over the simultaneous UnknownStepId(\"c\") violation, got {other:?}"
+            ),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unknown_beats_cyclic_dependency() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("a", "b");
+        deps.depends_on("b", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..2)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(
+            matches!(result, Err(ExecutionError::UnknownStepId { .. })),
+            "expected UnknownStepId to win over the simultaneous CyclicDependency violation (deps' id set {{a,b,c}} != pipeline's {{a,b}}, and a/b also cyclically depend on each other), got {result:?}"
+        );
+    }
 }
