@@ -561,10 +561,30 @@ fn propagate_skip(idx: usize, state: &mut [StepRunState], dependents_of: &[Vec<u
     }
 }
 
-/// Executes pipeline.steps concurrently, honoring the dependency edges in
-/// deps. Full scheduling semantics land in later commits; this version
-/// only implements the two eager fast paths that require no scheduling at
-/// all.
+/// Executes `pipeline.steps` concurrently, honoring the dependency edges in
+/// `deps`. Steps with no unmet prerequisite run as soon as they become
+/// eligible, polled concurrently via an internal `JoinSet`; a step only
+/// starts once every step it depends on has reached a terminal status.
+///
+/// Every acceptance check runs in a fixed order before any step is
+/// attempted: step-count mismatch, then a duplicate pipeline id, then an
+/// id-set mismatch or unknown edge endpoint, then a cyclic dependency
+/// (including a 1-node self-dependency).
+///
+/// On completion, each `PipelineStep.status` is written to `Completed`,
+/// `Failed` (including a circuit-open short-circuit that never invokes
+/// `Step::run`), or `Skipped` (every transitive dependent of a failed
+/// step). The function returns `Ok(())` only if every step completed; on
+/// any failure it returns `Err(ExecutionError::StepFailed)` identifying
+/// one of the (possibly several) steps that failed, while every unrelated
+/// in-flight step still runs to its own real terminal status rather than
+/// being abandoned.
+///
+/// `breaker` is `Arc<CircuitBreaker>` rather than a plain reference,
+/// unlike the unmodified, strictly sequential [`execute_pipeline`]: each
+/// spawned step's task must independently hold a handle to the shared
+/// breaker across the `JoinSet`'s `Send + 'static` boundary, which a
+/// borrowed reference cannot satisfy.
 pub async fn execute_pipeline_parallel(
     pipeline: &mut michi_core::pipeline::Pipeline,
     deps: &StepDependencies,
