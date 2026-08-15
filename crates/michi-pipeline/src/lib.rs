@@ -2565,4 +2565,47 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn two_independent_failures_yield_exactly_one_step_failed_identifying_one_of_them() {
+        let mut pipeline = michi_core::pipeline::Pipeline {
+            id: "p".into(),
+            steps: vec![
+                michi_core::pipeline::PipelineStep {
+                    id: "a".into(),
+                    name: "Alpha".into(),
+                    status: michi_core::pipeline::StepStatus::Pending,
+                },
+                michi_core::pipeline::PipelineStep {
+                    id: "b".into(),
+                    name: "Beta".into(),
+                    status: michi_core::pipeline::StepStatus::Pending,
+                },
+            ],
+        };
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            u32::MAX,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+        ];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::StepFailed { step_id, step_name, .. }) => {
+                assert!(
+                    (step_id == "a" && step_name == "Alpha") || (step_id == "b" && step_name == "Beta"),
+                    "expected one of the two failed steps' own id paired with its own name, got step_id={step_id:?} step_name={step_name:?}"
+                );
+            }
+            other => panic!("expected exactly one StepFailed, got {other:?}"),
+        }
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Failed);
+    }
 }
