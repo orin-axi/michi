@@ -2674,4 +2674,55 @@ mod tests {
             "d must still be invoked once c completes, even though a already failed"
         );
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn circuit_open_short_circuit_writes_failed_and_skips_dependent() {
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(3600),
+        ));
+        let priming_fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&priming_fail, 0.0).await.is_err());
+        assert_eq!(breaker.phase(), BreakerPhase::Open);
+
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        let a_calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(SpyStep(std::sync::Arc::clone(&a_calls))),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+        ];
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, std::sync::Arc::clone(&breaker), 0.0).await;
+        match result {
+            Err(ExecutionError::StepFailed { source, .. }) => {
+                assert!(
+                    matches!(*source, ExecutionError::CircuitOpen { .. }),
+                    "expected CircuitOpen source, got {source:?}"
+                );
+            }
+            other => panic!("expected StepFailed{{source: CircuitOpen}}, got {other:?}"),
+        }
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed, "a");
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Skipped, "b, a's dependent");
+        assert_eq!(
+            a_calls.load(Ordering::SeqCst),
+            0,
+            "a's Step::run must never be invoked once the circuit is already Open"
+        );
+    }
 }
