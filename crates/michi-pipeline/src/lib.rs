@@ -2202,4 +2202,71 @@ mod tests {
         }
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
     }
+
+    struct RendezvousX(tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>);
+    impl Step for RendezvousX {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            Box::pin(async move {
+                let rx = self.0.lock().await.take().expect("run must only be invoked once");
+                rx.await.map_err(|_| ExecutionError::Failed { message: "sender dropped".into(), retryable: false })?;
+                Ok(())
+            })
+        }
+    }
+
+    struct RendezvousY(tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>);
+    impl Step for RendezvousY {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            Box::pin(async move {
+                let tx = self.0.lock().await.take().expect("run must only be invoked once");
+                let _ = tx.send(());
+                Ok(())
+            })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn independent_steps_are_polled_concurrently_not_sequentially() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut pipeline = make_pipeline(&["x", "y"]);
+        let ids = vec!["x".to_string(), "y".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::new(0, Duration::from_millis(1), Duration::from_secs(1), 0.0),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(RendezvousX(tokio::sync::Mutex::new(Some(rx)))),
+            Box::new(RendezvousY(tokio::sync::Mutex::new(Some(tx)))),
+        ];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(result.is_ok(), "X's rx must resolve because Y is polled concurrently, got {result:?}");
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Completed);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sequential_execute_pipeline_times_out_on_the_equivalent_input() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut pipeline = make_pipeline(&["x", "y"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::new(0, Duration::from_millis(1), Duration::from_secs(1), 0.0),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(RendezvousX(tokio::sync::Mutex::new(Some(rx)))),
+            Box::new(RendezvousY(tokio::sync::Mutex::new(Some(tx)))),
+        ];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::StepFailed { source, .. }) => {
+                assert!(matches!(*source, ExecutionError::Timeout { .. }), "expected Timeout, got {source:?}");
+            }
+            other => panic!("expected StepFailed{{source: Timeout}}, got {other:?}"),
+        }
+    }
 }
