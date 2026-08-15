@@ -2608,4 +2608,41 @@ mod tests {
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
         assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Failed);
     }
+
+    struct SleepsThenOk;
+    impl Step for SleepsThenOk {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Ok(())
+            })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unrelated_in_flight_step_runs_to_completion_despite_an_earlier_failure() {
+        let mut pipeline = make_pipeline(&["a", "d"]);
+        let ids = vec!["a".to_string(), "d".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(60),
+            2,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(SleepsThenOk),
+        ];
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, std::sync::Arc::clone(&breaker), 0.0).await;
+        assert!(matches!(result, Err(ExecutionError::StepFailed { .. })));
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed, "a");
+        assert_eq!(
+            pipeline.steps[1].status,
+            michi_core::pipeline::StepStatus::Completed,
+            "d must run to its own real terminal status"
+        );
+        assert_eq!(breaker.phase(), BreakerPhase::Closed, "a's single failure must not open a threshold-2 breaker");
+    }
 }
