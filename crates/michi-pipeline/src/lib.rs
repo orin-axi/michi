@@ -1359,6 +1359,32 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn gate_admits_a_new_probe_in_each_subsequent_half_open_window() {
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(60),
+            1,
+            Duration::from_secs(10),
+        );
+        let fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&fail, 0.0).await.is_err());
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+        let probe1_fail = AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) };
+        assert!(breaker.call(&probe1_fail, 0.0).await.is_err());
+        assert_eq!(probe1_fail.calls.load(Ordering::SeqCst), 1, "exactly one probe attempt in cycle 1");
+        assert_eq!(breaker.phase(), BreakerPhase::Open, "a failing probe must reopen the circuit");
+
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(breaker.phase(), BreakerPhase::HalfOpen);
+        let probe2 = CountingStep { calls: std::sync::atomic::AtomicU32::new(0) };
+        let result = breaker.call(&probe2, 0.0).await;
+        assert!(result.is_ok(), "a fresh probe in a new HalfOpen window must be admitted, got {result:?}");
+        assert_eq!(probe2.calls.load(Ordering::SeqCst), 1, "the cycle-2 probe must actually have been invoked");
+        assert_eq!(breaker.phase(), BreakerPhase::Closed);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn retry_loop_terminates_within_bounded_attempts() {
         // A mutation-testing checkpoint found that a regression removing
         // `attempt += 1` from the retry loop doesn't fail cleanly -- it hangs
