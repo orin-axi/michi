@@ -2858,4 +2858,36 @@ mod tests {
             "the subsequent probe's Step::run must actually have been invoked, not rejected as CircuitOpen"
         );
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn execute_pipeline_still_executes_duplicate_ids_without_validation() {
+        let mut pipeline = make_pipeline(&["dup", "dup"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = (0..2)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        assert!(result.is_ok(), "execute_pipeline must still accept duplicate ids with no validation, got {result:?}");
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
+        }
+    }
+
+    #[test]
+    fn execute_pipeline_signature_is_unchanged() {
+        #[allow(dead_code)]
+        async fn _sig(
+            p: &mut michi_core::pipeline::Pipeline,
+            r: Vec<Box<dyn Step>>,
+            b: &CircuitBreaker,
+            j: f64,
+        ) -> Result<(), ExecutionError> {
+            execute_pipeline(p, r, b, j).await
+        }
+    }
 }
