@@ -238,7 +238,6 @@ impl StepDependencies {
 /// by deps's edges (including a 1-node self-dependency), or None if the
 /// graph is acyclic. Uses a standard 3-color DFS: White (unvisited), Gray
 /// (on the current recursion stack), Black (fully explored).
-#[allow(dead_code)]
 fn detect_cycle(deps: &StepDependencies) -> Option<String> {
     #[derive(Clone, Copy, PartialEq)]
     enum Color {
@@ -554,6 +553,10 @@ pub async fn execute_pipeline_parallel(
                 return Err(ExecutionError::UnknownStepId { step_id: p.clone() });
             }
         }
+    }
+
+    if let Some(step_id) = detect_cycle(deps) {
+        return Err(ExecutionError::CyclicDependency { step_id });
     }
 
     Ok(())
@@ -1922,5 +1925,68 @@ mod tests {
             0,
             "no Step::run may be invoked before UnknownStepId validation returns, including the pipeline-superset direction"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cyclic_dependency_is_rejected() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("a", "b");
+        deps.depends_on("b", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..2)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(
+            matches!(result, Err(ExecutionError::CyclicDependency { .. })),
+            "expected CyclicDependency, got {result:?}"
+        );
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Pending);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn parallel_self_dependency_is_rejected_as_a_one_node_cycle() {
+        let mut pipeline = make_pipeline(&["a"]);
+        let ids = vec!["a".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("a", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![Box::new(SpyStep(std::sync::Arc::clone(&calls)))];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::CyclicDependency { step_id }) => assert_eq!(step_id, "a"),
+            other => panic!("expected CyclicDependency{{step_id: a}}, got {other:?}"),
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "a's runner must never be invoked once its own self-dependency is rejected as a cycle"
+        );
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Pending);
     }
 }
