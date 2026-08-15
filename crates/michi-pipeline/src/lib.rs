@@ -506,6 +506,27 @@ enum StepRunState {
     Skipped,
 }
 
+fn spawn_ready_steps(
+    state: &mut [StepRunState],
+    remaining_prereqs: &[usize],
+    runners: &[std::sync::Arc<dyn Step>],
+    breaker: &std::sync::Arc<CircuitBreaker>,
+    jitter_seed: f64,
+    join_set: &mut tokio::task::JoinSet<(usize, Result<(), ExecutionError>)>,
+) {
+    for i in 0..state.len() {
+        if state[i] == StepRunState::Pending && remaining_prereqs[i] == 0 {
+            state[i] = StepRunState::Running;
+            let runner = std::sync::Arc::clone(&runners[i]);
+            let breaker = std::sync::Arc::clone(breaker);
+            join_set.spawn(async move {
+                let result = breaker.call(runner.as_ref(), jitter_seed).await;
+                (i, result)
+            });
+        }
+    }
+}
+
 /// Executes pipeline.steps concurrently, honoring the dependency edges in
 /// deps. Full scheduling semantics land in later commits; this version
 /// only implements the two eager fast paths that require no scheduling at
@@ -517,7 +538,6 @@ pub async fn execute_pipeline_parallel(
     breaker: std::sync::Arc<CircuitBreaker>,
     jitter_seed: f64,
 ) -> Result<(), ExecutionError> {
-    let _ = (&breaker, jitter_seed);
     if runners.len() != pipeline.steps.len() {
         return Err(ExecutionError::StepCountMismatch { expected: pipeline.steps.len(), got: runners.len() });
     }
@@ -583,14 +603,40 @@ pub async fn execute_pipeline_parallel(
         }
     }
 
-    let state: Vec<StepRunState> = vec![StepRunState::Pending; id_at.len()];
-    let remaining_prereqs: Vec<usize> = prereqs_of.iter().map(Vec::len).collect();
+    let mut state: Vec<StepRunState> = vec![StepRunState::Pending; id_at.len()];
+    let mut remaining_prereqs: Vec<usize> = prereqs_of.iter().map(Vec::len).collect();
     let runners: Vec<std::sync::Arc<dyn Step>> = runners.into_iter().map(std::sync::Arc::from).collect();
-    // The scheduling loop that actually drives these structures lands in
-    // T09b; this task only builds them. The explicit `let _ = (...)` below
-    // is temporary scaffolding removed by T09b once every value here is
-    // genuinely read.
-    let _ = (&state, &remaining_prereqs, &runners, &dependents_of, &breaker, jitter_seed);
+
+    let mut join_set: tokio::task::JoinSet<(usize, Result<(), ExecutionError>)> = tokio::task::JoinSet::new();
+
+    spawn_ready_steps(&mut state, &remaining_prereqs, &runners, &breaker, jitter_seed, &mut join_set);
+
+    while let Some(joined) = join_set.join_next().await {
+        let (i, result) = match joined {
+            Ok(pair) => pair,
+            Err(join_err) => std::panic::resume_unwind(join_err.into_panic()),
+        };
+        match result {
+            Ok(()) => {
+                state[i] = StepRunState::Completed;
+                pipeline.steps[i].status = michi_core::pipeline::StepStatus::Completed;
+                for &d in &dependents_of[i] {
+                    if state[d] == StepRunState::Pending {
+                        remaining_prereqs[d] = remaining_prereqs[d].saturating_sub(1);
+                    }
+                }
+            }
+            Err(_err) => {
+                // Failure surfacing (first_failure) and transitive Skip
+                // propagation land in T09c; for now this arm only marks
+                // the step Failed so the match stays exhaustive and the
+                // loop still terminates once every task drains.
+                state[i] = StepRunState::Failed;
+                pipeline.steps[i].status = michi_core::pipeline::StepStatus::Failed;
+            }
+        }
+        spawn_ready_steps(&mut state, &remaining_prereqs, &runners, &breaker, jitter_seed, &mut join_set);
+    }
 
     Ok(())
 }
@@ -2088,5 +2134,26 @@ mod tests {
             matches!(result, Err(ExecutionError::UnknownStepId { .. })),
             "expected UnknownStepId to win over the simultaneous CyclicDependency violation (deps' id set {{a,b,c}} != pipeline's {{a,b}}, and a/b also cyclically depend on each other), got {result:?}"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn independent_steps_all_succeed_returns_ok_and_all_completed() {
+        let mut pipeline = make_pipeline(&["a", "b", "c"]);
+        let ids = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..3)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(result.is_ok(), "expected Ok(()), got {result:?}");
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
+        }
     }
 }
