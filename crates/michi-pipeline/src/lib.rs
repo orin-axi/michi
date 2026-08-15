@@ -235,6 +235,52 @@ impl StepDependencies {
     }
 }
 
+/// Returns Some(step_id) for one step id participating in a cycle formed
+/// by deps's edges (including a 1-node self-dependency), or None if the
+/// graph is acyclic. Uses a standard 3-color DFS: White (unvisited), Gray
+/// (on the current recursion stack), Black (fully explored).
+#[allow(dead_code)]
+fn detect_cycle(deps: &StepDependencies) -> Option<String> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Color {
+        White,
+        Gray,
+        Black,
+    }
+
+    fn visit<'a>(node: &'a str, deps: &'a StepDependencies, color: &mut HashMap<&'a str, Color>) -> Option<String> {
+        color.insert(node, Color::Gray);
+        if let Some(prereqs) = deps.edges.get(node) {
+            for prereq in prereqs {
+                let p = prereq.as_str();
+                match color.get(p).copied() {
+                    Some(Color::Gray) => return Some(p.to_string()),
+                    Some(Color::White) | None => {
+                        if color.get(p).copied() == Some(Color::White) {
+                            if let Some(found) = visit(p, deps, color) {
+                                return Some(found);
+                            }
+                        }
+                    }
+                    Some(Color::Black) => {}
+                }
+            }
+        }
+        color.insert(node, Color::Black);
+        None
+    }
+
+    let mut color: HashMap<&str, Color> = deps.ids.iter().map(|id| (id.as_str(), Color::White)).collect();
+    for id in &deps.ids {
+        if color.get(id.as_str()).copied() == Some(Color::White) {
+            if let Some(found) = visit(id.as_str(), deps, &mut color) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 const PHASE_CLOSED: u8 = 0;
@@ -1623,5 +1669,35 @@ mod tests {
         assert_eq!(edges.len(), 2, "the second call must add a second edge, not overwrite the first");
         assert!(edges.contains(&"a1".to_string()));
         assert!(edges.contains(&"a2".to_string()));
+    }
+
+    #[test]
+    fn detect_cycle_finds_a_two_node_cycle() {
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("a", "b");
+        deps.depends_on("b", "a");
+        let found = detect_cycle(&deps);
+        assert!(
+            found == Some("a".to_string()) || found == Some("b".to_string()),
+            "expected one of the cyclic ids, got {found:?}"
+        );
+    }
+
+    #[test]
+    fn detect_cycle_finds_a_self_dependency_as_a_one_node_cycle() {
+        let ids = vec!["a".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("a", "a");
+        assert_eq!(detect_cycle(&deps), Some("a".to_string()));
+    }
+
+    #[test]
+    fn detect_cycle_reports_none_for_an_acyclic_graph() {
+        let ids = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        deps.depends_on("c", "b");
+        assert_eq!(detect_cycle(&deps), None);
     }
 }
