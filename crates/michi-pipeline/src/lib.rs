@@ -2645,4 +2645,33 @@ mod tests {
         );
         assert_eq!(breaker.phase(), BreakerPhase::Closed, "a's single failure must not open a threshold-2 breaker");
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn newly_eligible_unrelated_step_still_starts_after_failure_elsewhere() {
+        let mut pipeline = make_pipeline(&["a", "c", "d"]);
+        let ids = vec!["a".to_string(), "c".to_string(), "d".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("d", "c");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(60),
+            2,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(SleepsThenOk),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+        ];
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, std::sync::Arc::clone(&breaker), 0.0).await;
+        assert!(matches!(result, Err(ExecutionError::StepFailed { .. })));
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed, "a");
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Completed, "c");
+        assert_eq!(
+            pipeline.steps[2].status,
+            michi_core::pipeline::StepStatus::Completed,
+            "d must still be invoked once c completes, even though a already failed"
+        );
+    }
 }
