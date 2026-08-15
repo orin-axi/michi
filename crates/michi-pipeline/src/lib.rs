@@ -2531,4 +2531,38 @@ mod tests {
             "b's runner must never have been invoked at all, even after the run completed"
         );
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn failure_skips_direct_and_transitive_dependents_leaving_no_step_pending() {
+        let mut pipeline = make_pipeline(&["a", "b", "c", "d"]);
+        let ids = vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        deps.depends_on("c", "b");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            u32::MAX,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+        ];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(matches!(result, Err(ExecutionError::StepFailed { .. })));
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed, "a");
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Skipped, "b (direct dependent)");
+        assert_eq!(pipeline.steps[2].status, michi_core::pipeline::StepStatus::Skipped, "c (transitive dependent)");
+        assert_eq!(pipeline.steps[3].status, michi_core::pipeline::StepStatus::Completed, "d (unrelated)");
+        for step in &pipeline.steps {
+            assert_ne!(
+                step.status,
+                michi_core::pipeline::StepStatus::Pending,
+                "no step may remain Pending on a live Err(StepFailed) return"
+            );
+        }
+    }
 }
