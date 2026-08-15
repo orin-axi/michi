@@ -509,10 +509,31 @@ pub async fn execute_pipeline_parallel(
     breaker: std::sync::Arc<CircuitBreaker>,
     jitter_seed: f64,
 ) -> Result<(), ExecutionError> {
-    let _ = (deps, breaker, jitter_seed);
+    let _ = (&breaker, jitter_seed);
     if runners.len() != pipeline.steps.len() {
         return Err(ExecutionError::StepCountMismatch { expected: pipeline.steps.len(), got: runners.len() });
     }
+
+    let mut seen_ids: HashSet<&str> = HashSet::new();
+    let mut dup_ids: HashSet<&str> = HashSet::new();
+    for step in &pipeline.steps {
+        if !seen_ids.insert(step.id.as_str()) {
+            dup_ids.insert(step.id.as_str());
+        }
+    }
+    if !dup_ids.is_empty() {
+        for (dependent, prereqs) in &deps.edges {
+            if dup_ids.contains(dependent.as_str()) {
+                return Err(ExecutionError::DuplicateStepId { step_id: dependent.clone() });
+            }
+            for p in prereqs {
+                if dup_ids.contains(p.as_str()) {
+                    return Err(ExecutionError::DuplicateStepId { step_id: p.clone() });
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1754,5 +1775,30 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = vec![];
         let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn duplicate_pipeline_id_referenced_by_an_edge_is_rejected() {
+        let mut pipeline = make_pipeline(&["a", "a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..3)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::DuplicateStepId { step_id }) => assert_eq!(step_id, "a"),
+            other => panic!("expected DuplicateStepId, got {other:?}"),
+        }
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Pending);
+        }
     }
 }
