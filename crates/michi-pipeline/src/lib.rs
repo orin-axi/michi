@@ -63,6 +63,27 @@ pub enum ExecutionError {
         /// Actual runner count supplied (`runners.len()`).
         got: usize,
     },
+    /// A depends_on edge, or an id-set mismatch, referenced a step id absent
+    /// from the pipeline (or vice versa).
+    #[error("unknown step id: {step_id}")]
+    UnknownStepId {
+        /// The offending step id.
+        step_id: String,
+    },
+    /// A duplicate step id was found where dependency resolution requires
+    /// each id to be unique.
+    #[error("duplicate step id: {step_id}")]
+    DuplicateStepId {
+        /// The duplicated step id.
+        step_id: String,
+    },
+    /// The dependency graph passed to execute_pipeline_parallel contains a
+    /// cycle.
+    #[error("cyclic dependency involving step id: {step_id}")]
+    CyclicDependency {
+        /// A step id that is part of the detected cycle.
+        step_id: String,
+    },
 }
 
 impl ExecutionError {
@@ -76,6 +97,9 @@ impl ExecutionError {
             Self::CircuitOpen { .. } => true,
             Self::StepFailed { source, .. } => source.is_retryable(),
             Self::StepCountMismatch { .. } => false,
+            Self::UnknownStepId { .. } => false,
+            Self::DuplicateStepId { .. } => false,
+            Self::CyclicDependency { .. } => false,
         }
     }
 }
@@ -158,6 +182,20 @@ impl From<ExecutionError> for michi_core::DomainError {
             ExecutionError::StepCountMismatch { expected, got } => michi_core::DomainError::new(
                 michi_core::ErrorCode::InvalidInput,
                 format!("expected {expected} runners, got {got}"),
+            )
+            .retryable(false),
+            ExecutionError::UnknownStepId { step_id } => {
+                michi_core::DomainError::new(michi_core::ErrorCode::InvalidInput, format!("unknown step id: {step_id}"))
+                    .retryable(false)
+            }
+            ExecutionError::DuplicateStepId { step_id } => michi_core::DomainError::new(
+                michi_core::ErrorCode::InvalidInput,
+                format!("duplicate step id: {step_id}"),
+            )
+            .retryable(false),
+            ExecutionError::CyclicDependency { step_id } => michi_core::DomainError::new(
+                michi_core::ErrorCode::InvalidInput,
+                format!("cyclic dependency involving step id: {step_id}"),
             )
             .retryable(false),
         }
@@ -1502,5 +1540,26 @@ mod tests {
             "step K's status must be untouched, not Failed"
         );
         assert_eq!(guard.steps[2].status, michi_core::pipeline::StepStatus::Pending);
+    }
+
+    #[test]
+    fn new_variants_are_not_retryable_and_map_to_invalid_input() {
+        let cases = [
+            ExecutionError::UnknownStepId { step_id: "x".into() },
+            ExecutionError::DuplicateStepId { step_id: "x".into() },
+            ExecutionError::CyclicDependency { step_id: "x".into() },
+        ];
+        for case in cases {
+            assert!(!case.is_retryable());
+        }
+        let d: michi_core::DomainError = ExecutionError::UnknownStepId { step_id: "a".into() }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::InvalidInput);
+        assert!(!d.retryable);
+        let d: michi_core::DomainError = ExecutionError::DuplicateStepId { step_id: "b".into() }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::InvalidInput);
+        assert!(!d.retryable);
+        let d: michi_core::DomainError = ExecutionError::CyclicDependency { step_id: "c".into() }.into();
+        assert_eq!(d.code, michi_core::ErrorCode::InvalidInput);
+        assert!(!d.retryable);
     }
 }
