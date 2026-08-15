@@ -2203,6 +2203,118 @@ mod tests {
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn failed_step_skips_its_direct_dependent() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::new(0, Duration::from_millis(1), Duration::from_secs(1), 0.0),
+            Duration::from_secs(5),
+            u32::MAX,
+            Duration::from_secs(60),
+        ));
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(SpyStep(std::sync::Arc::clone(&calls))),
+        ];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::StepFailed { step_id, .. }) => assert_eq!(step_id, "a"),
+            other => panic!("expected StepFailed{{step_id: a}}, got {other:?}"),
+        }
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Skipped);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "b's runner must never be invoked once its prerequisite a has failed"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn failed_step_transitively_skips_a_multi_level_dependency_chain() {
+        let mut pipeline = make_pipeline(&["a", "b", "c"]);
+        let ids = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        deps.depends_on("c", "b");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::new(0, Duration::from_millis(1), Duration::from_secs(1), 0.0),
+            Duration::from_secs(5),
+            u32::MAX,
+            Duration::from_secs(60),
+        ));
+        let calls_b = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let calls_c = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(SpyStep(std::sync::Arc::clone(&calls_b))),
+            Box::new(SpyStep(std::sync::Arc::clone(&calls_c))),
+        ];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        match result {
+            Err(ExecutionError::StepFailed { step_id, .. }) => assert_eq!(step_id, "a"),
+            other => panic!("expected StepFailed{{step_id: a}}, got {other:?}"),
+        }
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Skipped);
+        assert_eq!(pipeline.steps[2].status, michi_core::pipeline::StepStatus::Skipped);
+        assert_eq!(
+            calls_b.load(Ordering::SeqCst),
+            0,
+            "b's runner must never be invoked once its prerequisite a has failed"
+        );
+        assert_eq!(
+            calls_c.load(Ordering::SeqCst),
+            0,
+            "c's runner must never be invoked once its transitive prerequisite a has failed via b"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn dependent_step_runs_only_after_its_prerequisite_completes() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..2)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        assert!(result.is_ok(), "expected Ok(()), got {result:?}");
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Completed);
+    }
+
     struct RendezvousX(tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>);
     impl Step for RendezvousX {
         fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
