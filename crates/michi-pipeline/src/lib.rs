@@ -3373,6 +3373,97 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn precancelled_token_does_not_preempt_step_count_mismatch_parallel() {
+        let mut pipeline = make_pipeline(&["a"]);
+        let ids = vec!["a".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![];
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &token).await;
+        assert!(
+            matches!(result, Err(ExecutionError::StepCountMismatch { .. })),
+            "expected StepCountMismatch, got {result:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn precancelled_token_does_not_preempt_duplicate_step_id() {
+        let mut pipeline = make_pipeline(&["a", "a"]);
+        let ids = vec!["a".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("a", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+        ];
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &token).await;
+        assert!(
+            matches!(result, Err(ExecutionError::DuplicateStepId { .. })),
+            "expected DuplicateStepId, got {result:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn precancelled_token_does_not_preempt_unknown_step_id() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "c".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..2)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &token).await;
+        assert!(matches!(result, Err(ExecutionError::UnknownStepId { .. })), "expected UnknownStepId, got {result:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn precancelled_token_does_not_preempt_cyclic_dependency() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("a", "b");
+        deps.depends_on("b", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = (0..2)
+            .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
+            .collect();
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &token).await;
+        assert!(
+            matches!(result, Err(ExecutionError::CyclicDependency { .. })),
+            "expected CyclicDependency, got {result:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn circuit_open_short_circuit_writes_failed_and_skips_dependent() {
         let breaker = std::sync::Arc::new(CircuitBreaker::new(
             michi_resilience::RetryConfig::default(),
