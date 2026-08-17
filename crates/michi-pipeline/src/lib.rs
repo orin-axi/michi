@@ -1763,6 +1763,28 @@ mod tests {
         assert!(matches!(result, Err(ExecutionError::Cancelled)), "expected Err(Cancelled), got {result:?}");
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn precancelled_token_does_not_preempt_step_count_mismatch() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = vec![Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) })];
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &token).await;
+        match result {
+            Err(ExecutionError::StepCountMismatch { expected, got }) => {
+                assert_eq!(expected, 2);
+                assert_eq!(got, 1);
+            }
+            other => panic!("expected StepCountMismatch to take precedence over Cancelled, got {other:?}"),
+        }
+    }
+
     fn split_toon_row(row: &str) -> Vec<String> {
         let mut fields = Vec::new();
         let mut chars = row.chars().peekable();
