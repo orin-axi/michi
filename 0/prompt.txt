@@ -1,0 +1,147 @@
+/insights
+
+---
+
+Summarize for me
+
+---
+
+Where were we when we ran out of tokens?
+
+---
+
+Let’s get it done with the upgraded plugin infra
+
+---
+
+Why are you losing track of the agents so often??
+
+---
+
+<task-notification>
+<task-id>aa1e9b5a95a3fbb6f</task-id>
+<tool-use-id>toolu_01QsU6tp3fd48ff4JqU7mEuB</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/65b6c9d6-214d-4d76-9aef-4e139ab28953/tasks/aa1e9b5a95a3fbb6f.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit SPEC-003 round 4 (confirm-only)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Round 4 Audit Result — SPEC-003 (michi-pipeline cancellation)
+
+**Overall: PASS** — clean. This spec is ready for canon-exit-gate.
+
+### 1. Three-way partition re-derivation (execute_pipeline_parallel)
+
+| Case | Governing criterion | Result |
+|---|---|---|
+| (a) 0 steps + pre-cancelled | AC-015 (unconditional pre-first-spawn checkpoint, not narrowed to "≥1 step") | `Err(Cancelled)` |
+| (b) N≥1 steps + pre-cancelled | AC-015 (same criterion — "would otherwise pass all existing validation" covers any N) | `Err(Cancelled)` |
+| (c) N≥1 steps + cancel() only after last admission checkpoint has passed | AC-010a (now narrowed to "at least one step," with the AC-015 carve-out parenthetical) | `Ok(())` |
+
+No gap, no contradiction. AC-010a's fix is structurally identical to how AC-010 was fixed in round 2 (independently verified compiled in round 3). The zero-step case can never be "too late" because it only has the single unconditional checkpoint, which AC-015 pins directly — the round-3 defect (AC-010a claiming a too-late-Ok() guarantee that collided with AC-015's zero-step Err() guarantee) is fully resolved.
+
+### 2. Real compile/test verification
+
+`michi-pipeline` does not exist yet in this repo (confirmed via `git branch`, workspace `Cargo.toml`, and filesystem search — only `michi-core::pipeline`'s data model exists; execution crates land later per `CLAUDE.md`'s Plan-2 note). So I built a standalone scratch crate implementing the exact admission-checkpoint algorithm described in `api_surface`/AC-010a/AC-015, at `/private/tmp/claude-501/.../scratchpad/pipeline_cancel_verify/`, and ran real `#[tokio::test]`s against it:
+
+```
+running 3 tests
+test tests::zero_step_pre_cancelled_returns_err_cancelled_with_zero_spawns ... ok
+test tests::cancellation_observed_before_admission_returns_err_cancelled ... ok
+test tests::too_late_cancellation_after_admission_returns_ok ... ok
+```
+
+Notable finding during implementation (not a spec defect — the spec anticipated it correctly): a naive implementation that re-reads `cancellation.is_cancelled()` at return time fails AC-010a, because the token *is* cancelled by the time `JoinSet` finishes draining even in the "too late" scenario. The correct implementation latches an `observed_cancelled` flag only when an actual admission checkpoint fires with `is_cancelled()==true`, and checkpoints stop occurring once no step remains Pending. This is exactly what the spec text states: *"there is no separate final read after the JoinSet finishes draining"* (AC-010a). The spec's prose is precise enough to prevent this implementation bug — confirmed by writing the wrong version first and watching it fail the equivalent of AC-010a, then fixing it per the spec's own guidance.
+
+### 3. Fresh five-dimension pass, defect-class hunt
+
+Scanned every AC for the "implicit ≥1-step assumption vs. an unrestricted sibling" pattern (AC-005, AC-006, AC-009, AC-012, AC-014, AC-016, AC-017 all explicitly quantify their step-count preconditions or are scoped to a single named step index — none assert an unqualified general return-value guarantee that a zero-step sibling would contradict). No second instance of the defect class found.
+
+**AC-020/AC-020a vs. AC-008a/AC-015 zero-step gap check** (specifically requested): confirmed no gap. AC-008a's own text already threads the needle explicitly — *"a Pipeline with zero steps (runners also empty, so StepCountMismatch does not fire)"* — so the 0==0 non-mismatch case is handled by AC-008a/AC-015, not AC-020/AC-020a. AC-020a's precondition is *"input that independently triggers one of the four... validation errors"*, which by construction excludes the vacuously-valid zero-step/zero-runner case (no validation error fires there). AC-015's precondition — *"a Pipeline/StepDependencies pair that would otherwise pass all existing validation"* — already subsumes the 0==0 vacuous-pass case generally. No contradiction, no coverage gap; the criteria partition cleanly with no case falling through.
+
+No untestable phrasing, ambiguous readings, missing error cases, scope overlap, or TBDs found elsewhere in the document.
+
+### 4. Re-confirmed unchanged items
+
+- `CancellationToken: Send + Sync` — compiled via `fn _assert_send_sync&lt;T: Send + Sync&gt;()` instantiated with `CancellationToken` in the scratch crate; holds (backed by `Arc&lt;AtomicBool&gt;`).
+- AC-022 (`DomainError`/`ErrorCode::Unavailable` conversion) — checked against `crates/michi-core/src/error.rs` in this worktree: `ErrorCode::Unavailable` exists, `is_retryable_by_default()==true`, and the `.retryable(false)` override pattern described is the exact idiom already used elsewhere in that file (e.g. lines 447, 463, 479, 513). `ErrorCode::label()` and `ErrorCode::default_class()` have no wildcard `_ =&gt;` arm, confirming the non_goals claim that both are exhaustive matches unaffected by this spec.
+
+Files touched (scratch verification only, outside the repo):
+- `/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/scratchpad/pipeline_cancel_verify/Cargo.toml`
+- `/private/tmp/claude-501/-Users-gabe-Projects-michi/5e7a8da1-5e1a-4bad-8bda-9d135354b98a/scratchpad/pipeline_cancel_verify/src/main.rs`
+
+```json
+{
+  "issues": [],
+  "overall": "pass",
+  "reasoning": "Re-derived the three-way partition for execute_pipeline_parallel (0-step pre-cancelled -&gt; AC-015; N&gt;=1 pre-cancelled -&gt; AC-015; N&gt;=1 too-late -&gt; AC-010a) and confirmed no gap/contradiction, matching execute_pipeline's already-fixed partition exactly. Built a standalone scratch tokio crate implementing the described admission-checkpoint algorithm (since michi-pipeline's execution code doesn't exist in this repo yet) and ran real #[tokio::test]s confirming both the zero-step-pre-cancelled and too-late-cancellation scenarios produce exactly the described Err/Ok results -- the key implementation subtlety (no final re-read of token state; checkpoints stop once no step is Pending) matches the spec's own 'no separate final read after the JoinSet finishes draining' language precisely. Full five-dimension re-pass found no second instance of the round-3 defect class and no new issues; AC-020/AC-020a vs AC-008a/AC-015 zero-step interaction is already correctly handled by AC-008a's explicit 'runners also empty' parenthetical and AC-015's general 'would otherwise pass all validation' phrasing. Re-confirmed CancellationToken Send+Sync and AC-022's DomainError/ErrorCode::Unavailable conversion against current michi-core/src/error.rs -- both check out, unaffected by this round's edit."
+}
+```</result>
+<usage><subagent_tokens>65382</subagent_tokens><tool_uses>11</tool_uses><duration_ms>220170</duration_ms></usage>
+</task-notification>
+
+---
+
+7 background agents were stopped by the user: "Research question: how should caller-initiated can...", "Draft SPEC-003 — the cancellation half of REQ-002,...", "Verify this draft spec@1 (SPEC-003, michi-pipeline...", "Adversarially audit this draft spec@1 (SPEC-003, m...", "This is round 2 of adversarial audit for SPEC-003 ...", "This is round 3 (final check) of adversarial audit...", "Produce a binding pass/fail verdict for this spec@...".
+
+---
+
+Pick up the work back up
+
+---
+
+have we not been using the update plugins that avoid this kind of issue?
+
+---
+
+Is it reloaded now?
+
+---
+
+Let's leverage the new plugins with improved workflows to wrap this up with expediancy but keeping the highest level of quality and keeping our token usage in mind
+
+---
+
+All the background agents done?
+
+---
+
+Go ahead and
+
+---
+
+<task-notification>
+<task-id>af9794df0bd8f0241</task-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/541d5b90-cae5-472e-b065-1f385536842e/tasks/af9794df0bd8f0241.output</output-file>
+<status>completed</status>
+<summary>Agent "Confirm SPEC-003 plan fixes compile" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Verification complete. I actually pulled `crates/michi-pipeline` from `main` into the isolated worktree (git-archive, non-destructive — this worktree's own git history turned out to be disjoint from `main`, so the crate didn't exist here at all until I did that), applied T01 through T13's literal code in order against the real `lib.rs`, and ran the real compile/test commands after each task.
+
+Results:
+- Baseline confirmed: 82 tests, matching the plan.
+- T01→T13 applied cleanly in sequence; every task's own test(s) passed; every stated full-suite regression count matched exactly (87, 88, 88, 91, 92, 93, 94, 95, 95, 96, 97, 98, 99).
+- Final `cargo check -p michi-pipeline --tests` exits 0. Final `cargo nextest run -p michi-pipeline` → 99/99 passed.
+- All 4 round-2 fixes confirmed present in the plan text and confirmed working when compiled: T09's `cancellation_scratch` local resolves the E0716; T07/T11/T12/T13's `let result = { ... fut.await };` block-scoping resolves all E0502s; T13's mid-poll `assert_eq!` on `pipeline.steps[0].status` is genuinely deleted; T11's duplicate `struct GatedThenOk` is genuinely gone and reuses T07's.
+- No new instances of the round-1 defect classes (unscoped `fut`/borrow-across-await, duplicate `mod tests` struct) found anywhere else in T01–T06, T08, T10, T14–T17.
+
+One new, previously-unfound defect: T11's implementation line `state.iter().any(|st| *st == StepRunState::Pending)` fails `cargo clippy -p michi-pipeline --all-targets -- -D warnings` with `clippy::manual_contains`. That's the crate's real pre-push gate per this project's `CLAUDE.md`/`justfile`, and T11's own step 4, plus T13 step 2 and T17 step 2, explicitly claim `cargo clippy ... exits 0` — which is false as the code is literally specified. `cargo check`/tests are unaffected; this is lint-only, but it means those three tasks' own stated verification outcome doesn't hold as written.
+
+```json
+{
+  "issues": [
+    {
+      "task_id": "T11-execute-pipeline-parallel-first-checkpoint",
+      "type": "under-specified",
+      "description": "T11's implementation step specifies `state.iter().any(|st| *st == StepRunState::Pending)` for the Pending-existence check. This literal code fails `cargo clippy -p michi-pipeline --all-targets -- -D warnings` with `clippy::manual_contains` (confirmed by actually compiling and linting T01-T13 in sequence in this worktree). T11's own step 4 claims this clippy command exits 0 — it does not, as written. The same false claim propagates into T13's step 2 and T17's step 2, both of which re-run the crate-wide clippy gate expecting a clean pass after T11's code is in place.",
+      "suggested_fix": "In T11's implementation step, replace `state.iter().any(|st| *st == StepRunState::Pending)` with `state.contains(&amp;StepRunState::Pending)`. No other change needed; this doesn't alter the test or its expected output, only makes the clippy-gate claims in T11/T13/T17 actually true."
+    }
+  ],
+  "overall": "fail",
+  "reasoning": "Confirm-only re-check requested: applied T01-T13 for real against crates/michi-pipeline/src/lib.rs (pulled non-destructively from main into this worktree since the crate didn't exist here), ran actual cargo check/nextest/clippy after each task. All 4 claimed round-2 fixes (T09 E0716 scratch-var fix, T07/T11/T12/T13 block-scoping for E0502, T13's mid-poll assert removal, T11's duplicate-struct removal) are confirmed present in the plan text and confirmed to compile/pass cleanly — 99/99 tests green through T13, matching every task's stated regression count exactly. Broader skim of T01-T06/T08/T10/T14-T17 found no new instances of round 1's two defect classes (unscoped fut/borrow-across-await, duplicate mod-tests struct). Orphaned-criteria check: all 26 spec AC IDs (AC-001..AC-022 plus the lettered sub-criteria) appear in some task's covers_criteria; none orphaned. One new, different-class defect surfaced only by actually running clippy: T11's `state.iter().any(...)` pattern trips `clippy::manual_contains` under this crate's `-D warnings` gate, so T11/T13/T17's own claimed 'clippy exits 0' verification step is factually false as literally specified. Per the round-2 demotion rule this would only be waved through if it were a private-helper style disagreement — it isn't; it's the plan asserting a passing gate result that is actually false when the literal code runs, which will surprise an implementer following the plan mechanically. That keeps this a genuine (if small, one-line-fix) blocking issue, so overall is fail. No other blocking issues found; the plan is very close to lambda-ready and this is the only fix needed."
+}
+```
+
+The plan is not yet clean — one real, previously-unfound clippy-gate blocker in T11 (propagating into T13/T17), but it's a one-line mechanical fix (`state.contains(&amp;StepRunState::Pending)`), not another compile-blocking class. Everything else — all four round-2 fixes, the full T01–T13 sequence, and criteria coverage — checks out against the actual compiled and tested code, not just the plan text.</result>
+<usage><subagent_tokens>59471</subagent_tokens><tool_uses>13</tool_uses><duration_ms>948149</duration_ms></usage>
+<worktree><worktreePath>/Users/gabe/Projects/michi/.claude/worktrees/agent-af9794df0bd8f0241</worktreePath><worktreeBranch>worktree-agent-af9794df0bd8f0241</worktreeBranch></worktree>
+</task-notification>
