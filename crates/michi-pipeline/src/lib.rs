@@ -1832,6 +1832,29 @@ mod tests {
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn cancel_after_execute_pipeline_returns_does_not_panic_or_mutate() {
+        let mut pipeline = make_pipeline(&["a"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = vec![Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) })];
+        let token = CancellationToken::new();
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &token).await;
+        assert!(result.is_ok());
+        let status_before = pipeline.steps[0].status;
+
+        token.cancel();
+
+        assert_eq!(
+            pipeline.steps[0].status, status_before,
+            "cancel() after execute_pipeline has already returned must not mutate a finished pipeline's status"
+        );
+    }
+
     fn split_toon_row(row: &str) -> Vec<String> {
         let mut fields = Vec::new();
         let mut chars = row.chars().peekable();
