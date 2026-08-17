@@ -110,6 +110,42 @@ impl ExecutionError {
     }
 }
 
+/// A cooperative, gate-only cancellation signal. Cheap to clone (an `Arc`
+/// clone): hold one instance on the task that decides to cancel and pass
+/// another into the in-flight `execute_pipeline`/`execute_pipeline_parallel`
+/// call. `is_cancelled` is a synchronous, non-blocking check -- there is no
+/// awaitable variant.
+#[derive(Clone)]
+pub struct CancellationToken(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl CancellationToken {
+    /// Constructs a token in the not-cancelled state.
+    #[must_use]
+    pub fn new() -> Self {
+        Self(std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)))
+    }
+
+    /// Signals cancellation. Idempotent -- safe to call more than once, and
+    /// safe to call before the associated run starts or after it has
+    /// already returned.
+    pub fn cancel(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Returns whether [`Self::cancel`] has been called on this token or any
+    /// clone of it.
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Default for CancellationToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 use std::future::Future;
 use std::pin::Pin;
 
@@ -712,6 +748,46 @@ pub async fn execute_pipeline_parallel(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancellation_token_new_starts_not_cancelled() {
+        let token = CancellationToken::new();
+        assert!(!token.is_cancelled());
+    }
+
+    #[test]
+    fn cancellation_token_cancel_flips_is_cancelled_to_true() {
+        let token = CancellationToken::new();
+        token.cancel();
+        assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn cancellation_token_cancel_is_idempotent() {
+        let token = CancellationToken::new();
+        token.cancel();
+        token.cancel();
+        assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn cancellation_token_clone_shares_state_bidirectionally() {
+        let original = CancellationToken::new();
+        let clone = original.clone();
+        clone.cancel();
+        assert!(original.is_cancelled(), "cancelling the clone must be observed on the original");
+
+        let original2 = CancellationToken::new();
+        let clone2 = original2.clone();
+        original2.cancel();
+        assert!(clone2.is_cancelled(), "cancelling the original must be observed on the clone");
+    }
+
+    #[test]
+    fn cancellation_token_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<CancellationToken>();
+    }
 
     #[test]
     fn execution_error_has_six_variants_and_impls_std_error() {
