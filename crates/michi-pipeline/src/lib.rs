@@ -1785,6 +1785,53 @@ mod tests {
         }
     }
 
+    struct GatedThenOk(std::sync::Arc<tokio::sync::Notify>);
+    impl Step for GatedThenOk {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            let notify = std::sync::Arc::clone(&self.0);
+            Box::pin(async move {
+                notify.notified().await;
+                Ok(())
+            })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancel_during_in_flight_step_does_not_interrupt_it() {
+        let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+        let mut pipeline = make_pipeline(&["a"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(3600),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = vec![Box::new(GatedThenOk(std::sync::Arc::clone(&notify)))];
+        let token = CancellationToken::new();
+
+        let result = {
+            let fut = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &token);
+            tokio::pin!(fut);
+            let waker = std::task::Waker::noop();
+            let mut cx = std::task::Context::from_waker(waker);
+            assert!(
+                matches!(fut.as_mut().poll(&mut cx), std::task::Poll::Pending),
+                "the run must be blocked awaiting the gate"
+            );
+
+            token.cancel();
+            assert!(
+                matches!(fut.as_mut().poll(&mut cx), std::task::Poll::Pending),
+                "cancelling must not interrupt the already-in-flight step"
+            );
+
+            notify.notify_one();
+            fut.await
+        };
+        assert!(result.is_ok(), "the in-flight step must still resolve to its own real Ok outcome, got {result:?}");
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
+    }
+
     fn split_toon_row(row: &str) -> Vec<String> {
         let mut fields = Vec::new();
         let mut chars = row.chars().peekable();
