@@ -761,7 +761,16 @@ pub async fn execute_pipeline_parallel(
                 propagate_skip(i, &mut state, &dependents_of);
             }
         }
-        spawn_ready_steps(&mut state, &remaining_prereqs, &runners, &breaker, jitter_seed, &mut join_set);
+        if cancellation.is_cancelled() && state.contains(&StepRunState::Pending) {
+            cancelled = true;
+            for st in state.iter_mut() {
+                if *st == StepRunState::Pending {
+                    *st = StepRunState::Skipped;
+                }
+            }
+        } else {
+            spawn_ready_steps(&mut state, &remaining_prereqs, &runners, &breaker, jitter_seed, &mut join_set);
+        }
     }
 
     for (i, st) in state.iter().enumerate() {
@@ -3213,6 +3222,69 @@ mod tests {
         for step in &pipeline.steps {
             assert_eq!(step.status, michi_core::pipeline::StepStatus::Skipped);
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancellation_at_a_subsequent_checkpoint_skips_the_pending_dependent_and_returns_cancelled() {
+        let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("b", "a");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(3600),
+            1,
+            Duration::from_secs(60),
+        ));
+        let b_calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(GatedThenOk(std::sync::Arc::clone(&notify))),
+            Box::new(SpyStep(std::sync::Arc::clone(&b_calls))),
+        ];
+        let token = CancellationToken::new();
+
+        let result = {
+            let fut = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &token);
+            tokio::pin!(fut);
+            let waker = std::task::Waker::noop();
+            let mut cx = std::task::Context::from_waker(waker);
+
+            for _ in 0..8 {
+                assert!(
+                    matches!(fut.as_mut().poll(&mut cx), std::task::Poll::Pending),
+                    "a must still be in flight awaiting its gate"
+                );
+                tokio::task::yield_now().await;
+            }
+
+            token.cancel();
+            notify.notify_one();
+            fut.await
+        };
+
+        assert!(matches!(result, Err(ExecutionError::Cancelled)), "expected Err(Cancelled), got {result:?}");
+        assert_eq!(
+            pipeline.steps[0].status,
+            michi_core::pipeline::StepStatus::Completed,
+            "a resolved Ok before cancellation took effect"
+        );
+        assert_eq!(
+            pipeline.steps[1].status,
+            michi_core::pipeline::StepStatus::Skipped,
+            "b, still Pending at the next checkpoint, must be skipped"
+        );
+        assert_eq!(b_calls.load(Ordering::SeqCst), 0, "b's Step::run must never be invoked once cancelled");
     }
 
     #[tokio::test(start_paused = true)]
