@@ -3513,6 +3513,31 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn cancel_after_execute_pipeline_parallel_returns_does_not_panic_or_mutate() {
+        let mut pipeline = make_pipeline(&["a"]);
+        let ids = vec!["a".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let runners: Vec<Box<dyn Step>> = vec![Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) })];
+        let token = CancellationToken::new();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &token).await;
+        assert!(result.is_ok());
+        let status_before = pipeline.steps[0].status;
+
+        token.cancel();
+
+        assert_eq!(
+            pipeline.steps[0].status, status_before,
+            "cancel() after execute_pipeline_parallel has already returned must not mutate a finished pipeline's status"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn circuit_open_short_circuit_writes_failed_and_skips_dependent() {
         let breaker = std::sync::Arc::new(CircuitBreaker::new(
             michi_resilience::RetryConfig::default(),
