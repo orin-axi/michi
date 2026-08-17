@@ -1747,6 +1747,22 @@ mod tests {
         assert!(token.is_cancelled(), "sanity: the token really was cancelled by b's own run");
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn zero_step_pipeline_with_precancelled_token_still_returns_cancelled() {
+        let mut pipeline = make_pipeline(&[]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let runners: Vec<Box<dyn Step>> = Vec::new();
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &token).await;
+        assert!(matches!(result, Err(ExecutionError::Cancelled)), "expected Err(Cancelled), got {result:?}");
+    }
+
     fn split_toon_row(row: &str) -> Vec<String> {
         let mut fields = Vec::new();
         let mut chars = row.chars().peekable();
