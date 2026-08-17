@@ -542,11 +542,24 @@ pub async fn execute_pipeline(
     jitter_seed: f64,
     cancellation: &CancellationToken,
 ) -> Result<(), ExecutionError> {
-    let _ = cancellation;
     if runners.len() != pipeline.steps.len() {
         return Err(ExecutionError::StepCountMismatch { expected: pipeline.steps.len(), got: runners.len() });
     }
+
+    if cancellation.is_cancelled() {
+        for step in pipeline.steps.iter_mut() {
+            step.status = michi_core::pipeline::StepStatus::Skipped;
+        }
+        return Err(ExecutionError::Cancelled);
+    }
+
     for (idx, runner) in runners.iter().enumerate() {
+        if idx > 0 && cancellation.is_cancelled() {
+            for step in pipeline.steps[idx..].iter_mut() {
+                step.status = michi_core::pipeline::StepStatus::Skipped;
+            }
+            return Err(ExecutionError::Cancelled);
+        }
         let outcome = breaker.call(runner.as_ref(), jitter_seed).await;
         let step = &mut pipeline.steps[idx];
         match outcome {
@@ -1617,6 +1630,121 @@ mod tests {
         let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok());
         assert!(pipeline.steps.is_empty());
+    }
+
+    struct CancelsTokenThenOk {
+        token: CancellationToken,
+    }
+    impl Step for CancelsTokenThenOk {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            self.token.cancel();
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancellation_observed_mid_run_skips_remaining_steps_and_preserves_earlier_statuses() {
+        let mut pipeline = make_pipeline(&["a", "b", "c", "d"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let token = CancellationToken::new();
+        let calls_b = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let calls_c = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let calls_d = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(CancelsTokenThenOk { token: token.clone() }),
+            Box::new(SpyStep(std::sync::Arc::clone(&calls_b))),
+            Box::new(SpyStep(std::sync::Arc::clone(&calls_c))),
+            Box::new(SpyStep(std::sync::Arc::clone(&calls_d))),
+        ];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &token).await;
+        assert!(
+            matches!(result, Err(ExecutionError::Cancelled)),
+            "expected Err(Cancelled) even though a's own Step::run resolved Ok, got {result:?}"
+        );
+        assert_eq!(
+            pipeline.steps[0].status,
+            michi_core::pipeline::StepStatus::Completed,
+            "a's already-terminal status must be preserved"
+        );
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Skipped, "b");
+        assert_eq!(pipeline.steps[2].status, michi_core::pipeline::StepStatus::Skipped, "c");
+        assert_eq!(pipeline.steps[3].status, michi_core::pipeline::StepStatus::Skipped, "d");
+        assert_eq!(calls_b.load(Ordering::SeqCst), 0, "b's Step::run must never be invoked once cancelled");
+        assert_eq!(calls_c.load(Ordering::SeqCst), 0, "c's Step::run must never be invoked once cancelled");
+        assert_eq!(calls_d.load(Ordering::SeqCst), 0, "d's Step::run must never be invoked once cancelled");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn precancelled_token_before_any_step_skips_everything_with_zero_invocations() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let calls_a = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let calls_b = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(SpyStep(std::sync::Arc::clone(&calls_a))),
+            Box::new(SpyStep(std::sync::Arc::clone(&calls_b))),
+        ];
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &token).await;
+        assert!(matches!(result, Err(ExecutionError::Cancelled)), "expected Err(Cancelled), got {result:?}");
+        assert_eq!(calls_a.load(Ordering::SeqCst), 0);
+        assert_eq!(calls_b.load(Ordering::SeqCst), 0);
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Skipped);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancellation_requested_after_the_last_checkpoint_has_passed_does_not_flip_ok_to_cancelled() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let breaker = CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        );
+        let token = CancellationToken::new();
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(CancelsTokenThenOk { token: token.clone() }),
+        ];
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &token).await;
+        assert!(result.is_ok(), "a too-late cancellation request must not retroactively turn an otherwise-successful run into Err(Cancelled), got {result:?}");
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
+        }
+        assert!(token.is_cancelled(), "sanity: the token really was cancelled by b's own run");
     }
 
     fn split_toon_row(row: &str) -> Vec<String> {
