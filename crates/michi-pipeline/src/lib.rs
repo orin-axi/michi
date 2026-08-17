@@ -653,7 +653,6 @@ pub async fn execute_pipeline_parallel(
     jitter_seed: f64,
     cancellation: &CancellationToken,
 ) -> Result<(), ExecutionError> {
-    let _ = cancellation;
     if runners.len() != pipeline.steps.len() {
         return Err(ExecutionError::StepCountMismatch { expected: pipeline.steps.len(), got: runners.len() });
     }
@@ -725,8 +724,18 @@ pub async fn execute_pipeline_parallel(
 
     let mut join_set: tokio::task::JoinSet<(usize, Result<(), ExecutionError>)> = tokio::task::JoinSet::new();
     let mut first_failure: Option<(usize, ExecutionError)> = None;
+    let mut cancelled = false;
 
-    spawn_ready_steps(&mut state, &remaining_prereqs, &runners, &breaker, jitter_seed, &mut join_set);
+    if cancellation.is_cancelled() {
+        cancelled = true;
+        for st in state.iter_mut() {
+            if *st == StepRunState::Pending {
+                *st = StepRunState::Skipped;
+            }
+        }
+    } else {
+        spawn_ready_steps(&mut state, &remaining_prereqs, &runners, &breaker, jitter_seed, &mut join_set);
+    }
 
     while let Some(joined) = join_set.join_next().await {
         let (i, result) = match joined {
@@ -762,12 +771,13 @@ pub async fn execute_pipeline_parallel(
     }
 
     match first_failure {
-        None => Ok(()),
         Some((i, err)) => Err(ExecutionError::StepFailed {
             step_id: pipeline.steps[i].id.clone(),
             step_name: pipeline.steps[i].name.clone(),
             source: Box::new(err),
         }),
+        None if cancelled => Err(ExecutionError::Cancelled),
+        None => Ok(()),
     }
 }
 
@@ -3165,6 +3175,44 @@ mod tests {
             michi_core::pipeline::StepStatus::Completed,
             "d must still be invoked once c completes, even though a already failed"
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn precancelled_token_skips_every_step_before_first_spawn() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(5),
+            1,
+            Duration::from_secs(60),
+        ));
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> =
+            vec![Box::new(SpyStep(std::sync::Arc::clone(&calls))), Box::new(SpyStep(std::sync::Arc::clone(&calls)))];
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &token).await;
+        assert!(matches!(result, Err(ExecutionError::Cancelled)), "expected Err(Cancelled), got {result:?}");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "no Step::run may be invoked once cancelled before the first spawn"
+        );
+        for step in &pipeline.steps {
+            assert_eq!(step.status, michi_core::pipeline::StepStatus::Skipped);
+        }
     }
 
     #[tokio::test(start_paused = true)]
