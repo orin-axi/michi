@@ -90,6 +90,10 @@ pub enum ExecutionError {
         /// A step id that is part of the detected cycle.
         step_id: String,
     },
+    /// Cancellation was observed before the pipeline run completed every
+    /// step.
+    #[error("pipeline execution cancelled")]
+    Cancelled,
 }
 
 impl ExecutionError {
@@ -106,6 +110,7 @@ impl ExecutionError {
             Self::UnknownStepId { .. } => false,
             Self::DuplicateStepId { .. } => false,
             Self::CyclicDependency { .. } => false,
+            Self::Cancelled => false,
         }
     }
 }
@@ -240,6 +245,10 @@ impl From<ExecutionError> for michi_core::DomainError {
                 format!("cyclic dependency involving step id: {step_id}"),
             )
             .retryable(false),
+            ExecutionError::Cancelled => {
+                michi_core::DomainError::new(michi_core::ErrorCode::Unavailable, "pipeline execution cancelled")
+                    .retryable(false)
+            }
         }
     }
 }
@@ -787,6 +796,15 @@ mod tests {
     fn cancellation_token_is_send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<CancellationToken>();
+    }
+
+    #[test]
+    fn cancelled_variant_is_not_retryable_and_maps_to_unavailable_not_retryable() {
+        assert!(!ExecutionError::Cancelled.is_retryable());
+        let d: michi_core::DomainError = ExecutionError::Cancelled.into();
+        assert_eq!(d.code, michi_core::ErrorCode::Unavailable);
+        assert_eq!(d.message, "pipeline execution cancelled");
+        assert!(!d.retryable);
     }
 
     #[test]
