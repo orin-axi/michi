@@ -651,7 +651,9 @@ pub async fn execute_pipeline_parallel(
     runners: Vec<Box<dyn Step>>,
     breaker: std::sync::Arc<CircuitBreaker>,
     jitter_seed: f64,
+    cancellation: &CancellationToken,
 ) -> Result<(), ExecutionError> {
+    let _ = cancellation;
     if runners.len() != pipeline.steps.len() {
         return Err(ExecutionError::StepCountMismatch { expected: pipeline.steps.len(), got: runners.len() });
     }
@@ -2334,7 +2336,8 @@ mod tests {
             Duration::from_secs(60),
         ));
         let runners: Vec<Box<dyn Step>> = vec![];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::StepCountMismatch { expected, got }) => {
                 assert_eq!(expected, 1);
@@ -2356,7 +2359,8 @@ mod tests {
             Duration::from_secs(60),
         ));
         let runners: Vec<Box<dyn Step>> = vec![];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok());
     }
 
@@ -2375,7 +2379,8 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..3)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::DuplicateStepId { step_id }) => assert_eq!(step_id, "a"),
             other => panic!("expected DuplicateStepId, got {other:?}"),
@@ -2399,7 +2404,8 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..2)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(matches!(result, Err(ExecutionError::UnknownStepId { .. })), "expected UnknownStepId, got {result:?}");
         for step in &pipeline.steps {
             assert_eq!(step.status, michi_core::pipeline::StepStatus::Pending);
@@ -2431,7 +2437,8 @@ mod tests {
         }
         let runners: Vec<Box<dyn Step>> =
             (0..2).map(|_| Box::new(SpyStep(std::sync::Arc::clone(&calls))) as Box<dyn Step>).collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::UnknownStepId { step_id }) => assert_eq!(step_id, "ghost"),
             other => panic!("expected UnknownStepId{{step_id: ghost}}, got {other:?}"),
@@ -2470,7 +2477,8 @@ mod tests {
         }
         let runners: Vec<Box<dyn Step>> =
             (0..2).map(|_| Box::new(SpyStep(std::sync::Arc::clone(&calls))) as Box<dyn Step>).collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::UnknownStepId { step_id }) => assert_eq!(step_id, "b"),
             other => panic!("expected UnknownStepId{{step_id: b}}, got {other:?}"),
@@ -2501,7 +2509,8 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..2)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(
             matches!(result, Err(ExecutionError::CyclicDependency { .. })),
             "expected CyclicDependency, got {result:?}"
@@ -2535,7 +2544,8 @@ mod tests {
             }
         }
         let runners: Vec<Box<dyn Step>> = vec![Box::new(SpyStep(std::sync::Arc::clone(&calls)))];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::CyclicDependency { step_id }) => assert_eq!(step_id, "a"),
             other => panic!("expected CyclicDependency{{step_id: a}}, got {other:?}"),
@@ -2561,7 +2571,8 @@ mod tests {
             Duration::from_secs(60),
         ));
         let runners: Vec<Box<dyn Step>> = vec![Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) })];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(
             matches!(result, Err(ExecutionError::StepCountMismatch { .. })),
             "StepCountMismatch must be checked first, got {result:?}"
@@ -2583,7 +2594,8 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..3)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::DuplicateStepId { step_id }) => assert_eq!(step_id, "a"),
             other => panic!(
@@ -2608,7 +2620,8 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..2)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(
             matches!(result, Err(ExecutionError::UnknownStepId { .. })),
             "expected UnknownStepId to win over the simultaneous CyclicDependency violation (deps' id set {{a,b,c}} != pipeline's {{a,b}}, and a/b also cyclically depend on each other), got {result:?}"
@@ -2629,7 +2642,8 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..3)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok(), "expected Ok(()), got {result:?}");
         for step in &pipeline.steps {
             assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
@@ -2649,7 +2663,8 @@ mod tests {
         ));
         let runners: Vec<Box<dyn Step>> =
             vec![Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) })];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::StepFailed { step_id, .. }) => assert_eq!(step_id, "a"),
             other => panic!("expected StepFailed{{step_id: a}}, got {other:?}"),
@@ -2684,7 +2699,8 @@ mod tests {
             Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
             Box::new(SpyStep(std::sync::Arc::clone(&calls))),
         ];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::StepFailed { step_id, .. }) => assert_eq!(step_id, "a"),
             other => panic!("expected StepFailed{{step_id: a}}, got {other:?}"),
@@ -2728,7 +2744,8 @@ mod tests {
             Box::new(SpyStep(std::sync::Arc::clone(&calls_b))),
             Box::new(SpyStep(std::sync::Arc::clone(&calls_c))),
         ];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::StepFailed { step_id, .. }) => assert_eq!(step_id, "a"),
             other => panic!("expected StepFailed{{step_id: a}}, got {other:?}"),
@@ -2763,7 +2780,8 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..2)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok(), "expected Ok(()), got {result:?}");
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
         assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Completed);
@@ -2807,7 +2825,8 @@ mod tests {
             Box::new(RendezvousX(tokio::sync::Mutex::new(Some(rx)))),
             Box::new(RendezvousY(tokio::sync::Mutex::new(Some(tx)))),
         ];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok(), "X's rx must resolve because Y is polled concurrently, got {result:?}");
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
         assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Completed);
@@ -2882,7 +2901,8 @@ mod tests {
                 observed_flag_at_invocation: std::sync::Arc::clone(&b_observed_flag),
             }),
         ];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok());
         assert!(
             b_observed_flag.load(Ordering::SeqCst),
@@ -2908,7 +2928,8 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..3)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok());
         for step in &pipeline.steps {
             assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
@@ -2956,7 +2977,8 @@ mod tests {
         ];
 
         let result = {
-            let fut = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0);
+            let cancellation_scratch = CancellationToken::new();
+            let fut = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &cancellation_scratch);
             tokio::pin!(fut);
             let waker = std::task::Waker::noop();
             let mut cx = std::task::Context::from_waker(waker);
@@ -3005,7 +3027,8 @@ mod tests {
             Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
             Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
         ];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         assert!(matches!(result, Err(ExecutionError::StepFailed { .. })));
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed, "a");
         assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Skipped, "b (direct dependent)");
@@ -3049,7 +3072,8 @@ mod tests {
             Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
             Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
         ];
-        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0).await;
+        let result =
+            execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::StepFailed { step_id, step_name, .. }) => {
                 assert!(
@@ -3088,8 +3112,15 @@ mod tests {
             Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
             Box::new(SleepsThenOk),
         ];
-        let result =
-            execute_pipeline_parallel(&mut pipeline, &deps, runners, std::sync::Arc::clone(&breaker), 0.0).await;
+        let result = execute_pipeline_parallel(
+            &mut pipeline,
+            &deps,
+            runners,
+            std::sync::Arc::clone(&breaker),
+            0.0,
+            &CancellationToken::new(),
+        )
+        .await;
         assert!(matches!(result, Err(ExecutionError::StepFailed { .. })));
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed, "a");
         assert_eq!(
@@ -3117,8 +3148,15 @@ mod tests {
             Box::new(SleepsThenOk),
             Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
         ];
-        let result =
-            execute_pipeline_parallel(&mut pipeline, &deps, runners, std::sync::Arc::clone(&breaker), 0.0).await;
+        let result = execute_pipeline_parallel(
+            &mut pipeline,
+            &deps,
+            runners,
+            std::sync::Arc::clone(&breaker),
+            0.0,
+            &CancellationToken::new(),
+        )
+        .await;
         assert!(matches!(result, Err(ExecutionError::StepFailed { .. })));
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed, "a");
         assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Completed, "c");
@@ -3160,8 +3198,15 @@ mod tests {
             Box::new(SpyStep(std::sync::Arc::clone(&a_calls))),
             Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
         ];
-        let result =
-            execute_pipeline_parallel(&mut pipeline, &deps, runners, std::sync::Arc::clone(&breaker), 0.0).await;
+        let result = execute_pipeline_parallel(
+            &mut pipeline,
+            &deps,
+            runners,
+            std::sync::Arc::clone(&breaker),
+            0.0,
+            &CancellationToken::new(),
+        )
+        .await;
         match result {
             Err(ExecutionError::StepFailed { source, .. }) => {
                 assert!(
@@ -3282,7 +3327,8 @@ mod tests {
                 Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
                 Box::new(NeverResolvesStep),
             ];
-            execute_pipeline_parallel(&mut guard, &deps, runners, breaker_for_task, 0.0).await
+            execute_pipeline_parallel(&mut guard, &deps, runners, breaker_for_task, 0.0, &CancellationToken::new())
+                .await
         });
         let join_result = handle.await;
         assert!(
