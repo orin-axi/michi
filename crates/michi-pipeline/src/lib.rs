@@ -3463,6 +3463,55 @@ mod tests {
         );
     }
 
+    struct FailsAndCancels {
+        token: CancellationToken,
+        calls: std::sync::atomic::AtomicU32,
+    }
+    impl Step for FailsAndCancels {
+        fn run<'a>(&'a self, _attempt: u32) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.token.cancel();
+            Box::pin(async { Err(ExecutionError::Failed { message: "boom".into(), retryable: false }) })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_step_failure_and_cancellation_in_the_same_run_returns_step_failed_not_cancelled() {
+        let mut pipeline = make_pipeline(&["a", "b", "c"]);
+        let ids = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut deps = StepDependencies::new(&ids).unwrap();
+        deps.depends_on("c", "b");
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::new(0, Duration::from_millis(1), Duration::from_secs(1), 0.0),
+            Duration::from_secs(3600),
+            u32::MAX,
+            Duration::from_secs(60),
+        ));
+        let token = CancellationToken::new();
+        let c_calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        struct SpyStep(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Step for SpyStep {
+            fn run<'a>(
+                &'a self,
+                _attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(FailsAndCancels { token: token.clone(), calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+            Box::new(SpyStep(std::sync::Arc::clone(&c_calls))),
+        ];
+        let result = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &token).await;
+        match result {
+            Err(ExecutionError::StepFailed { step_id, .. }) => assert_eq!(step_id, "a"),
+            other => panic!("expected StepFailed to take precedence over Cancelled, got {other:?}"),
+        }
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn circuit_open_short_circuit_writes_failed_and_skips_dependent() {
         let breaker = std::sync::Arc::new(CircuitBreaker::new(
