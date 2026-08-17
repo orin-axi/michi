@@ -540,7 +540,9 @@ pub async fn execute_pipeline(
     runners: Vec<Box<dyn Step>>,
     breaker: &CircuitBreaker,
     jitter_seed: f64,
+    cancellation: &CancellationToken,
 ) -> Result<(), ExecutionError> {
+    let _ = cancellation;
     if runners.len() != pipeline.steps.len() {
         return Err(ExecutionError::StepCountMismatch { expected: pipeline.steps.len(), got: runners.len() });
     }
@@ -1568,7 +1570,7 @@ mod tests {
             Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
             Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
         ];
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::StepCountMismatch { expected, got }) => {
                 assert_eq!(expected, 1);
@@ -1589,7 +1591,7 @@ mod tests {
             Duration::from_secs(60),
         );
         let runners: Vec<Box<dyn Step>> = vec![Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) })];
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::StepCountMismatch { expected, got }) => {
                 assert_eq!(expected, 2);
@@ -1612,7 +1614,7 @@ mod tests {
             Duration::from_secs(60),
         );
         let runners: Vec<Box<dyn Step>> = Vec::new();
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok());
         assert!(pipeline.steps.is_empty());
     }
@@ -1664,7 +1666,7 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..3)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok());
         for step in &pipeline.steps {
             assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
@@ -1701,7 +1703,7 @@ mod tests {
         );
         let runners: Vec<Box<dyn Step>> =
             vec![Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) })];
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_err());
         assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Failed);
 
@@ -1755,7 +1757,7 @@ mod tests {
             Box::new(SpyStep(std::sync::Arc::clone(&runner0))),
             Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
         ];
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok());
         assert_eq!(
             runner0.load(Ordering::SeqCst),
@@ -1799,7 +1801,7 @@ mod tests {
             Box::new(AlwaysFailsNonRetryableStep),
             Box::new(SpyStep(std::sync::Arc::clone(&after_calls))),
         ];
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         assert_eq!(after_calls.load(Ordering::SeqCst), 0, "no runner after the failing step may be invoked");
         match result {
             Err(ExecutionError::StepFailed { step_id, step_name, source }) => {
@@ -1843,7 +1845,7 @@ mod tests {
         );
         let runners: Vec<Box<dyn Step>> =
             vec![Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) })];
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::StepFailed { step_id, step_name, .. }) => {
                 assert_eq!(step_id, "step-id-xyz", "step_id must come from step.id, not step.name");
@@ -1866,7 +1868,7 @@ mod tests {
             Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
             Box::new(AlwaysFailStep { retryable: false, calls: std::sync::atomic::AtomicU32::new(0) }),
         ];
-        let _ = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let _ = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         for step in &pipeline.steps {
             assert_ne!(step.status, michi_core::pipeline::StepStatus::Skipped);
         }
@@ -1914,7 +1916,7 @@ mod tests {
             Box::new(MarkerStep { id: "s1".into(), log: std::sync::Arc::clone(&log), sleep: None }),
             Box::new(MarkerStep { id: "s2".into(), log: std::sync::Arc::clone(&log), sleep: None }),
         ];
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok());
         let recorded = log.lock().unwrap_or_else(|e| e.into_inner()).clone();
         assert_eq!(
@@ -1957,7 +1959,7 @@ mod tests {
 
         let call_seed = 0.42_f64;
         let before = tokio::time::Instant::now();
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, call_seed).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, call_seed, &CancellationToken::new()).await;
         let elapsed = before.elapsed();
         assert!(result.is_ok());
 
@@ -1989,7 +1991,7 @@ mod tests {
                     Box::new(PanicsStep),
                     Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
                 ];
-                let _ = execute_pipeline(&mut guard, runners, &breaker, 0.0).await;
+                let _ = execute_pipeline(&mut guard, runners, &breaker, 0.0, &CancellationToken::new()).await;
             })
         };
         let join_result = handle.await;
@@ -2589,7 +2591,7 @@ mod tests {
             Box::new(RendezvousX(tokio::sync::Mutex::new(Some(rx)))),
             Box::new(RendezvousY(tokio::sync::Mutex::new(Some(tx)))),
         ];
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         match result {
             Err(ExecutionError::StepFailed { source, .. }) => {
                 assert!(matches!(*source, ExecutionError::Timeout { .. }), "expected Timeout, got {source:?}");
@@ -2985,7 +2987,7 @@ mod tests {
         let runners: Vec<Box<dyn Step>> = (0..2)
             .map(|_| Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }) as Box<dyn Step>)
             .collect();
-        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0).await;
+        let result = execute_pipeline(&mut pipeline, runners, &breaker, 0.0, &CancellationToken::new()).await;
         assert!(result.is_ok(), "execute_pipeline must still accept duplicate ids with no validation, got {result:?}");
         for step in &pipeline.steps {
             assert_eq!(step.status, michi_core::pipeline::StepStatus::Completed);
@@ -2993,15 +2995,16 @@ mod tests {
     }
 
     #[test]
-    fn execute_pipeline_signature_is_unchanged() {
+    fn execute_pipeline_signature_includes_trailing_cancellation_token() {
         #[allow(dead_code)]
         async fn _sig(
             p: &mut michi_core::pipeline::Pipeline,
             r: Vec<Box<dyn Step>>,
             b: &CircuitBreaker,
             j: f64,
+            c: &CancellationToken,
         ) -> Result<(), ExecutionError> {
-            execute_pipeline(p, r, b, j).await
+            execute_pipeline(p, r, b, j, c).await
         }
     }
 
