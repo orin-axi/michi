@@ -3288,6 +3288,44 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn cancellation_after_every_step_is_already_running_returns_ok() {
+        let mut pipeline = make_pipeline(&["a", "b"]);
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let deps = StepDependencies::new(&ids).unwrap();
+        let breaker = std::sync::Arc::new(CircuitBreaker::new(
+            michi_resilience::RetryConfig::default(),
+            Duration::from_secs(3600),
+            1,
+            Duration::from_secs(60),
+        ));
+        let a_notify = std::sync::Arc::new(tokio::sync::Notify::new());
+        let runners: Vec<Box<dyn Step>> = vec![
+            Box::new(GatedThenOk(std::sync::Arc::clone(&a_notify))),
+            Box::new(CountingStep { calls: std::sync::atomic::AtomicU32::new(0) }),
+        ];
+        let token = CancellationToken::new();
+
+        let result = {
+            let fut = execute_pipeline_parallel(&mut pipeline, &deps, runners, breaker, 0.0, &token);
+            tokio::pin!(fut);
+            let waker = std::task::Waker::noop();
+            let mut cx = std::task::Context::from_waker(waker);
+            assert!(matches!(fut.as_mut().poll(&mut cx), std::task::Poll::Pending));
+
+            token.cancel();
+            a_notify.notify_one();
+            fut.await
+        };
+
+        assert!(
+            result.is_ok(),
+            "a too-late cancellation (no Pending step remained at any later checkpoint) must not turn an all-Ok run into Err(Cancelled), got {result:?}"
+        );
+        assert_eq!(pipeline.steps[0].status, michi_core::pipeline::StepStatus::Completed);
+        assert_eq!(pipeline.steps[1].status, michi_core::pipeline::StepStatus::Completed);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn circuit_open_short_circuit_writes_failed_and_skips_dependent() {
         let breaker = std::sync::Arc::new(CircuitBreaker::new(
             michi_resilience::RetryConfig::default(),
