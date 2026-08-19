@@ -123,7 +123,13 @@ fn retry_after_for(err: &ExecutionError) -> Option<Duration> {
         ExecutionError::Http { retry_after, .. } => *retry_after,
         ExecutionError::CircuitOpen { retry_after_ms } => Some(Duration::from_millis(*retry_after_ms)),
         ExecutionError::StepFailed { source, .. } => retry_after_for(source),
-        _ => None,
+        ExecutionError::Timeout { .. }
+        | ExecutionError::Failed { .. }
+        | ExecutionError::StepCountMismatch { .. }
+        | ExecutionError::UnknownStepId { .. }
+        | ExecutionError::DuplicateStepId { .. }
+        | ExecutionError::CyclicDependency { .. }
+        | ExecutionError::Cancelled => None,
     }
 }
 
@@ -463,7 +469,9 @@ impl CircuitBreaker {
     /// While `Closed`, retries retryable failures per `retry_config` with
     /// `next_retry_delay`'s backoff, threading `ExecutionError::Http`'s
     /// `retry_after` or `ExecutionError::CircuitOpen`'s `retry_after_ms`
-    /// through when present. Returns immediately on success or
+    /// through when present -- including when either is wrapped inside
+    /// `ExecutionError::StepFailed`'s `source`, which is unwrapped
+    /// recursively. Returns immediately on success or
     /// on a non-retryable error, and returns the last error once
     /// `next_retry_delay` reports exhaustion. On success, resets the
     /// consecutive-failure counter; on a call-level failure (after retries
