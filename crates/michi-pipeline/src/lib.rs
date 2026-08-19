@@ -115,6 +115,18 @@ impl ExecutionError {
     }
 }
 
+/// Extracts the caller-supplied retry hint from an error, recursing through
+/// [`ExecutionError::StepFailed`] into its wrapped `source` so a step
+/// failure never discards an inner `Http`/`CircuitOpen` retry hint.
+fn retry_after_for(err: &ExecutionError) -> Option<Duration> {
+    match err {
+        ExecutionError::Http { retry_after, .. } => *retry_after,
+        ExecutionError::CircuitOpen { retry_after_ms } => Some(Duration::from_millis(*retry_after_ms)),
+        ExecutionError::StepFailed { source, .. } => retry_after_for(source),
+        _ => None,
+    }
+}
+
 /// A cooperative, gate-only cancellation signal. Cheap to clone (an `Arc`
 /// clone): hold one instance on the task that decides to cancel and pass
 /// another into the in-flight `execute_pipeline`/`execute_pipeline_parallel`
@@ -513,11 +525,7 @@ impl CircuitBreaker {
                         self.record_failure();
                         return Err(err);
                     }
-                    let retry_after = match &err {
-                        ExecutionError::Http { retry_after, .. } => *retry_after,
-                        ExecutionError::CircuitOpen { retry_after_ms } => Some(Duration::from_millis(*retry_after_ms)),
-                        _ => None,
-                    };
+                    let retry_after = retry_after_for(&err);
                     match michi_resilience::next_retry_delay(&self.retry_config, attempt, jitter_seed, retry_after) {
                         Some(delay) => {
                             tokio::time::sleep(delay).await;
@@ -1165,6 +1173,87 @@ mod tests {
         let expected = michi_resilience::next_retry_delay(&retry_config, 0, 0.0, Some(ra)).unwrap();
         assert_eq!(elapsed, expected);
         assert!(elapsed >= ra, "must wait at least the circuit's stated {ra:?} cooldown, waited {elapsed:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retries_thread_step_failed_wrapping_http_retry_after() {
+        let retry_config =
+            michi_resilience::RetryConfig::new(5, Duration::from_millis(10), Duration::from_secs(60), 0.0);
+        let breaker =
+            CircuitBreaker::new(retry_config.clone(), Duration::from_secs(5), u32::MAX, Duration::from_secs(60));
+        let ra = Duration::from_secs(30);
+        struct StepFailedHttpThenOk(std::sync::atomic::AtomicU32);
+        impl Step for StepFailedHttpThenOk {
+            fn run<'a>(
+                &'a self,
+                attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move {
+                    if attempt == 0 {
+                        Err(ExecutionError::StepFailed {
+                            step_id: "s".into(),
+                            step_name: "S".into(),
+                            source: Box::new(ExecutionError::Http {
+                                status: 503,
+                                message: "x".into(),
+                                retry_after: Some(Duration::from_secs(30)),
+                            }),
+                        })
+                    } else {
+                        Ok(())
+                    }
+                })
+            }
+        }
+        let step = StepFailedHttpThenOk(std::sync::atomic::AtomicU32::new(0));
+        let before = tokio::time::Instant::now();
+        let result = breaker.call(&step, 0.0).await;
+        let elapsed = before.elapsed();
+        assert!(result.is_ok());
+        let expected = michi_resilience::next_retry_delay(&retry_config, 0, 0.0, Some(ra)).unwrap();
+        assert_eq!(elapsed, expected);
+        assert!(elapsed >= ra, "must wait at least the wrapped Http's stated {ra:?} retry_after, waited {elapsed:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retries_thread_step_failed_wrapping_circuit_open_retry_after() {
+        let retry_config =
+            michi_resilience::RetryConfig::new(5, Duration::from_millis(10), Duration::from_secs(60), 0.0);
+        let breaker =
+            CircuitBreaker::new(retry_config.clone(), Duration::from_secs(5), u32::MAX, Duration::from_secs(60));
+        let ra = Duration::from_millis(30_000);
+        struct StepFailedCircuitOpenThenOk(std::sync::atomic::AtomicU32);
+        impl Step for StepFailedCircuitOpenThenOk {
+            fn run<'a>(
+                &'a self,
+                attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move {
+                    if attempt == 0 {
+                        Err(ExecutionError::StepFailed {
+                            step_id: "s".into(),
+                            step_name: "S".into(),
+                            source: Box::new(ExecutionError::CircuitOpen { retry_after_ms: 30_000 }),
+                        })
+                    } else {
+                        Ok(())
+                    }
+                })
+            }
+        }
+        let step = StepFailedCircuitOpenThenOk(std::sync::atomic::AtomicU32::new(0));
+        let before = tokio::time::Instant::now();
+        let result = breaker.call(&step, 0.0).await;
+        let elapsed = before.elapsed();
+        assert!(result.is_ok());
+        let expected = michi_resilience::next_retry_delay(&retry_config, 0, 0.0, Some(ra)).unwrap();
+        assert_eq!(elapsed, expected);
+        assert!(
+            elapsed >= ra,
+            "must wait at least the wrapped CircuitOpen's stated {ra:?} cooldown, waited {elapsed:?}"
+        );
     }
 
     #[tokio::test(start_paused = true)]
