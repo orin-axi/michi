@@ -12,13 +12,13 @@ preserve-npm-ranges = true
 # Rust library crates — published to crates.io
 [[package-set]]
 match = "crates/*"
-publish-to = ["cratesIo"]
+publish-to = ["crates-io"]
 release-trigger = "changeset"
 
 # Root crate (not captured by any glob)
 [[package]]
 match = "."
-publish-to = ["cratesIo"]
+publish-to = ["crates-io"]
 release-trigger = "changeset"
 
 # michi-node: NAPI cdylib + npm package
@@ -30,4 +30,4 @@ release-trigger = "changeset"
 # Keep michi crate and npm wrapper versioned in lockstep
 [[fixed-group]]
 name = "michi-and-node"
-members = ["michi", "@orin-axi/michi"]
+members = ["michi", "michi-node"]
