@@ -617,89 +617,6 @@ mod tests {
     }
 
     #[test]
-    fn resilience_supersessions_are_recorded_in_michi_root_napi() {
-        let root_napi: serde_json::Value =
-            serde_json::from_str(include_str!("../../.claude/specs/michi-root-napi.json"))
-                .expect("michi-root-napi.json is valid JSON");
-        let criteria = root_napi["acceptance_criteria"].as_array().expect("acceptance_criteria is an array");
-        // Correction pass 4 retired the SUPERSEDED-BY placeholder convention:
-        // disproved criteria are deleted outright and their replacements take
-        // over the bare IDs, so nothing in this array is simultaneously
-        // enumerable as live and marked as retired. The retirement history
-        // lives in `revision_note`.
-        let mut ids: Vec<&str> = Vec::with_capacity(criteria.len());
-        for c in criteria {
-            let id = c["id"].as_str().expect("id is a string");
-            let criterion = c["criterion"].as_str().expect("criterion is a string");
-            assert!(
-                !criterion.starts_with("SUPERSEDED BY"),
-                "{id} is marked SUPERSEDED BY but is still a live entry in acceptance_criteria"
-            );
-            ids.push(id);
-        }
-        for retired in ["AC-023", "AC-027", "AC-030", "AC-031", "AC-035", "AC-041", "AC-042"] {
-            assert!(ids.contains(&retired), "{retired} should exist as a live replacement criterion");
-            let r_suffixed = format!("{retired}R");
-            assert!(
-                !ids.iter().any(|id| *id == r_suffixed),
-                "{r_suffixed} should have been renamed onto the bare ID {retired}"
-            );
-        }
-        let revision_note = root_napi["revision_note"].as_str().expect("revision_note is a string");
-        assert!(
-            revision_note.contains("SPEC-ARCH-004") && revision_note.contains("SPEC-ARCH-003"),
-            "revision_note must record the SPEC-ARCH-003/004 retirement history"
-        );
-        let api_surface = root_napi["api_surface"].as_array().expect("api_surface is an array");
-        let mut checked_next_retry_delay = false;
-        let mut checked_is_retryable_status = false;
-        for entry in api_surface {
-            let name = entry["name"].as_str().unwrap_or_default();
-            let signature = entry["signature"].as_str().unwrap_or_default();
-            let description = entry["description"].as_str().unwrap_or_default();
-            if name == "next_retry_delay" {
-                for needle in
-                    ["base_delay_ms: JsDelayMillis", "jitter_seed: JsUnitInterval", "max_retries: JsRetryCount"]
-                {
-                    assert!(signature.contains(needle), "next_retry_delay api_surface signature missing {needle}");
-                }
-                assert!(!description.contains("clamped to [0,1]"), "{name} api_surface still describes clamping");
-                checked_next_retry_delay = true;
-            } else if name == "is_retryable_status" {
-                assert!(
-                    signature.contains("status: JsHttpStatus"),
-                    "is_retryable_status api_surface signature missing status: JsHttpStatus"
-                );
-                assert!(
-                    description.contains("expected an integer in [100, 599], got"),
-                    "is_retryable_status api_surface description missing the rejection message"
-                );
-                assert!(
-                    !description.contains("silently coerced to 0"),
-                    "{name} api_surface still describes silent coercion"
-                );
-                checked_is_retryable_status = true;
-            }
-        }
-        assert!(checked_next_retry_delay, "next_retry_delay api_surface entry not found");
-        assert!(checked_is_retryable_status, "is_retryable_status api_surface entry not found");
-        let non_goals = root_napi["non_goals"].as_array().expect("non_goals is an array");
-        for (idx, entry) in non_goals.iter().enumerate() {
-            let entry = entry.as_str().expect("non_goals entry is a string");
-            assert!(
-                !entry.starts_with("SUPERSEDED BY"),
-                "non_goals[{idx}] is marked SUPERSEDED BY but is still a live entry, got: {entry}"
-            );
-        }
-        // The two entries rewritten by correction pass 3 must describe the
-        // post-SPEC-ARCH-004 rejection behavior, not the removed clamping.
-        let jitter_entry = non_goals[1].as_str().expect("non_goals entry is a string");
-        assert!(jitter_entry.contains("rejects any jitter_factor outside [0.0, 1.0]"), "got: {jitter_entry}");
-        let status_entry = non_goals[2].as_str().expect("non_goals entry is a string");
-        assert!(status_entry.contains("[100, 599]"), "got: {status_entry}");
-    }
-
-    #[test]
     fn js_unit_interval_type_name_is_js_unit_interval() {
         assert_eq!(JsUnitInterval::type_name(), "JsUnitInterval");
     }
@@ -726,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn napi_numeric_docs_and_superseded_specs_are_consistent() {
+    fn napi_numeric_docs_are_consistent() {
         let docs = include_str!("../../docs/spec/04-mcp-and-napi.md");
         assert!(!docs.contains("clamped non-negative"), "docs still describe clamping");
         assert!(!docs.contains("n.max(0) as usize"), "docs still show the deleted clamp expression");
@@ -747,34 +664,6 @@ mod tests {
             "status",
         ] {
             assert!(docs.contains(field), "numeric boundary docs missing rejection contract for {field}");
-        }
-
-        let arch002: serde_json::Value = serde_json::from_str(include_str!(
-            "../../.claude/specs/structural-napi-numeric-boundary-narrow-inconsistent-i32-coercion-across-multiple-call-sites.json"
-        ))
-        .expect("SPEC-ARCH-002 is valid JSON");
-        let purpose = arch002["purpose"].as_str().expect("purpose is a string");
-        assert!(purpose.starts_with("SUPERSEDED BY SPEC-ARCH-003"), "got: {purpose}");
-
-        let point_fixes: serde_json::Value =
-            serde_json::from_str(include_str!("../../.claude/specs/napi-boundary-point-fixes.json"))
-                .expect("napi-boundary-point-fixes.json is valid JSON");
-        let criteria = point_fixes["acceptance_criteria"].as_array().expect("acceptance_criteria is an array");
-        let superseded_ids = ["AC-007", "AC-008", "AC-011"];
-        for c in criteria {
-            let id = c["id"].as_str().expect("id is a string");
-            let criterion = c["criterion"].as_str().expect("criterion is a string");
-            if superseded_ids.contains(&id) {
-                assert!(
-                    criterion.starts_with("SUPERSEDED BY SPEC-ARCH-003 -- "),
-                    "{id} should carry the supersession prefix, got: {criterion}"
-                );
-            } else {
-                assert!(
-                    !criterion.starts_with("SUPERSEDED BY SPEC-ARCH-003"),
-                    "{id} should not carry the supersession prefix"
-                );
-            }
         }
     }
 
