@@ -57,6 +57,20 @@ void describe('renderToon', () => {
     const rows = Array.from({ length: 100_001 }, () => [{ type: 'null' }])
     assert.throws(() => renderToon({ typeName: 'item', fields: ['a'], rows, hints: [] }), /rows length/)
   })
+
+  void it('throws when a declared type is missing its payload field, not silently defaulting', () => {
+    assert.throws(
+      () => renderToon({ typeName: 't', fields: ['a'], rows: [[{ type: 'int' }]], hints: [] }),
+      /intVal/,
+    )
+  })
+
+  void it('throws on an unrecognized type string, even with a valid payload present', () => {
+    assert.throws(
+      () => renderToon({ typeName: 't', fields: ['a'], rows: [[{ type: 'integer', intVal: 42 }]], hints: [] }),
+      /integer/,
+    )
+  })
 })
 
 void describe('emptyState', () => {

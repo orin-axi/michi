@@ -92,13 +92,28 @@ pub struct JsToonOptions {
     pub hints: Vec<String>,
 }
 
-fn js_value_to_rust(v: JsToonValue) -> michi_toon::Value {
+fn js_value_to_rust(v: JsToonValue) -> napi::Result<michi_toon::Value> {
     match v.r#type.as_str() {
-        "str" => michi_toon::Value::Str(v.str_val.unwrap_or_default().into()),
-        "int" => michi_toon::Value::Int(v.int_val.map_or(0, JsInt::get)),
-        "float" => michi_toon::Value::Float(v.float_val.map_or(0.0, JsFloat::get)),
-        "bool" => michi_toon::Value::Bool(v.bool_val.unwrap_or(false)),
-        _ => michi_toon::Value::Null,
+        "str" => v
+            .str_val
+            .map(|s| michi_toon::Value::Str(s.into()))
+            .ok_or_else(|| napi::Error::from_reason("JsToonValue: type is \"str\" but strVal is missing")),
+        "int" => v
+            .int_val
+            .map(|n| michi_toon::Value::Int(n.get()))
+            .ok_or_else(|| napi::Error::from_reason("JsToonValue: type is \"int\" but intVal is missing")),
+        "float" => v
+            .float_val
+            .map(|n| michi_toon::Value::Float(n.get()))
+            .ok_or_else(|| napi::Error::from_reason("JsToonValue: type is \"float\" but floatVal is missing")),
+        "bool" => v
+            .bool_val
+            .map(michi_toon::Value::Bool)
+            .ok_or_else(|| napi::Error::from_reason("JsToonValue: type is \"bool\" but boolVal is missing")),
+        "null" => Ok(michi_toon::Value::Null),
+        other => Err(napi::Error::from_reason(format!(
+            "JsToonValue: unknown type {other:?}: expected \"str\", \"int\", \"float\", \"bool\", or \"null\""
+        ))),
     }
 }
 
@@ -141,7 +156,7 @@ pub fn render_toon(opts: JsToonOptions) -> napi::Result<String> {
                 row.len()
             )));
         }
-        rows.push(row.into_iter().map(js_value_to_rust).collect());
+        rows.push(row.into_iter().map(js_value_to_rust).collect::<napi::Result<Vec<_>>>()?);
     }
 
     let toon_opts = michi_toon::ToonOptions::new(opts.type_name, opts.fields, rows)
@@ -240,16 +255,30 @@ pub struct JsKvItem {
     pub value: JsToonValue,
 }
 
-fn js_kv_value_to_rust(v: JsToonValue) -> crate::kv::KvValue {
+fn js_kv_value_to_rust(v: JsToonValue) -> napi::Result<crate::kv::KvValue> {
     match v.r#type.as_str() {
-        "str" => crate::kv::KvValue::Text(v.str_val.unwrap_or_default()),
-        "int" => crate::kv::KvValue::Int(v.int_val.map_or(0, JsInt::get)),
+        "str" => v
+            .str_val
+            .map(crate::kv::KvValue::Text)
+            .ok_or_else(|| napi::Error::from_reason("JsToonValue: type is \"str\" but strVal is missing")),
+        "int" => v
+            .int_val
+            .map(|n| crate::kv::KvValue::Int(n.get()))
+            .ok_or_else(|| napi::Error::from_reason("JsToonValue: type is \"int\" but intVal is missing")),
         "float" => {
             let decimals = v.decimals_val.map_or(6, JsDecimals::get_u8);
-            crate::kv::KvValue::Float(v.float_val.map_or(0.0, JsFloat::get), decimals)
+            v.float_val
+                .map(|n| crate::kv::KvValue::Float(n.get(), decimals))
+                .ok_or_else(|| napi::Error::from_reason("JsToonValue: type is \"float\" but floatVal is missing"))
         }
-        "bool" => crate::kv::KvValue::Bool(v.bool_val.unwrap_or(false)),
-        _ => crate::kv::KvValue::Missing,
+        "bool" => v
+            .bool_val
+            .map(crate::kv::KvValue::Bool)
+            .ok_or_else(|| napi::Error::from_reason("JsToonValue: type is \"bool\" but boolVal is missing")),
+        "null" => Ok(crate::kv::KvValue::Missing),
+        other => Err(napi::Error::from_reason(format!(
+            "JsToonValue: unknown type {other:?}: expected \"str\", \"int\", \"float\", \"bool\", or \"null\""
+        ))),
     }
 }
 
@@ -266,8 +295,10 @@ pub fn render_kv(
     if hints.len() > MAX_HINTS {
         return Err(napi::Error::from_reason(format!("hints length {} exceeds maximum of {MAX_HINTS}", hints.len())));
     }
-    let converted: Vec<crate::kv::KvItem> =
-        items.into_iter().map(|i| crate::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value) }).collect();
+    let converted: Vec<crate::kv::KvItem> = items
+        .into_iter()
+        .map(|i| Ok(crate::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value)? }))
+        .collect::<napi::Result<Vec<_>>>()?;
     let hint_objs: Vec<crate::hints::Hint> = hints.into_iter().map(Into::into).collect();
     Ok(crate::kv::render_kv(&converted, total_count.map(JsCount::get), &hint_objs))
 }
@@ -405,7 +436,7 @@ pub fn render_status(
                     )));
                 }
             };
-            Ok(crate::status::StatusItem { key: i.key, value: js_kv_value_to_rust(i.value), health })
+            Ok(crate::status::StatusItem { key: i.key, value: js_kv_value_to_rust(i.value)?, health })
         })
         .collect::<napi::Result<Vec<_>>>()?;
 
@@ -496,8 +527,10 @@ impl JsAgentResponse {
         }
         let b = self.take()?;
         let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
-        let converted: Vec<Vec<michi_toon::Value>> =
-            rows.into_iter().map(|row| row.into_iter().map(js_value_to_rust).collect()).collect();
+        let converted: Vec<Vec<michi_toon::Value>> = rows
+            .into_iter()
+            .map(|row| row.into_iter().map(js_value_to_rust).collect::<napi::Result<Vec<_>>>())
+            .collect::<napi::Result<Vec<_>>>()?;
         self.inner = Some(b.items(converted, &field_refs));
         Ok(())
     }
@@ -522,8 +555,8 @@ impl JsAgentResponse {
         let b = self.take()?;
         let converted = items
             .into_iter()
-            .map(|i| michi_core::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value) })
-            .collect();
+            .map(|i| Ok(michi_core::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value)? }))
+            .collect::<napi::Result<Vec<_>>>()?;
         self.inner = Some(b.kv_items(converted));
         Ok(())
     }
@@ -1008,7 +1041,11 @@ mod tests {
     #[test]
     fn render_for_assistant_matches_render_toon() {
         let mut r = JsAgentResponse::new("issue".to_string());
-        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("int") }]).unwrap();
+        r.kv_items(vec![JsKvItem {
+            key: "id".to_string(),
+            value: JsToonValue { int_val: Some(JsInt::try_from(1.0).expect("1 is a valid int")), ..value("int") },
+        }])
+        .unwrap();
         assert_eq!(r.render_for("assistant".to_string()).unwrap(), r.render_kv().unwrap());
     }
 
@@ -1144,7 +1181,11 @@ mod tests {
     #[test]
     fn js_agent_response_to_call_tool_result_basic() {
         let mut r = JsAgentResponse::new("issue".to_string());
-        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("int") }]).unwrap();
+        r.kv_items(vec![JsKvItem {
+            key: "id".to_string(),
+            value: JsToonValue { int_val: Some(JsInt::try_from(1.0).expect("1 is a valid int")), ..value("int") },
+        }])
+        .unwrap();
         let result = r.to_call_tool_result().unwrap();
         assert_eq!(result.content.len(), 1);
         assert_eq!(result.content[0].content_type, "text");
@@ -1237,6 +1278,53 @@ mod tests {
     }
 
     #[test]
+    fn render_toon_rejects_int_with_missing_int_val() {
+        let opts = JsToonOptions {
+            type_name: "t".to_string(),
+            fields: vec!["a".to_string()],
+            rows: vec![vec![value("int")]],
+            total_count: None,
+            hints: vec![],
+        };
+        let err = render_toon(opts).expect_err("missing intVal must error, not default to 0");
+        assert!(err.reason.contains("intVal"), "error should name the missing field, got: {}", err.reason);
+    }
+
+    #[test]
+    fn render_toon_rejects_unknown_type_even_with_a_present_payload() {
+        let mut v = value("integer");
+        v.int_val = Some(JsInt::try_from(42.0).expect("42 is valid"));
+        let opts = JsToonOptions {
+            type_name: "t".to_string(),
+            fields: vec!["a".to_string()],
+            rows: vec![vec![v]],
+            total_count: None,
+            hints: vec![],
+        };
+        let err = render_toon(opts).expect_err("unrecognized type must error, not silently discard the payload");
+        assert!(err.reason.contains("integer"), "error should name the offending type, got: {}", err.reason);
+    }
+
+    #[test]
+    fn render_toon_accepts_explicit_null_with_no_payload() {
+        let opts = JsToonOptions {
+            type_name: "t".to_string(),
+            fields: vec!["a".to_string()],
+            rows: vec![vec![value("null")]],
+            total_count: None,
+            hints: vec![],
+        };
+        assert!(render_toon(opts).is_ok(), "type \"null\" with no payload is legitimate and must still work");
+    }
+
+    #[test]
+    fn render_kv_rejects_bool_with_missing_bool_val() {
+        let items = vec![JsKvItem { key: "k".to_string(), value: value("bool") }];
+        let err = render_kv(items, None, vec![]).expect_err("missing boolVal must error, not default to false");
+        assert!(err.reason.contains("boolVal"), "error should name the missing field, got: {}", err.reason);
+    }
+
+    #[test]
     fn render_status_napi_ok_health() {
         let items = vec![JsStatusItem {
             key: "index".into(),
@@ -1299,14 +1387,15 @@ mod tests {
         );
     }
 
-    // --- AC-029: a KV item whose value has an unrecognized type renders as
-    // the KV "missing" representation ('—'), not an error. ---
-
+    // AC-029 previously asserted an unrecognized value type silently rendered
+    // as the KV "missing" em-dash. That was the PROOF-NAPI-001 bug: an
+    // unrecognized type must reject, not silently discard a possibly-present
+    // payload. `"null"` remains the sole legitimate no-payload discriminant.
     #[test]
-    fn ac029_kv_unrecognized_value_type_renders_as_missing_em_dash() {
+    fn kv_rejects_unrecognized_value_type_instead_of_defaulting_to_missing() {
         let item = JsKvItem { key: "id".into(), value: value("unrecognized-type") };
-        let out = render_kv(vec![item], None, vec![]).expect("unrecognized type must not error");
-        assert_eq!(out, "id: \u{2014}\n", "got: {out}");
+        let err = render_kv(vec![item], None, vec![]).expect_err("unrecognized type must error");
+        assert!(err.reason.contains("unrecognized-type"), "error should name the offending type, got: {}", err.reason);
     }
 
     // --- AC-044: render_json() on the spec's example builder state produces
