@@ -525,12 +525,12 @@ impl JsAgentResponse {
                 )));
             }
         }
-        let b = self.take()?;
         let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
         let converted: Vec<Vec<michi_toon::Value>> = rows
             .into_iter()
             .map(|row| row.into_iter().map(js_value_to_rust).collect::<napi::Result<Vec<_>>>())
             .collect::<napi::Result<Vec<_>>>()?;
+        let b = self.take()?;
         self.inner = Some(b.items(converted, &field_refs));
         Ok(())
     }
@@ -552,11 +552,11 @@ impl JsAgentResponse {
                 items.len()
             )));
         }
-        let b = self.take()?;
         let converted = items
             .into_iter()
             .map(|i| Ok(michi_core::kv::KvItem { key: i.key, value: js_kv_value_to_rust(i.value)? }))
             .collect::<napi::Result<Vec<_>>>()?;
+        let b = self.take()?;
         self.inner = Some(b.kv_items(converted));
         Ok(())
     }
@@ -939,6 +939,20 @@ mod tests {
         r.items(vec![vec![value("null")]], vec!["a".to_string()]).expect("builder still usable after rejection");
     }
 
+    #[test]
+    fn js_agent_response_items_rejects_invalid_value_and_stays_usable() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        // `value("int")` has no `int_val` set, so conversion must fail.
+        let err = r
+            .items(vec![vec![value("int")]], vec!["a".to_string()])
+            .expect_err("int value missing intVal must be rejected before consuming the builder");
+        assert!(err.reason.contains("intVal is missing"), "got: {}", err.reason);
+
+        // The rejected call must not have consumed the builder via `take()`:
+        // a subsequent valid call should still succeed.
+        r.items(vec![vec![value("null")]], vec!["a".to_string()]).expect("builder still usable after rejection");
+    }
+
     // --- AC-010: JsAgentResponse::items rejects all three oversized paths
     // (rows, fields, per-row), and the builder remains usable after each. ---
 
@@ -974,6 +988,21 @@ mod tests {
             (0..=MAX_FIELDS).map(|i| JsKvItem { key: format!("k{i}"), value: value("null") }).collect();
         let err = r.kv_items(oversized).expect_err("oversized items must be rejected before consuming the builder");
         assert!(err.reason.contains("items length"), "got: {}", err.reason);
+
+        // The rejected call must not have consumed the builder via `take()`:
+        // a subsequent valid call should still succeed.
+        r.kv_items(vec![JsKvItem { key: "id".to_string(), value: value("null") }])
+            .expect("builder still usable after rejection");
+    }
+
+    #[test]
+    fn js_agent_response_kv_items_rejects_invalid_value_and_stays_usable() {
+        let mut r = JsAgentResponse::new("issue".to_string());
+        // `value("int")` has no `int_val` set, so conversion must fail.
+        let err = r
+            .kv_items(vec![JsKvItem { key: "id".to_string(), value: value("int") }])
+            .expect_err("int value missing intVal must be rejected before consuming the builder");
+        assert!(err.reason.contains("intVal is missing"), "got: {}", err.reason);
 
         // The rejected call must not have consumed the builder via `take()`:
         // a subsequent valid call should still succeed.
