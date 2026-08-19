@@ -7,6 +7,7 @@
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::unwrap_used, clippy::expect_used)]
+#![warn(clippy::disallowed_types)]
 
 use std::time::Duration;
 
@@ -271,12 +272,17 @@ impl From<ExecutionError> for michi_core::DomainError {
     }
 }
 
+#[allow(
+    clippy::disallowed_types,
+    reason = "HashMap used only for internal state below; each use site carries its own justification"
+)]
 use std::collections::{HashMap, HashSet};
 
 /// A dependency graph over step ids, consumed by [`execute_pipeline_parallel`].
 #[derive(Debug)]
 pub struct StepDependencies {
     ids: HashSet<String>,
+    #[allow(clippy::disallowed_types, reason = "internal adjacency map, never rendered as output")]
     edges: HashMap<String, Vec<String>>,
 }
 
@@ -291,7 +297,9 @@ impl StepDependencies {
                 return Err(ExecutionError::DuplicateStepId { step_id: id.clone() });
             }
         }
-        Ok(Self { ids: seen, edges: HashMap::new() })
+        #[allow(clippy::disallowed_types, reason = "internal adjacency map, never rendered as output")]
+        let edges = HashMap::new();
+        Ok(Self { ids: seen, edges })
     }
 
     /// Declares that dependent must not be invoked until dependency has
@@ -307,6 +315,7 @@ impl StepDependencies {
 /// by deps's edges (including a 1-node self-dependency), or None if the
 /// graph is acyclic. Uses a standard 3-color DFS: White (unvisited), Gray
 /// (on the current recursion stack), Black (fully explored).
+#[allow(clippy::disallowed_types, reason = "internal DFS coloring scratch state, never rendered as output")]
 fn detect_cycle(deps: &StepDependencies) -> Option<String> {
     #[derive(Clone, Copy, PartialEq)]
     enum Color {
@@ -722,6 +731,7 @@ pub async fn execute_pipeline_parallel(
     }
 
     let id_at: Vec<String> = pipeline.steps.iter().map(|s| s.id.clone()).collect();
+    #[allow(clippy::disallowed_types, reason = "internal id-to-index lookup, never rendered as output")]
     let index_of: HashMap<&str, usize> = id_at.iter().enumerate().map(|(i, id)| (id.as_str(), i)).collect();
 
     let mut prereqs_of: Vec<Vec<usize>> = vec![Vec::new(); id_at.len()];

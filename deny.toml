@@ -22,7 +22,9 @@ allow = [
 multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
-deny = []
+deny = [
+    { name = "criterion", reason = "CLAUDE.md: benchmarks use divan, not criterion" },
+]
 
 [sources]
 unknown-registry = "deny"
