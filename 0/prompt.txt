@@ -1,0 +1,95 @@
+continue
+
+---
+
+What happened?
+
+---
+
+<task-notification>
+<task-id>acbb7824b0e0e0646</task-id>
+<tool-use-id>toolu_01MAtH7nYFtuztrSrEVKf1TP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/541d5b90-cae5-472e-b065-1f385536842e/tasks/acbb7824b0e0e0646.output</output-file>
+<status>completed</status>
+<summary>Agent "Survey spec backlog vs implementation state" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Baseline audit complete.
+
+**SHIPPED** (spec + code confirmed consistent, or baseline-characterization specs documenting already-existing behavior — no plan needed):
+- SPEC-001 (michi-pipeline-execution) — REQ-001
+- SPEC-002 (michi-pipeline-parallel-execution) — REQ-002
+- SPEC-003 (michi-pipeline-cancellation) — REQ-002
+- SPEC-ARCH-001 (toonoptions-validate) — commit `30b59a5`
+- SPEC-ARCH-003 (napi-rendering-boundary-newtypes) — extensive commit trail
+- SPEC-ARCH-004 (napi-resilience-boundary-newtypes) — extensive commit trail
+- michi-core-dtos, michi-core-error, michi-core-pipeline-telemetry, michi-core-response, michi-resilience, michi-root-napi, michi-toon, michi-truncate — all baseline/characterization specs of already-existing modules, not build-new-thing specs.
+
+**SUPERSEDED:**
+- SPEC-ARCH-002 (structural-napi-numeric-boundary...) — explicitly marked `"SUPERSEDED BY SPEC-ARCH-003 ... and its resilience-domain sibling -- never implemented"` in its own purpose field.
+
+**LIKELY SHIPPED, but under a different work stream (needs one confirming look, not re-implementation):**
+- SPEC-NAPI-POINTFIX-001 (napi-boundary-point-fixes) — a 3-task plan exists but zero matching commits by name. Both target defects (int_val silent truncation, render_toon row-length mismatch) appear already resolved in current `src/napi.rs`: `int_val` is now a validating `JsInt` newtype (not raw truncating i32/f64), and a `render_toon_rejects_row_length_mismatch` test exists. This was almost certainly absorbed into the later SPEC-ARCH-003/004 newtype migration rather than shipped standalone — worth one canon:drift check to formally close it out, but not open work.
+
+**Punch list — nothing genuinely open.** Every spec in the backlog is either shipped, an already-existing-behavior baseline, or superseded-and-replaced. No open GitHub issues exist either (checked separately). SPEC-NAPI-POINTFIX-001 is the only loose thread — recommend a `canon:drift` check against it to formally mark it superseded/absorbed rather than leaving it dangling as an apparently-unstarted spec.</result>
+<usage><subagent_tokens>757022</subagent_tokens><tool_uses>9</tool_uses><duration_ms>1152880</duration_ms></usage>
+</task-notification>
+
+---
+
+Yes
+
+---
+
+What’s next?
+
+---
+
+Can we make sure that our docs are not wasting words that are not necessary and just filler? That we are readable and scannable? That it's friendly and professional for user-facing docs and direct and to the point for AI docs?
+
+For user facing docs that we leverage all MD available in GH.
+
+---
+
+<task-notification>
+<task-id>a3d546dbc07713b4a</task-id>
+<tool-use-id>toolu_01JT8jU17rqWGrnCJubzaAB1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-michi/541d5b90-cae5-472e-b065-1f385536842e/tasks/a3d546dbc07713b4a.output</output-file>
+<status>completed</status>
+<summary>Agent "Survey AI-facing docs for filler and redundancy" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Audit complete — CLAUDE.md, ARCHITECTURE.md, docs/spec/README.md, and docs/spec/01–06.md (9 files, ~14,000 words), read-only.**
+
+## Headline
+These files are already written in a dense, precise, no-narrative style — genuinely wasted words (throat-clearing, hedges, restating a table in prose) are rare. Most files are 95%+ necessary density and don't need cutting. The real findings are (a) one factual staleness bug, (b) modest cross-file/cross-section redundancy from the recent michi-pipeline sync, and (c) one concrete scannability win.
+
+## Concrete findings
+
+**docs/spec/01-overview-and-setup.md — real bug, not filler.** The `[workspace] members` code example (lines 92–99) lists only 5 members and omits `crates/michi-pipeline`, contradicting the very next section (139–143) on the same page, which correctly says `michi-pipeline` shipped. The actual root `Cargo.toml` has 6 members. This is an internal self-contradiction a reader will trip on — worth a one-line fix, not a rewrite.
+
+**CLAUDE.md — introduced redundancy, ~5% cuttable.** Lines 32 and 34 (Architecture bullets) both now describe `michi-pipeline`'s contents almost identically ("execute_pipeline/execute_pipeline_parallel, CircuitBreaker, CancellationToken" appears twice within two adjacent bullets). Pick one home for the description; have the other just point to it.
+
+**Cross-file redundancy — "not yet published to crates.io/npm."** This exact fact, independently verified, appears near-verbatim in at least 4 places: docs/spec/README.md:26, 05-scope-and-quality.md:76-77 and 97, and 04-mcp-and-napi.md:217. Each mention is short and each doc is meant to stand alone, so this isn't "filler" in the padding sense — but if these ever drift (one gets updated post-publish, others don't), that's a staleness risk. Consider one canonical source (05-scope-and-quality.md, the versioning doc) with the others linking to it instead of re-stating.
+
+**04-mcp-and-napi.md — scannability, not filler.** This is the longest file (2,761 words) and contains two large TypeScript declaration blocks (lines 233–342 and 346–402, ~165 lines combined) that a reader skimming for "what's the numeric boundary rule" has to scroll past. Wrapping each in `&lt;details&gt;&lt;summary&gt;Full index.d.ts (rendering domain / resilience domain)&lt;/summary&gt;` would cut zero content and make the surrounding prose (numeric boundary rules, chainable-setters rationale) far easier to find.
+
+## Files that are fine as-is, no action needed
+- **ARCHITECTURE.md** — tight, tables + one diagram, no filler.
+- **docs/spec/02-toon-format.md** — grammar block + examples + bulleted escaping rules; can't be tightened further without losing content.
+- **docs/spec/03-rust-api.md** — pure code-signature reference with doc-comment annotations; already maximally scannable.
+- **docs/spec/05-scope-and-quality.md** — entirely tables and bullets already; best-organized file in the set.
+- **docs/spec/06-decisions.md** — largest file (3,523 words) but it's a decisions log where every entry does real work (rejected alternative + why the shipped choice won). No hollow phrases found anywhere in it. Its three-section split (open questions / API-shape rationale / implementation notes) is a meaningful categorization, not arbitrary — don't flatten it.
+
+## Not worth doing
+A hand-written table of contents for 06-decisions.md — GitHub's own heading-outline sidebar already covers this, and a manual TOC would be one more thing to keep in sync for near-zero reader benefit.</result>
+<usage><subagent_tokens>857407</subagent_tokens><tool_uses>9</tool_uses><duration_ms>107062</duration_ms></usage>
+</task-notification>
+
+---
+
+Let's make sure our docs that are user-facing are friendly, readable and scannable. That we're not overly wordy or have walls of text and that we leverage sections, bullets, diagrams where appropriate to make it more redable and scanable.
+
+We want the docs to be devoid of AI slop, word salad and filler words please.
+
+---
+
+What's next?
