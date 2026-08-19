@@ -351,7 +351,6 @@ pub enum BreakerPhase {
 /// tokio-clock-based async waiting, per-attempt timeout, and
 /// consecutive-failure circuit-opening. Internal state is held in
 /// lock-free atomics so [`CircuitBreaker::phase`] stays synchronous.
-#[allow(dead_code)]
 pub struct CircuitBreaker {
     retry_config: michi_resilience::RetryConfig,
     step_timeout: Duration,
@@ -451,7 +450,8 @@ impl CircuitBreaker {
     ///
     /// While `Closed`, retries retryable failures per `retry_config` with
     /// `next_retry_delay`'s backoff, threading `ExecutionError::Http`'s
-    /// `retry_after` through when present. Returns immediately on success or
+    /// `retry_after` or `ExecutionError::CircuitOpen`'s `retry_after_ms`
+    /// through when present. Returns immediately on success or
     /// on a non-retryable error, and returns the last error once
     /// `next_retry_delay` reports exhaustion. On success, resets the
     /// consecutive-failure counter; on a call-level failure (after retries
@@ -515,6 +515,7 @@ impl CircuitBreaker {
                     }
                     let retry_after = match &err {
                         ExecutionError::Http { retry_after, .. } => *retry_after,
+                        ExecutionError::CircuitOpen { retry_after_ms } => Some(Duration::from_millis(*retry_after_ms)),
                         _ => None,
                     };
                     match michi_resilience::next_retry_delay(&self.retry_config, attempt, jitter_seed, retry_after) {
@@ -1131,6 +1132,39 @@ mod tests {
         assert!(result.is_ok());
         let expected = michi_resilience::next_retry_delay(&retry_config, 0, 0.0, Some(ra)).unwrap();
         assert_eq!(elapsed, expected);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retries_thread_circuit_open_retry_after() {
+        let retry_config =
+            michi_resilience::RetryConfig::new(5, Duration::from_millis(10), Duration::from_secs(60), 0.0);
+        let breaker =
+            CircuitBreaker::new(retry_config.clone(), Duration::from_secs(5), u32::MAX, Duration::from_secs(60));
+        let ra = Duration::from_millis(30_000);
+        struct CircuitOpenThenOk(std::sync::atomic::AtomicU32);
+        impl Step for CircuitOpenThenOk {
+            fn run<'a>(
+                &'a self,
+                attempt: u32,
+            ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move {
+                    if attempt == 0 {
+                        Err(ExecutionError::CircuitOpen { retry_after_ms: 30_000 })
+                    } else {
+                        Ok(())
+                    }
+                })
+            }
+        }
+        let step = CircuitOpenThenOk(std::sync::atomic::AtomicU32::new(0));
+        let before = tokio::time::Instant::now();
+        let result = breaker.call(&step, 0.0).await;
+        let elapsed = before.elapsed();
+        assert!(result.is_ok());
+        let expected = michi_resilience::next_retry_delay(&retry_config, 0, 0.0, Some(ra)).unwrap();
+        assert_eq!(elapsed, expected);
+        assert!(elapsed >= ra, "must wait at least the circuit's stated {ra:?} cooldown, waited {elapsed:?}");
     }
 
     #[tokio::test(start_paused = true)]
