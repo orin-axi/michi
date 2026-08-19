@@ -1,10 +1,15 @@
 # michi (道)
 
-AXI response primitives for agent-ergonomic tools — TOON lists, key-value blocks, truncation, structured errors, status, and `help[]` hints in a pure-computation workspace.
+[![CI](https://github.com/orin-axi/michi/actions/workflows/ci.yml/badge.svg)](https://github.com/orin-axi/michi/actions/workflows/ci.yml) [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 
-`michi` is the formatting and response layer for the **orin-axi** suite. It converts structured data into token-efficient, agent-readable text formats without requiring any specific CLI framework or async runtime.
+AXI response primitives for agent-ergonomic tools — TOON lists, key-value blocks, truncation, structured errors, status, and `help[]` hints.
 
-Available as a Rust crate (`michi`) or as a Node.js package (`@orin-axi/michi`).
+`michi` is the formatting and response layer for the **orin-axi** suite: it turns structured data into token-efficient, agent-readable text. No CLI framework or async runtime required.
+
+Available as a Rust crate (`michi`) or a Node.js package (`@orin-axi/michi`).
+
+> [!IMPORTANT]\
+> Not yet published to crates.io or npm. Clone the repo and build from source to try it — see [Local Development](#local-development).
 
 ## Why TOON?
 
@@ -25,7 +30,7 @@ issues[2]{number,title,state}:
   51812,dark mode request,open
 ```
 
-Values are quoted only when they contain commas, quotes, or newlines. Small strings ($\le 24$ bytes) are stored on the stack via `compact_str`, eliminating heap allocations during row rendering.
+Values are quoted only when they contain commas, quotes, or newlines — no quoting overhead on the common case.
 
 ## Quick start
 
@@ -88,7 +93,26 @@ help[1]:
 
 ## Workspace Architecture
 
-`michi` is organized as a Cargo workspace with zero-dependency primitive crates and optional feature flags:
+`michi` is organized as a Cargo workspace: zero-dependency primitive crates by default, `michi-pipeline` as the one exception (it needs `tokio` for async execution), plus optional feature flags on the facade crate:
+
+```mermaid
+graph LR
+    truncate[michi-truncate]
+    resilience[michi-resilience]
+    toon[michi-toon]
+    core[michi-core]
+    pipeline[michi-pipeline]
+    facade[michi]
+    node["@orin-axi/michi"]
+
+    truncate --> core
+    resilience --> core
+    toon --> core
+    core --> facade
+    core --> pipeline
+    resilience --> pipeline
+    facade --> node
+```
 
 | Crate / Module | Description |
 | --- | --- |
@@ -96,6 +120,7 @@ help[1]:
 | `michi-resilience` | Exponential back-off math, RFC 7231 `Retry-After` header parser, and FNV-1a idempotency keys. |
 | `michi-toon` | TOON list renderer and parser powered by `compact_str::CompactString`. Includes direct `serde::Serializer`. |
 | `michi-core` | Core AXI response types (`AgentResponse`, `Audience`, `Hint`, `RecoveryHint`, `StatusResponse`, `DomainError`, `CallToolResult`). |
+| `michi-pipeline` | Async pipeline execution: sequential and concurrent step running, circuit breaking, cooperative cancellation. Depends on `tokio`; versioned and released independently of the rest of the workspace. |
 | `michi` | Facade crate re-exporting all sub-crates for convenient top-level access. |
 | `@orin-axi/michi` | Node.js NAPI bindings built with `@napi-rs/cli`. |
 

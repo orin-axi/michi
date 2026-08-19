@@ -1,6 +1,9 @@
 # michi
 
-TypeScript/JavaScript bindings for [`michi`](https://github.com/orin-axi/michi) — AXI response primitives for agent-ergonomic tools. Native binary via NAPI-RS, no WASM, no JS reimplementation of the rendering logic.
+TypeScript/JavaScript bindings for [`michi`](https://github.com/orin-axi/michi) — AXI response primitives for agent-ergonomic tools. Native binary via NAPI-RS: no WASM, no JS reimplementation of the rendering logic.
+
+> [!IMPORTANT]\
+> Not yet published to npm. See the [main repo](https://github.com/orin-axi/michi) for building from source in the meantime.
 
 ## Install
 
@@ -59,7 +62,9 @@ help[1]:
 
 ### `AgentResponse` class
 
-The primary integration point — a builder that composes TOON/KV rendering, hints, and recovery into one response. Setters return `void`, not `this` (see the main repo's `docs/spec/04-mcp-and-napi.md` for why chaining isn't supported across the NAPI boundary) — call methods as sequential statements, not a chain:
+The primary integration point — a builder that composes TOON/KV rendering, hints, and recovery into one response.
+
+Setters return `void`, not `this`, so call them as sequential statements rather than a chain. (Chaining isn't supported across the NAPI boundary — see `docs/spec/04-mcp-and-napi.md` in the main repo for why.)
 
 | Method | Signature |
 | --- | --- |

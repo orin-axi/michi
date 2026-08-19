@@ -23,16 +23,17 @@ New to the crate? Read 01 → 02 → 03 in order — that's the whole mental mod
 - Whether it holds up on retrieval accuracy across model sizes is untested.
 - See [06-decisions.md](06-decisions.md).
 
-**No real consumer depends on michi yet.** crates.io publish is explicitly gated on that happening first.
+**No real consumer depends on michi yet.** crates.io publish is explicitly gated on that happening first — see [05-scope-and-quality.md](05-scope-and-quality.md) for current status.
 
 **`cli` isn't a Cargo feature of this crate at all.** Reserved name for future terminal-aware rendering, in a separate crate, not implemented.
 
-**Plan 2 (the async execution layer) doesn't exist as code in this crate.**
+**Plan 2 (the async execution layer) doesn't exist as code in this crate — but `pipeline`'s half has landed as its own crate.**
 
-- `pipeline` has a real, tested data type and `render()` — always compiled.
-- The actual executor, `fuzzy`, `cache`, and the resilience `circuit`/`policy` modules don't exist here at all — not even as stubs. Earlier placeholder stub files were deliberately deleted; see [`ARCHITECTURE.md`](../../ARCHITECTURE.md).
-- Each lands as its own crate, depending on `michi`, when it's actually built.
-- This spec covers Plan 1, the pure-primitives crate, only.
+- `pipeline` has a real, tested data type and `render()` in `michi-core` — always compiled.
+- The actual executor now exists too, just not in this crate: `crates/michi-pipeline` ships `execute_pipeline`/`execute_pipeline_parallel`, `CircuitBreaker`, and `CancellationToken`. It depends on `michi-core` (for the `Pipeline` data type) and `michi-resilience` (for retry config) directly — not on the root `michi` facade, and isn't re-exported through it.
+- `fuzzy`, `cache`, and `cli` don't exist anywhere in the workspace at all — not even as stubs. Earlier placeholder stub files were deliberately deleted; see [`ARCHITECTURE.md`](../../ARCHITECTURE.md).
+- Each remaining piece lands as its own crate when it's actually built, per the same pattern `michi-pipeline` followed.
+- This spec covers Plan 1, the pure-primitives crate, only — `michi-pipeline`'s own API is documented in its own crate, not here.
 
 ## Companion docs
 

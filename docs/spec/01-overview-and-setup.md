@@ -95,6 +95,7 @@ members  = [
   "crates/michi-resilience",
   "crates/michi-toon",
   "crates/michi-core",
+  "crates/michi-pipeline",
   "packages/michi-node",
 ]
 
@@ -138,8 +139,8 @@ Default features add zero runtime dependencies beyond the four workspace sub-cra
 
 `pipeline`/`fuzzy`/`cache`/`cli` **execution** is not a Cargo feature of this crate at all, and never will be.
 
-- That async execution layer (Plan 2) lands as genuinely separate crates when it's actually built, never as features gated on michi's own `Cargo.toml`.
-- `pipeline`'s pure **data model** (`Pipeline`, `PipelineStep`, `StepStatus`, `.render()`) already exists today in `michi-core` — unconditionally compiled, no feature gate. Only orchestration/execution is deferred to Plan 2. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the crate-boundary layout and [06-decisions.md](06-decisions.md) for the decision rule behind the split.
+- That async execution layer (Plan 2) lands as genuinely separate crates when actually built, never as features gated on michi's own `Cargo.toml`. `pipeline` has landed this way: `crates/michi-pipeline` (sequential `execute_pipeline`, concurrent `execute_pipeline_parallel`, `CircuitBreaker`, `CancellationToken`). `fuzzy`, `cache`, and `cli` remain unbuilt.
+- `pipeline`'s pure **data model** (`Pipeline`, `PipelineStep`, `StepStatus`, `.render()`) lives in `michi-core` — unconditionally compiled, no feature gate. Orchestration/execution is the separate `michi-pipeline` crate, not a feature of this one. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the crate-boundary layout and [06-decisions.md](06-decisions.md) for the decision rule behind the split.
 - `serde` isn't part of that Plan 2 set, despite historically sitting next to it in the feature table — it gates `Serialize`/`Deserialize` on Plan 1's own types.
 
 `napi-build` lives in `packages/michi-node/Cargo.toml`, not here — that's the cdylib crate the actual napi-rs build step compiles.

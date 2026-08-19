@@ -230,6 +230,9 @@ This is auto-generated, never hand-written — `napi build` regenerates it from 
 
 What's actually in `packages/michi-node/index.d.ts` today (rendering-domain surface; the resilience-, status-, and error-domain functions follow further down):
 
+<details>
+<summary>Full rendering-domain <code>index.d.ts</code> (110 lines)</summary>
+
 ```typescript
 /** Scalar TOON/KV cell value. Discriminate via `type`. */
 export interface JsToonValue {
@@ -341,7 +344,12 @@ export declare class AgentResponse {
 export type JsAgentResponse = AgentResponse;
 ```
 
+</details>
+
 The resilience-, status-, and error-domain surface, added by SPEC-ARCH-004 and the status/error NAPI wrappers — every numeric position here is validated through the newtype kernel in `src/napi/num.rs` per the "Numeric boundary" section below, not left to `ToInt32`/implicit coercion:
+
+<details>
+<summary>Full resilience-, error-, and status-domain <code>index.d.ts</code> (56 lines)</summary>
 
 ```typescript
 /** Return `true` if the HTTP status code is conventionally retryable (429, 502, 503, 504). */
@@ -400,3 +408,5 @@ export declare function renderStatus(
   hints?: Array<string> | undefined | null,
 ): string;
 ```
+
+</details>

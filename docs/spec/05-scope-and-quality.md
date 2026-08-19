@@ -94,7 +94,7 @@ Format changes are major versions. Treat the rendered string as a contract — t
 **Version sync:** the npm package version tracks the crate version exactly.
 
 - A `version-sync` CI job asserts the two are equal on every push/PR, so a `michi` crate at `0.3.1` and the `@orin-axi/michi` npm package at `0.3.1` always describe the same source.
-- `.github/workflows/release.yml` runs an automated publish pipeline (via `orin-dx/callisto`) on every push to `main` — but it has not yet produced a release; crates.io publish is specifically gated behind at least one real consumer integration test (see [06-decisions.md](06-decisions.md)). Verified directly against both registries: neither `michi` nor `@orin-axi/michi` exists yet.
+- `.github/workflows/release.yml` runs an automated publish pipeline (via `orin-dx/callisto`) on every push to `main` — it hasn't produced a release yet, gated behind at least one real consumer integration test (see [06-decisions.md](06-decisions.md)).
 - When no native binary matches a consumer's platform, the TypeScript fallback export loads instead.
 
 ---

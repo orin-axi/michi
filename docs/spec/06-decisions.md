@@ -80,8 +80,8 @@ This crate went through more than one draft. None of what follows is "the API us
 
 - An early draft called this type `AxiError` and made it the crate's entire error type.
 - The shipped design splits it: `DomainError` is the pure data/render type — what [03-rust-api.md](03-rust-api.md) documents.
-- `Error` is a `thiserror`-derived enum with a `Domain(DomainError)` variant alongside always-compiled `InvalidInput`/`NotFound` variants, with room for execution-layer variants (`Http`, `Timeout`, `StepFailed`) that need `#[source]`-chaining a single struct can't express.
-- Those execution-layer variants return once the `pipeline` crate (Plan 2) lands, not as a feature flag on this crate.
+- `Error` is a `thiserror`-derived enum with a `Domain(DomainError)` variant alongside always-compiled `InvalidInput`/`NotFound` variants; the original intent was room for execution-layer variants (`Http`, `Timeout`, `StepFailed`) once the `pipeline` crate (Plan 2) landed.
+- **That's not how it shipped.** `crates/michi-pipeline` defines its own `ExecutionError` enum (`Http`, `Timeout`, `Failed`, `CircuitOpen`, `StepFailed`, `StepCountMismatch`, `UnknownStepId`, `DuplicateStepId`, `CyclicDependency`, `Cancelled`) rather than adding variants to `michi_core::Error`. `impl From<ExecutionError> for DomainError` converts at the boundary instead. `michi_core::Error` itself still has only `InvalidInput`/`NotFound`/`Domain` — verified against current source, not extended. This keeps `michi-pipeline`'s error surface independently versioned alongside the crate it belongs to, consistent with the "independent release cadence" rationale above, rather than coupling it back into `michi-core`.
 
 ### `idempotency::already_done()` only checks — it doesn't render
 
@@ -159,10 +159,10 @@ A dependency stays a _feature_, not a crate, when it's low-consequence even if u
 
 **Applied to Plan 2:**
 
-- `pipeline` (the executor) becomes its own crate — heavy dependency (tokio), clean boundary (operates only on the already-public `Pipeline` data type), independent maturity.
-- The async halves of `resilience` (`CircuitBreaker`, the retry wrapper) fold _into_ that same crate rather than becoming a fourth crate of their own — they exist specifically to wrap pipeline step execution and have no independent use case, so criterion (2) fails for splitting them out further.
-- `fuzzy` and `cache` each become their own crate, downstream of `pipeline` — the intended coupling is a `Resolution<T>`-shaped type used in pipeline-step context, so `fuzzy` implies `pipeline` by design. Verified against current source: neither `Resolution<T>` nor any `fuzzy`/`cache` code exists yet anywhere in this workspace — this is a forward design intent, not a shipped fact, despite how an earlier version of this note read.
-- `cli` becomes its own crate too — a genuinely different kind of consumer (a terminal, not an agent) with no coupling to pipeline internals beyond calling into it like any other dependent would.
+- `pipeline` (the executor) becomes its own crate — heavy dependency (tokio), clean boundary (operates only on the already-public `Pipeline` data type), independent maturity. **Shipped as designed**: `crates/michi-pipeline`, depending on `michi-core` + `michi-resilience` + `tokio`, not re-exported through the root `michi` facade.
+- The async halves of `resilience` (`CircuitBreaker`, the retry wrapper) fold _into_ that same crate rather than becoming a fourth crate of their own — they exist specifically to wrap pipeline step execution and have no independent use case, so criterion (2) fails for splitting them out further. **Shipped as designed**: `CircuitBreaker` lives in `michi-pipeline` itself, not a separate crate; `michi-resilience` continues to hold only the sync retry-delay math both `michi-pipeline` and NAPI callers share.
+- `fuzzy` and `cache` each become their own crate, downstream of `pipeline` — the intended coupling is a `Resolution<T>`-shaped type used in pipeline-step context, so `fuzzy` implies `pipeline` by design. Verified against current source: neither `Resolution<T>` nor any `fuzzy`/`cache` code exists yet anywhere in this workspace — this remains a forward design intent, not a shipped fact.
+- `cli` becomes its own crate too — a genuinely different kind of consumer (a terminal, not an agent) with no coupling to pipeline internals beyond calling into it like any other dependent would. Also not yet built.
 
 None of this is scaffolded ahead of time. A crate gets created in the same work that writes its first real implementation, not before — an empty crate sitting in the workspace is the identical ambiguity problem the deleted `pipeline`/`sink`/`resilience` stub files caused, just moved up one level of granularity.
 
