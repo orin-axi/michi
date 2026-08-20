@@ -190,3 +190,19 @@ fn list_stringifies_nested_values_losslessly() {
     // Expected cell: "[\"a\",\"b\"]"
     assert!(out.contains(r#""[\"a\",\"b\"]""#), "nested value must be stringified and quoted, got: {out}");
 }
+
+#[test]
+fn render_toon_errors_on_row_arity_mismatch() {
+    let short = ToonOptions::new("issue", vec!["a".to_string(), "b".to_string()], vec![vec![Value::from("x")]]);
+    let err = render_toon(&short).expect_err("a 1-value row against 2 fields must be rejected, not panic");
+    assert_eq!(err, michi::toon::ToonError::RowLengthMismatch { row_index: 0, expected: 2, actual: 1 });
+
+    let long = ToonOptions::new(
+        "issue",
+        vec!["a".to_string(), "b".to_string()],
+        vec![vec![Value::from("x"), Value::from("y"), Value::from("z")]],
+    );
+    let err =
+        render_toon(&long).expect_err("a 3-value row against 2 fields must be rejected, no value dropped silently");
+    assert_eq!(err, michi::toon::ToonError::RowLengthMismatch { row_index: 0, expected: 2, actual: 3 });
+}
