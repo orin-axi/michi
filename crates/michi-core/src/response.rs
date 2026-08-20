@@ -130,10 +130,10 @@ impl AgentResponse {
         let opts = michi_toon::ToonOptions::new(self.type_name.clone(), self.fields.clone(), self.items.clone())
             .total_count(self.total_count)
             .max_cell_len(self.truncate_cells_at);
-        if let Err(e) = opts.validate() {
-            return format!("error: toon_validation_failed\nmessage: {e}\n");
+        match opts.validate() {
+            Ok(doc) => doc.render(),
+            Err(e) => format!("error: toon_validation_failed\nmessage: {e}\n"),
         }
-        michi_toon::render_toon(&opts)
     }
 
     fn kv_body(&self) -> String {
