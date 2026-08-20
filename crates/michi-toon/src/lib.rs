@@ -116,12 +116,11 @@ impl ToonOptions {
         self
     }
 
-    /// Validate structural invariants before rendering.
+    /// Validate structural invariants and return the proof required to render.
     ///
-    /// [`render_toon()`] sanitizes bad input gracefully; call this when you
-    /// need explicit error signals. Caller opt-in for direct
-    /// [`render_toon()`] usage — not called automatically there. See
-    /// `PRINCIPLES.md` §1 (invariant policy).
+    /// Delegates to [`ToonDocument::validate`]. Validation is mandatory:
+    /// rendering consumes the [`ToonDocument`] this returns, so there is no
+    /// path from an unvalidated `ToonOptions` to rendered output.
     ///
     /// # Errors
     ///
@@ -129,29 +128,8 @@ impl ToonOptions {
     /// structural character, [`ToonError::InvalidFieldName`] if any field name
     /// contains a structural character, or [`ToonError::RowLengthMismatch`] if
     /// any row's length differs from `fields.len()`.
-    pub fn validate(&self) -> Result<(), ToonError> {
-        // type_name: all STRUCTURAL chars are invalid (brackets/braces/comma/newlines)
-        if self.type_name.chars().any(|c| escape::STRUCTURAL.contains(&c)) {
-            return Err(ToonError::InvalidTypeName { name: self.type_name.clone() });
-        }
-        for field in &self.fields {
-            // field names: comma and braces break the `{a,b,c}` header grammar;
-            // brackets (`[`, `]`) are also replaced by sanitize_header_token so
-            // we reject them here too for consistency with the sanitizer.
-            if field.chars().any(|c| escape::STRUCTURAL.contains(&c)) {
-                return Err(ToonError::InvalidFieldName { name: field.clone() });
-            }
-        }
-        for (i, row) in self.rows.iter().enumerate() {
-            if row.len() != self.fields.len() {
-                return Err(ToonError::RowLengthMismatch {
-                    row_index: i,
-                    expected: self.fields.len(),
-                    actual: row.len(),
-                });
-            }
-        }
-        Ok(())
+    pub fn validate(&self) -> Result<ToonDocument<'_>, ToonError> {
+        ToonDocument::validate(self)
     }
 }
 
@@ -353,7 +331,7 @@ mod validate_tests {
             max_cell_len: 200,
             total_count: None,
         };
-        assert_eq!(opts.validate(), Err(ToonError::InvalidTypeName { name: "foo[bar".to_string() }));
+        assert_eq!(opts.validate().unwrap_err(), ToonError::InvalidTypeName { name: "foo[bar".to_string() });
     }
 
     #[test]
@@ -379,7 +357,7 @@ mod validate_tests {
             max_cell_len: 200,
             total_count: None,
         };
-        assert_eq!(opts.validate(), Err(ToonError::InvalidTypeName { name: "a[b".to_string() }));
+        assert_eq!(opts.validate().unwrap_err(), ToonError::InvalidTypeName { name: "a[b".to_string() });
     }
 
     #[test]
@@ -392,7 +370,7 @@ mod validate_tests {
             max_cell_len: 200,
             total_count: None,
         };
-        assert_eq!(opts.validate(), Err(ToonError::InvalidFieldName { name: "a,b".to_string() }));
+        assert_eq!(opts.validate().unwrap_err(), ToonError::InvalidFieldName { name: "a,b".to_string() });
     }
 
     #[test]
@@ -405,7 +383,7 @@ mod validate_tests {
             max_cell_len: 200,
             total_count: None,
         };
-        assert_eq!(opts.validate(), Err(ToonError::InvalidFieldName { name: "a,b".to_string() }));
+        assert_eq!(opts.validate().unwrap_err(), ToonError::InvalidFieldName { name: "a,b".to_string() });
     }
 
     #[test]
@@ -418,7 +396,7 @@ mod validate_tests {
             max_cell_len: 200,
             total_count: None,
         };
-        assert_eq!(opts.validate(), Err(ToonError::InvalidTypeName { name: "foo[bar".to_string() }));
+        assert_eq!(opts.validate().unwrap_err(), ToonError::InvalidTypeName { name: "foo[bar".to_string() });
     }
 
     #[test]
@@ -431,7 +409,7 @@ mod validate_tests {
             max_cell_len: 200,
             total_count: None,
         };
-        assert_eq!(opts.validate(), Err(ToonError::InvalidFieldName { name: "a,b".to_string() }));
+        assert_eq!(opts.validate().unwrap_err(), ToonError::InvalidFieldName { name: "a,b".to_string() });
     }
 
     #[test]
@@ -493,7 +471,7 @@ mod validate_tests {
             max_cell_len: 200,
             total_count: None,
         };
-        assert_eq!(opts.validate(), Err(ToonError::InvalidTypeName { name: "a[b".to_string() }));
+        assert_eq!(opts.validate().unwrap_err(), ToonError::InvalidTypeName { name: "a[b".to_string() });
     }
 }
 
@@ -652,5 +630,21 @@ mod list_tests {
     fn ac040_invalid_type_name_rejected_even_with_all_empty_object_items() {
         let result = list("a[b", &[serde_json::json!({}), serde_json::json!({})]);
         assert_eq!(result, Err(ToonError::InvalidTypeName { name: "a[b".to_string() }));
+    }
+}
+
+#[cfg(test)]
+mod ac013_docs_guard_tests {
+    #[test]
+    fn validate_docs_do_not_claim_opt_in() {
+        let src = include_str!("lib.rs");
+        let non_test = src.split("#[cfg(test)]").next().unwrap_or(src);
+        let opt_in_needle = ["Caller", "opt-in"].join(" ");
+        assert!(!non_test.contains(&opt_in_needle), "validate's rustdoc must not describe validation as opt-in");
+        let principles_needle = ["PRINCIPLES.md", "§1"].join(" ");
+        assert!(
+            !non_test.contains(&principles_needle),
+            "validate's rustdoc must not reference the nonexistent PRINCIPLES.md §1"
+        );
     }
 }

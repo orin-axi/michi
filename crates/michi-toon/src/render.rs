@@ -226,6 +226,7 @@ pub(crate) fn render(
 /// or outside this crate can obtain one without validation having returned `Ok`.
 /// Borrows `&'a ToonOptions` immutably, so the validated options cannot be
 /// mutated while the proof is live.
+#[derive(Debug)]
 pub struct ToonDocument<'a> {
     opts: &'a crate::ToonOptions,
 }
