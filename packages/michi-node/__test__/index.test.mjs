@@ -324,25 +324,37 @@ void describe('render_toon validate() surfacing (SPEC-NAPI-POINTFIX-001)', () =>
   void it('AC-005 rejects a row with fewer values than declared fields', () => {
     assert.throws(
       () => renderToon({ typeName: 't', fields: ['a', 'b'], rows: [[{ type: 'str', strVal: 'x' }]], hints: [] }),
-      (err) => err.message === 'row 0 has 1 values but 2 fields declared'
+      (err) => err.message === 'toon_validation_failed: row 0 has 1 values but 2 fields declared'
     )
   })
   void it('AC-006 rejects a row with more values than declared fields', () => {
     assert.throws(
       () => renderToon({ typeName: 't', fields: ['a'], rows: [[{ type: 'str', strVal: 'x' }, { type: 'str', strVal: 'y' }]], hints: [] }),
-      (err) => err.message === 'row 0 has 2 values but 1 fields declared'
+      (err) => err.message === 'toon_validation_failed: row 0 has 2 values but 1 fields declared'
     )
   })
   void it('AC-009 rejects a type_name containing a structural character', () => {
     assert.throws(
       () => renderToon({ typeName: 'a[b]', fields: ['x'], rows: [[{ type: 'str', strVal: 'v' }]], hints: [] }),
-      (err) => err.message === 'type_name "a[b]" contains a structural character'
+      (err) => err.message === 'toon_validation_failed: type_name "a[b]" contains a structural character'
     )
   })
   void it('AC-010 rejects a field name containing a structural character', () => {
     assert.throws(
       () => renderToon({ typeName: 't', fields: ['a,b'], rows: [[{ type: 'str', strVal: 'v' }]], hints: [] }),
-      (err) => err.message === 'field "a,b" contains a structural character'
+      (err) => err.message === 'toon_validation_failed: field "a,b" contains a structural character'
+    )
+  })
+  void it('AC-010b renderToon throws with a toon_validation_failed-prefixed message for row-arity errors', () => {
+    assert.throws(
+      () =>
+        renderToon({
+          typeName: 'issue',
+          fields: ['a', 'b'],
+          rows: [[{ type: 'str', strVal: 'only-one-cell' }]],
+          hints: [],
+        }),
+      /toon_validation_failed/
     )
   })
 })
