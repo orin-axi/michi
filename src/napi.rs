@@ -163,9 +163,7 @@ pub fn render_toon(opts: JsToonOptions) -> napi::Result<String> {
         .total_count(opts.total_count.map(JsCount::get))
         .hints(opts.hints);
 
-    toon_opts.validate().map_err(|e| napi::Error::from_reason(e.to_string()))?;
-
-    Ok(michi_toon::render_toon(&toon_opts))
+    michi_toon::render_toon(&toon_opts).map_err(|e| napi::Error::from_reason(format!("toon_validation_failed: {e}")))
 }
 
 /// Render an explicit empty-state response.
@@ -857,7 +855,7 @@ mod tests {
             hints: vec![],
         };
         let err = render_toon(opts).expect_err("mismatched row must be rejected");
-        assert_eq!(err.reason, "row 0 has 1 values but 2 fields declared");
+        assert_eq!(err.reason, "toon_validation_failed: row 0 has 1 values but 2 fields declared");
     }
 
     #[test]
@@ -870,7 +868,7 @@ mod tests {
             hints: vec![],
         };
         let err = render_toon(opts).expect_err("structural type_name must be rejected");
-        assert_eq!(err.reason, "type_name \"a[b]\" contains a structural character");
+        assert_eq!(err.reason, "toon_validation_failed: type_name \"a[b]\" contains a structural character");
     }
 
     #[test]
@@ -883,7 +881,7 @@ mod tests {
             hints: vec![],
         };
         let err = render_toon(opts).expect_err("structural field name must be rejected");
-        assert_eq!(err.reason, "field \"a,b\" contains a structural character");
+        assert_eq!(err.reason, "toon_validation_failed: field \"a,b\" contains a structural character");
     }
 
     #[test]
