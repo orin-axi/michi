@@ -23,6 +23,6 @@ fn main() {
         "Run `gh-axi issue list --state=open` to filter".to_string(),
     ]);
 
-    let output = render_toon(&opts);
+    let output = render_toon(&opts).expect("example input is valid");
     println!("{output}");
 }

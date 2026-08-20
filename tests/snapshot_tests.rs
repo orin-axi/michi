@@ -24,7 +24,7 @@ fn snapshot_toon_basic_list() {
         "Call get_issue with number=<number> for full detail".to_string(),
         "Call list_issues with state=open to filter".to_string(),
     ]);
-    insta::assert_snapshot!(render_toon(&opts));
+    insta::assert_snapshot!(render_toon(&opts).unwrap());
 }
 
 #[test]
