@@ -261,6 +261,88 @@ impl<'a> ToonDocument<'a> {
         }
         Ok(Self { opts })
     }
+
+    /// Render `self` to a TOON document string. Infallible and total by
+    /// construction: `self.opts`'s row arity was already proven equal to
+    /// `self.opts.fields.len()` by `validate`, so this iterates rows and
+    /// fields in lockstep instead of indexing with a fallible `row.get(i)`.
+    #[must_use]
+    pub fn render(&self) -> String {
+        let opts = self.opts;
+        let row_count = opts.rows.len();
+        let field_count = opts.fields.len();
+        let capacity = 60 + row_count * (field_count * 12 + 10) + opts.hints.len() * 60;
+        let mut out = String::with_capacity(capacity);
+
+        out.push_str(&sanitize_header_token(&opts.type_name));
+        out.push('[');
+        out.push_str(&row_count.to_string());
+        out.push_str("]{");
+        for (i, field) in opts.fields.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&sanitize_header_token(field));
+        }
+        out.push_str("}:\n");
+
+        for row in &opts.rows {
+            out.push_str("  ");
+            for (i, cell) in row.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                match cell {
+                    Value::Str(s) => {
+                        if s.len() <= opts.max_cell_len {
+                            out.push_str(&escape_value(s));
+                        } else {
+                            let truncated = michi_truncate::truncate_inline(s, opts.max_cell_len, "full=true");
+                            out.push_str(&escape_value(&truncated));
+                        }
+                    }
+                    Value::Int(n) => {
+                        let _ = write!(out, "{n}");
+                    }
+                    Value::Float(f) => {
+                        if f.is_nan() || f.is_infinite() {
+                            let s = f.to_string();
+                            let _ = write!(out, "\"{s}\"");
+                        } else {
+                            let _ = write!(out, "{f}");
+                        }
+                    }
+                    Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+                    Value::Null => {}
+                }
+            }
+            out.push('\n');
+        }
+
+        if let Some(total) = opts.total_count {
+            out.push_str("totalCount: ");
+            out.push_str(&total.to_string());
+            out.push('\n');
+        }
+
+        if !opts.hints.is_empty() {
+            out.push_str("help[");
+            out.push_str(&opts.hints.len().to_string());
+            out.push_str("]:\n");
+            for hint in &opts.hints {
+                out.push_str("  ");
+                out.push_str(&sanitize_hint(hint));
+                out.push('\n');
+            }
+        }
+
+        out
+    }
+}
+
+#[allow(dead_code)]
+fn _assert_render_signature(doc: &ToonDocument<'_>) -> String {
+    doc.render()
 }
 
 #[cfg(test)]
@@ -625,7 +707,6 @@ mod tests {
     }
 }
 
-/// Proof that a `ToonOptions` value has passed structural validation.
 #[cfg(test)]
 mod invariant_guard_tests {
     #[test]
@@ -651,5 +732,18 @@ mod invariant_guard_tests {
                 "escape-hatch name pattern {bad:?} must not appear in michi-toon src/"
             );
         }
+    }
+
+    #[test]
+    fn toon_document_render_produces_expected_output() {
+        let opts = crate::ToonOptions::new(
+            "t",
+            vec!["a".to_string(), "b".to_string()],
+            vec![vec![crate::Value::from("x"), crate::Value::Int(1)]],
+        )
+        .total_count(Some(5))
+        .hints(vec!["h".to_string()]);
+        let doc = super::ToonDocument::validate(&opts).expect("valid options must validate");
+        assert_eq!(doc.render(), "t[1]{a,b}:\n  x,1\ntotalCount: 5\nhelp[1]:\n  h\n");
     }
 }
