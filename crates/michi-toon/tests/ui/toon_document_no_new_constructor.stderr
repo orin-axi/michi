@@ -7,5 +7,5 @@ error[E0599]: no associated function or constant named `new` found for struct `T
 note: if you're trying to build a new `ToonDocument<'_>`, consider using `ToonDocument::<'a>::validate` which returns `Result<ToonDocument<'_>, ToonError>`
  --> src/render.rs
   |
-  |     pub fn validate(opts: &'a crate::ToonOptions) -> Result<Self, crate::ToonError> {
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |         pub fn validate(opts: &'a crate::ToonOptions) -> Result<Self, crate::ToonError> {
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

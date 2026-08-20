@@ -1,5 +1,4 @@
 use compact_str::CompactString;
-use std::fmt::Write as _;
 
 use super::escape::{escape_value, sanitize_header_token, sanitize_hint, STRUCTURAL};
 
@@ -125,127 +124,145 @@ impl std::fmt::Display for Value {
     }
 }
 
-/// Proof that a `ToonOptions` value has passed structural validation.
-///
-/// The only function that produces a `ToonDocument` is [`ToonDocument::validate`],
-/// declared in this same module alongside the private field, so no code inside
-/// or outside this crate can obtain one without validation having returned `Ok`.
-/// Borrows `&'a ToonOptions` immutably, so the validated options cannot be
-/// mutated while the proof is live.
-#[derive(Debug)]
-pub struct ToonDocument<'a> {
-    opts: &'a crate::ToonOptions,
-}
-
-impl<'a> ToonDocument<'a> {
-    /// Validate `opts` and return a proof it satisfies every structural
-    /// invariant [`ToonDocument::render`] depends on.
+/// Owns [`ToonDocument`] in a module of its own -- containing nothing else
+/// -- so the invariant "only `validate` can produce one" is enforced by
+/// Rust's own field-privacy rule, not by scanning source text for known
+/// bypass shapes. `opts` is visible only inside this module and its
+/// descendants; since this module declares no descendants and nothing
+/// besides `validate`/`render`, no code anywhere else in this crate --
+/// regardless of what shape it takes (a free function, a second impl
+/// block, a `From`/`TryFrom` impl, a type alias, or a module gated behind
+/// an unanticipated `#[cfg(...)]`) -- can write the struct-literal
+/// `ToonDocument { opts }` and have it compile. This module is `mod`, not
+/// `pub`, so external code cannot even name `render::proof::ToonDocument`
+/// directly; the type is reachable only through the `pub use` re-export
+/// below.
+mod proof {
+    /// Proof that a `ToonOptions` value has passed structural validation.
     ///
-    /// # Errors
-    ///
-    /// Returns [`crate::ToonError::InvalidTypeName`] if `type_name` contains a
-    /// structural character, [`crate::ToonError::InvalidFieldName`] if any
-    /// field name contains a structural character, or
-    /// [`crate::ToonError::RowLengthMismatch`] if any row's length differs
-    /// from `fields.len()`.
-    pub fn validate(opts: &'a crate::ToonOptions) -> Result<Self, crate::ToonError> {
-        if opts.type_name.chars().any(|c| STRUCTURAL.contains(&c)) {
-            return Err(crate::ToonError::InvalidTypeName { name: opts.type_name.clone() });
-        }
-        for field in &opts.fields {
-            if field.chars().any(|c| STRUCTURAL.contains(&c)) {
-                return Err(crate::ToonError::InvalidFieldName { name: field.clone() });
-            }
-        }
-        for (i, row) in opts.rows.iter().enumerate() {
-            if row.len() != opts.fields.len() {
-                return Err(crate::ToonError::RowLengthMismatch {
-                    row_index: i,
-                    expected: opts.fields.len(),
-                    actual: row.len(),
-                });
-            }
-        }
-        Ok(Self { opts })
+    /// The only function that produces a `ToonDocument` is
+    /// [`ToonDocument::validate`] -- see this module's own doc comment for
+    /// why no other function anywhere in the crate can construct one.
+    /// Borrows `&'a ToonOptions` immutably, so the validated options cannot
+    /// be mutated while the proof is live.
+    #[derive(Debug)]
+    pub struct ToonDocument<'a> {
+        opts: &'a crate::ToonOptions,
     }
 
-    /// Render `self` to a TOON document string. Infallible and total by
-    /// construction: `self.opts`'s row arity was already proven equal to
-    /// `self.opts.fields.len()` by `validate`, so this iterates rows and
-    /// fields in lockstep instead of indexing by position, which could fail.
-    #[must_use]
-    pub fn render(&self) -> String {
-        let opts = self.opts;
-        let row_count = opts.rows.len();
-        let field_count = opts.fields.len();
-        let capacity = 60 + row_count * (field_count * 12 + 10) + opts.hints.len() * 60;
-        let mut out = String::with_capacity(capacity);
-
-        out.push_str(&sanitize_header_token(&opts.type_name));
-        out.push('[');
-        out.push_str(&row_count.to_string());
-        out.push_str("]{");
-        for (i, field) in opts.fields.iter().enumerate() {
-            if i > 0 {
-                out.push(',');
+    impl<'a> ToonDocument<'a> {
+        /// Validate `opts` and return a proof it satisfies every structural
+        /// invariant [`ToonDocument::render`] depends on.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`crate::ToonError::InvalidTypeName`] if `type_name` contains a
+        /// structural character, [`crate::ToonError::InvalidFieldName`] if any
+        /// field name contains a structural character, or
+        /// [`crate::ToonError::RowLengthMismatch`] if any row's length differs
+        /// from `fields.len()`.
+        pub fn validate(opts: &'a crate::ToonOptions) -> Result<Self, crate::ToonError> {
+            if opts.type_name.chars().any(|c| super::STRUCTURAL.contains(&c)) {
+                return Err(crate::ToonError::InvalidTypeName { name: opts.type_name.clone() });
             }
-            out.push_str(&sanitize_header_token(field));
+            for field in &opts.fields {
+                if field.chars().any(|c| super::STRUCTURAL.contains(&c)) {
+                    return Err(crate::ToonError::InvalidFieldName { name: field.clone() });
+                }
+            }
+            for (i, row) in opts.rows.iter().enumerate() {
+                if row.len() != opts.fields.len() {
+                    return Err(crate::ToonError::RowLengthMismatch {
+                        row_index: i,
+                        expected: opts.fields.len(),
+                        actual: row.len(),
+                    });
+                }
+            }
+            Ok(Self { opts })
         }
-        out.push_str("}:\n");
 
-        for row in &opts.rows {
-            out.push_str("  ");
-            for (i, cell) in row.iter().enumerate() {
+        /// Render `self` to a TOON document string. Infallible and total by
+        /// construction: `self.opts`'s row arity was already proven equal to
+        /// `self.opts.fields.len()` by `validate`, so this iterates rows and
+        /// fields in lockstep instead of indexing by position, which could fail.
+        #[must_use]
+        pub fn render(&self) -> String {
+            use std::fmt::Write as _;
+
+            let opts = self.opts;
+            let row_count = opts.rows.len();
+            let field_count = opts.fields.len();
+            let capacity = 60 + row_count * (field_count * 12 + 10) + opts.hints.len() * 60;
+            let mut out = String::with_capacity(capacity);
+
+            out.push_str(&super::sanitize_header_token(&opts.type_name));
+            out.push('[');
+            out.push_str(&row_count.to_string());
+            out.push_str("]{");
+            for (i, field) in opts.fields.iter().enumerate() {
                 if i > 0 {
                     out.push(',');
                 }
-                match cell {
-                    Value::Str(s) => {
-                        if s.len() <= opts.max_cell_len {
-                            out.push_str(&escape_value(s));
-                        } else {
-                            let truncated = michi_truncate::truncate_inline(s, opts.max_cell_len, "full=true");
-                            out.push_str(&escape_value(&truncated));
-                        }
-                    }
-                    Value::Int(n) => {
-                        let _ = write!(out, "{n}");
-                    }
-                    Value::Float(f) => {
-                        if f.is_nan() || f.is_infinite() {
-                            let s = f.to_string();
-                            let _ = write!(out, "\"{s}\"");
-                        } else {
-                            let _ = write!(out, "{f}");
-                        }
-                    }
-                    Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-                    Value::Null => {}
-                }
+                out.push_str(&super::sanitize_header_token(field));
             }
-            out.push('\n');
-        }
+            out.push_str("}:\n");
 
-        if let Some(total) = opts.total_count {
-            out.push_str("totalCount: ");
-            out.push_str(&total.to_string());
-            out.push('\n');
-        }
-
-        if !opts.hints.is_empty() {
-            out.push_str("help[");
-            out.push_str(&opts.hints.len().to_string());
-            out.push_str("]:\n");
-            for hint in &opts.hints {
+            for row in &opts.rows {
                 out.push_str("  ");
-                out.push_str(&sanitize_hint(hint));
+                for (i, cell) in row.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    match cell {
+                        super::Value::Str(s) => {
+                            if s.len() <= opts.max_cell_len {
+                                out.push_str(&super::escape_value(s));
+                            } else {
+                                let truncated = michi_truncate::truncate_inline(s, opts.max_cell_len, "full=true");
+                                out.push_str(&super::escape_value(&truncated));
+                            }
+                        }
+                        super::Value::Int(n) => {
+                            let _ = write!(out, "{n}");
+                        }
+                        super::Value::Float(f) => {
+                            if f.is_nan() || f.is_infinite() {
+                                let s = f.to_string();
+                                let _ = write!(out, "\"{s}\"");
+                            } else {
+                                let _ = write!(out, "{f}");
+                            }
+                        }
+                        super::Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+                        super::Value::Null => {}
+                    }
+                }
                 out.push('\n');
             }
-        }
 
-        out
+            if let Some(total) = opts.total_count {
+                out.push_str("totalCount: ");
+                out.push_str(&total.to_string());
+                out.push('\n');
+            }
+
+            if !opts.hints.is_empty() {
+                out.push_str("help[");
+                out.push_str(&opts.hints.len().to_string());
+                out.push_str("]:\n");
+                for hint in &opts.hints {
+                    out.push_str("  ");
+                    out.push_str(&super::sanitize_hint(hint));
+                    out.push('\n');
+                }
+            }
+
+            out
+        }
     }
 }
+pub use proof::ToonDocument;
 
 #[allow(dead_code)]
 fn _assert_render_signature(doc: &ToonDocument<'_>) -> String {
@@ -614,86 +631,58 @@ mod invariant_guard_tests {
 
     #[test]
     fn sole_constructor_for_toon_document() {
-        // Extracts the body of the one legitimate `impl<'a> ToonDocument<'a>
-        // { ... }` block, and returns the source with that block's lines
-        // removed (so the residual scan below never re-inspects it).
-        fn extract_and_remove_toon_document_impl_block(src: &str) -> (String, String) {
-            let lines: Vec<&str> = src.lines().collect();
-            let open = lines
-                .iter()
-                .position(|l| l.trim_end() == "impl<'a> ToonDocument<'a> {")
-                .expect("ToonDocument's impl block must exist in render.rs");
-            let close = find_closing_line(&lines, open, indent_of(lines[open]));
-            let block = lines[open + 1..close].join("\n");
-            let residual: String =
-                lines[..open].iter().chain(lines[close + 1..].iter()).copied().collect::<Vec<_>>().join("\n");
-            (block, residual)
-        }
-
+        // ToonDocument's private field is declared inside `mod proof`, a
+        // module containing nothing else. Rust's own field-privacy rule --
+        // visible only to the declaring module and its descendants -- is
+        // what actually prevents every bypass shape three rounds of
+        // adversarial review found (a free fn, a second impl block, a
+        // From/TryFrom impl, a type alias, and a module gated behind an
+        // unanticipated #[cfg(...)]): none of them can compile unless
+        // they're written inside `proof` itself, regardless of what shape
+        // they take. That guarantee doesn't need a text scan; rustc enforces
+        // it the moment anyone tries. What a text scan still needs to pin
+        // down is the two things privacy alone doesn't cover: that `proof`
+        // stays exactly as narrow as this reasoning requires (nothing else
+        // declared inside it, no descendant module of its own), and that no
+        // extra method sneaks into ToonDocument's own impl block from
+        // within its rightful scope (proven possible in round 3: a
+        // `pub fn rebind(&self, opts) -> ToonDocument` inside the impl
+        // block itself evaded a fn count that filtered out every
+        // self-taking method).
         let render_src = strip_test_modules(include_str!("render.rs"));
+
+        let lines: Vec<&str> = render_src.lines().collect();
+        let mod_line = lines
+            .iter()
+            .position(|l| l.trim_end() == "mod proof {")
+            .expect("ToonDocument must live in a private (non-pub) `mod proof` in render.rs");
+        let close = find_closing_line(&lines, mod_line, indent_of(lines[mod_line]));
+        let proof_body = lines[mod_line + 1..close].join("\n");
+
+        assert_eq!(
+            proof_body.matches("mod ").count(),
+            0,
+            "proof must declare no descendant module -- a descendant would inherit access to the private field"
+        );
+        // Exactly two fns may exist anywhere in `proof`: validate and
+        // render. This is a total count over every `fn`, with no
+        // self-receiver exemption -- the exemption is exactly what let
+        // `rebind` (a &self method) through in round 3.
+        let fn_names: Vec<&str> =
+            proof_body.split("fn ").skip(1).map(|rest| rest.split(['(', '<']).next().unwrap_or(rest).trim()).collect();
+        assert_eq!(
+            fn_names,
+            vec!["validate", "render"],
+            "proof's impl block must contain exactly these two fns, in this order; found: {fn_names:?}"
+        );
+
+        assert!(
+            render_src.contains("\npub use proof::ToonDocument;"),
+            "ToonDocument must be re-exported from proof via `pub use`, not by widening proof's own visibility"
+        );
+
         let lib_src = strip_test_modules(include_str!("lib.rs"));
         let escape_src = strip_test_modules(include_str!("escape.rs"));
-
-        // Exactly one impl header in the crate may mention ToonDocument at
-        // all, and it must be the inherent block -- not a second inherent
-        // impl block (which would evade the associated-fn count below,
-        // since that count only inspects the FIRST block found) and not a
-        // trait impl such as `impl From<&ToonOptions> for ToonDocument`,
-        // which would construct one without going through `validate` at
-        // all while still compiling and passing every other test, proven
-        // by exit-gate review: `ToonDocument::from(&opts).render()` emitted
-        // a silently truncated document for a row-arity mismatch that
-        // `render_toon(&opts)` correctly rejected.
-        let toon_document_impl_headers: Vec<&str> = [render_src.as_str(), lib_src.as_str(), escape_src.as_str()]
-            .iter()
-            .flat_map(|src| src.lines())
-            .map(str::trim)
-            .filter(|line| line.starts_with("impl") && line.contains("ToonDocument") && line.ends_with('{'))
-            .collect();
-        assert_eq!(
-            toon_document_impl_headers,
-            vec!["impl<'a> ToonDocument<'a> {"],
-            "exactly one impl block may exist for ToonDocument, and it must be this inherent one; found: {toon_document_impl_headers:?}"
-        );
-
-        let (impl_block, residual_src) = extract_and_remove_toon_document_impl_block(&render_src);
-
-        // Within that one legitimate block, exactly one associated function
-        // (a `fn` whose first parameter is not `self`/`&self`/`&mut self`)
-        // may exist: `validate`. Counting structurally -- rather than
-        // matching a specific return-type substring -- catches a bypass
-        // constructor regardless of what it returns or is named, e.g. a
-        // `pub(crate) fn wrap(...) -> Self` that a substring match on
-        // `-> Result<Self, crate::ToonError>` would silently miss.
-        let associated_fns = impl_block
-            .split("fn ")
-            .skip(1)
-            .filter(|rest| {
-                let params = rest.split_once('(').map_or("", |(_, p)| p).trim_start();
-                !(params.starts_with("self") || params.starts_with("&self") || params.starts_with("&mut self"))
-            })
-            .count();
-        assert_eq!(
-            associated_fns, 1,
-            "ToonDocument's impl block must contain exactly one associated function (validate); found {associated_fns}"
-        );
-
-        // Outside that one block, nothing anywhere in the crate may produce
-        // a ToonDocument: no free function or second-impl-block function
-        // returning `-> ToonDocument` (the impl-header check above already
-        // rules out a second inherent block, but a free function is a
-        // distinct bypass shape), and no `for ToonDocument` (a trait impl).
-        for (file, src) in
-            [("render.rs", residual_src.as_str()), ("lib.rs", lib_src.as_str()), ("escape.rs", escape_src.as_str())]
-        {
-            for needle in ["-> ToonDocument", "for ToonDocument"] {
-                assert!(
-                    !src.contains(needle),
-                    "found {needle:?} outside ToonDocument's sole legitimate impl block, in {file}"
-                );
-            }
-        }
-
         for (file, src) in
             [("render.rs", render_src.as_str()), ("lib.rs", lib_src.as_str()), ("escape.rs", escape_src.as_str())]
         {
