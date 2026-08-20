@@ -216,8 +216,7 @@ pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T]) -> R
         rows.push(fields.iter().map(|f| json_value_to_toon_value(obj.get(f))).collect());
     }
     let opts = ToonOptions { type_name, fields, rows, total_count: None, hints: Vec::new(), max_cell_len: 200 };
-    opts.validate()?;
-    Ok(render_toon(&opts))
+    Ok(opts.validate()?.render())
 }
 
 #[cfg(test)]
