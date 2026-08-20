@@ -138,22 +138,41 @@ impl std::fmt::Display for Value {
 /// directly; the type is reachable only through the `pub use` re-export
 /// below.
 ///
-/// **Known, accepted residual:** this guarantee covers every bypass shape
-/// written as ordinary source text, but not one hidden behind
-/// `macro_rules!` expansion -- a `some_macro!();` item-position invocation
-/// inside this module's own `impl` block is, after expansion, code that
-/// genuinely lives inside `proof` and therefore has real field access, the
-/// same way `validate` does. No text scan can see through macro expansion
-/// (`include_str!`, which every guard test here reads from, captures
-/// source as written, before expansion), so this is a limit of the
-/// mechanism, not a missed pattern. Per this invariant's own design
-/// record, the property being enforced is that a maintainer *following
-/// this codebase's patterns* cannot reintroduce the defect by accident;
-/// a maintainer deliberately writing macro-hidden field access to evade
-/// this exact module boundary is choosing to defeat it, not accidentally
-/// tripping over it, and is outside what a source-level guard can
-/// mechanically prevent. Closing that residual for real would mean
-/// asserting over post-expansion, cfg-resolved output (e.g. via
+/// This guarantee holds only GIVEN two preconditions that Rust's type
+/// system does not itself enforce, and that are each pinned by a
+/// dedicated assertion in `sole_constructor_for_toon_document` rather than
+/// left as a precondition nothing verifies: (1) `opts` stays genuinely
+/// bare-private -- widening its visibility to reach the rest of this
+/// module is a one-token, entirely ordinary-looking edit that would grant
+/// field access to all of `render.rs` and let a constructor live outside
+/// `proof` entirely, defeating the guarantee above while every OTHER
+/// check here stays green; and (2) `proof`'s true extent is what the
+/// scanning code believes it is -- found, historically, to be defeatable
+/// by a multi-line string literal (e.g. inside a `#[doc = "..."]`
+/// attribute) containing a bare `}`, which an earlier, purely line-based
+/// brace-matcher mistook for the module's real close. `find_closing_line`
+/// now tracks actual lexical structure (string and char literals,
+/// comments) rather than taking for granted that a closing brace is
+/// always alone on its rustfmt-normalized line, closing that specific
+/// hole; a companion assertion additionally pins the literal line
+/// immediately following `proof`'s close, as
+/// defense in depth against a future defect in that scan.
+///
+/// **Known, accepted residual:** none of the above closes a bypass hidden
+/// behind `macro_rules!` expansion -- a `some_macro!();` item-position
+/// invocation inside this module's own `impl` block is, after expansion,
+/// code that genuinely lives inside `proof` and therefore has real field
+/// access, the same way `validate` does. No text scan can see through
+/// macro expansion (`include_str!`, which every guard test here reads
+/// from, captures source as written, before expansion), so this is a
+/// limit of the mechanism, not a missed pattern. Per this invariant's own
+/// design record, the property being enforced is that a maintainer
+/// *following this codebase's patterns* cannot reintroduce the defect by
+/// accident; a maintainer deliberately writing macro-hidden field access
+/// to evade this exact module boundary is choosing to defeat it, not
+/// accidentally tripping over it, and is outside what a source-level
+/// guard can mechanically prevent. Closing that residual for real would
+/// mean asserting over post-expansion, cfg-resolved output (e.g. via
 /// `cargo-expand`) rather than unexpanded source text -- a deliberate
 /// scope decision, not an oversight.
 mod proof {
@@ -591,21 +610,145 @@ mod tests {
 /// own copy that can drift out of sync or regress individually.
 #[cfg(test)]
 pub(crate) mod test_scan {
-    /// Finds the index of the line that closes the block opened by
-    /// `lines[open_line_idx]`, exploiting this workspace's rustfmt
-    /// guarantee (`cargo fmt --all -- --check` is a hard CI gate) that a
-    /// block's closing brace is always alone on its own line, indented
-    /// exactly `indent` columns -- the same indentation as the opening
-    /// line. This sidesteps counting `{`/`}` characters that appear inside
-    /// string/char literals entirely (raw strings, `'{'`/`'}'` char
-    /// literals, `'\u{XXXX}'` escapes, doubled `{{`/`}}` in format
-    /// strings), none of which rustfmt ever places alone on a line by
-    /// themselves at a meaningful indentation.
-    pub(crate) fn find_closing_line(lines: &[&str], open_line_idx: usize, indent: usize) -> usize {
-        let close = " ".repeat(indent) + "}";
-        (open_line_idx + 1..lines.len())
-            .find(|&i| lines[i] == close)
-            .expect("no closing brace line found at the opening line's indentation")
+    /// Finds the byte offset, within `src`, of the `{` that opens
+    /// `lines[open_line_idx]`'s block -- the first `{` on or after that
+    /// line's start.
+    fn brace_byte_offset(lines: &[&str], open_line_idx: usize) -> usize {
+        let line_start: usize = lines[..open_line_idx].iter().map(|l| l.len() + 1).sum();
+        line_start + lines[open_line_idx].find('{').expect("opening line must contain '{'")
+    }
+
+    /// Finds the real nesting depth's matching `}` for the `{` at
+    /// `open_brace_idx` in `src`, and returns the index of the LINE
+    /// containing that `}` (via a byte-offset -> line-index scan over
+    /// `lines`).
+    ///
+    /// Tracks actual lexical structure -- string literals (including ones
+    /// that span multiple lines, e.g. inside a `#[doc = "..."]` value),
+    /// raw strings with any number of `#`s, char literals (including
+    /// `'\u{XXXX}'` escapes), and `//`/`/* */` comments -- rather than
+    /// assuming a block's closing brace is always alone on its own
+    /// rustfmt-normalized line. That assumption is false: rustfmt does not
+    /// reformat the CONTENTS of a string literal, so a multi-line string
+    /// (a pasted JSON/TOON example inside a doc comment, for instance)
+    /// containing a bare `}` at column 0 previously fooled the
+    /// line-alone-ness check into treating it as the block's real close,
+    /// silently truncating everything scanned after it -- proven by
+    /// exit-gate review, which used exactly that shape to hide a second
+    /// constructor inside what this scan believed was `proof`'s full body.
+    pub(crate) fn find_closing_line(src: &str, lines: &[&str], open_line_idx: usize, indent: usize) -> usize {
+        let _ = indent; // kept in the signature for call-site stability; no longer load-bearing
+        let open_brace_idx = brace_byte_offset(lines, open_line_idx);
+
+        #[derive(Clone, Copy, PartialEq)]
+        enum State {
+            Normal,
+            InString,
+            InRawString(usize),
+            InLineComment,
+            InBlockComment,
+        }
+
+        let chars: Vec<char> = src[open_brace_idx..].char_indices().map(|(_, c)| c).collect();
+        let byte_of: Vec<usize> = src[open_brace_idx..].char_indices().map(|(i, _)| i).collect();
+        let mut state = State::Normal;
+        let mut depth = 0i32;
+        let mut i = 0usize;
+        while i < chars.len() {
+            let c = chars[i];
+            match state {
+                State::Normal => {
+                    if c == '"' {
+                        state = State::InString;
+                        i += 1;
+                    } else if c == 'r' && matches!(chars.get(i + 1), Some('"') | Some('#')) {
+                        let mut hashes = 0usize;
+                        let mut j = i + 1;
+                        while chars.get(j) == Some(&'#') {
+                            hashes += 1;
+                            j += 1;
+                        }
+                        if chars.get(j) == Some(&'"') {
+                            state = State::InRawString(hashes);
+                            i = j + 1;
+                        } else {
+                            i += 1;
+                        }
+                    } else if c == '\'' {
+                        // A char literal, not a lifetime, only if a closing
+                        // `'` is found either 2 chars later (plain, e.g.
+                        // '{') or after a `\...` escape (e.g. '\\', '\'',
+                        // '\u{XXXX}'). A lifetime ('a, 'static) never has a
+                        // `'` two-or-few characters later in valid syntax.
+                        if chars.get(i + 1) == Some(&'\\') {
+                            if chars.get(i + 2) == Some(&'u') && chars.get(i + 3) == Some(&'{') {
+                                let close = (i + 4..chars.len())
+                                    .find(|&k| chars[k] == '}')
+                                    .expect("unclosed \\u{ escape in char literal");
+                                i = close + 2; // skip past '}' and the closing '
+                            } else {
+                                i += 4; // ' \ x '
+                            }
+                        } else if chars.get(i + 2) == Some(&'\'') {
+                            i += 3; // ' x '
+                        } else {
+                            i += 1; // a lifetime; not a char literal
+                        }
+                    } else if c == '/' && chars.get(i + 1) == Some(&'/') {
+                        state = State::InLineComment;
+                        i += 2;
+                    } else if c == '/' && chars.get(i + 1) == Some(&'*') {
+                        state = State::InBlockComment;
+                        i += 2;
+                    } else if c == '{' {
+                        depth += 1;
+                        i += 1;
+                    } else if c == '}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            let close_byte = open_brace_idx + byte_of[i];
+                            return src[..close_byte].matches('\n').count();
+                        }
+                        i += 1;
+                    } else {
+                        i += 1;
+                    }
+                }
+                State::InString => {
+                    if c == '\\' {
+                        i += 2;
+                    } else if c == '"' {
+                        state = State::Normal;
+                        i += 1;
+                    } else {
+                        i += 1;
+                    }
+                }
+                State::InRawString(hashes) => {
+                    if c == '"' && (1..=hashes).all(|k| chars.get(i + k) == Some(&'#')) {
+                        state = State::Normal;
+                        i += 1 + hashes;
+                    } else {
+                        i += 1;
+                    }
+                }
+                State::InLineComment => {
+                    if c == '\n' {
+                        state = State::Normal;
+                    }
+                    i += 1;
+                }
+                State::InBlockComment => {
+                    if c == '*' && chars.get(i + 1) == Some(&'/') {
+                        state = State::Normal;
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+        }
+        panic!("no matching closing brace found for the block opened at line {open_line_idx}");
     }
 
     pub(crate) fn indent_of(line: &str) -> usize {
@@ -654,7 +797,7 @@ pub(crate) mod test_scan {
                     "expected a `[pub(...)] mod ... {{` line immediately after a test cfg attribute, got: {:?}",
                     lines[mod_line]
                 );
-                let close = find_closing_line(&lines, mod_line, indent_of(lines[i]));
+                let close = find_closing_line(src, &lines, mod_line, indent_of(lines[i]));
                 i = close + 1;
             } else {
                 kept.push(lines[i]);
@@ -704,7 +847,7 @@ mod invariant_guard_tests {
             .iter()
             .position(|l| l.trim_end() == "mod proof {")
             .expect("ToonDocument must live in a private (non-pub) `mod proof` in render.rs");
-        let close = find_closing_line(&lines, mod_line, indent_of(lines[mod_line]));
+        let close = find_closing_line(&render_src, &lines, mod_line, indent_of(lines[mod_line]));
         let proof_body = lines[mod_line + 1..close].join("\n");
 
         assert_eq!(
@@ -724,9 +867,37 @@ mod invariant_guard_tests {
             "proof's impl block must contain exactly these two fns, in this order; found: {fn_names:?}"
         );
 
+        // Module privacy only closes external bypass shapes AS LONG AS the
+        // field itself stays bare-private (no `pub`/`pub(in ...)`/
+        // `pub(crate)` etc.) -- widening it to `pub(in crate::render)` is a
+        // one-token edit that grants field access to all of render.rs,
+        // letting a constructor live entirely outside proof while every
+        // other assertion here stays green (proven by exit-gate review).
+        assert!(
+            proof_body.contains("\n        opts: &'a crate::ToonOptions,\n"),
+            "ToonDocument's field must stay bare-private (no visibility modifier); \
+             found a different declaration in proof_body: {proof_body:?}"
+        );
+        assert_eq!(
+            render_src.matches("pub(in ").count(),
+            0,
+            "no item in render.rs may use a `pub(in ...)` visibility -- it can widen field access \
+             beyond proof without tripping any other check here"
+        );
+
         assert!(
             render_src.contains("\npub use proof::ToonDocument;"),
             "ToonDocument must be re-exported from proof via `pub use`, not by widening proof's own visibility"
+        );
+        // Defense in depth: pin what immediately follows proof's own
+        // closing brace, so even an unanticipated future defect in the
+        // string/comment-aware scan above that find_closing_line performs
+        // fails loudly here instead of silently accepting a truncated or
+        // extended proof_body.
+        assert_eq!(
+            lines[close + 1],
+            "pub use proof::ToonDocument;",
+            "the line immediately after proof's closing brace must be its pub use re-export"
         );
 
         let lib_src = strip_test_modules(include_str!("lib.rs"));
