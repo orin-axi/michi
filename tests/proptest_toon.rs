@@ -50,7 +50,7 @@ proptest! {
         let rows: Vec<Vec<Value>> =
             cells.iter().map(|row| row.iter().map(|c| Value::Str(c.clone().into())).collect()).collect();
         let opts = ToonOptions::new(type_name.clone(), fields.clone(), rows.clone()).total_count(total_count);
-        let rendered = render_toon(&opts);
+        let rendered = render_toon(&opts).expect("doc_strategy only generates arity-matched, structural-char-free options");
 
         let parsed = parse(&rendered).expect("render_toon output must be parseable by the grammar");
         prop_assert_eq!(parsed.type_name, type_name);
@@ -66,5 +66,49 @@ proptest! {
                 prop_assert_eq!(parsed_cell, &expected);
             }
         }
+    }
+}
+
+proptest! {
+    #[test]
+    fn every_rendered_row_has_exactly_field_count_cells(
+        (type_name, field_count, row_count, total_count, cells) in doc_strategy(),
+    ) {
+        let fields: Vec<String> = (0..field_count).map(|i| format!("f{i}")).collect();
+        let rows: Vec<Vec<Value>> = cells.iter().map(|row| row.iter().map(|c| Value::Str(c.clone().into())).collect()).collect();
+        let opts = ToonOptions::new(type_name, fields, rows).total_count(total_count);
+        let rendered = render_toon(&opts).expect("doc_strategy only generates arity-matched, structural-char-free options");
+        let parsed = parse(&rendered).expect("render_toon output must be parseable by the grammar");
+        for parsed_row in &parsed.rows {
+            prop_assert_eq!(parsed_row.len(), field_count);
+        }
+        prop_assert_eq!(parsed.rows.len(), row_count);
+    }
+}
+
+fn mismatched_doc_strategy() -> impl Strategy<Value = (String, Vec<String>, Vec<Vec<String>>)> {
+    let name_strategy = prop_oneof!["[a-z][a-z0-9_]{0,10}", "[a-z]\\[[a-z]{0,5}"];
+    (name_strategy.clone(), proptest::collection::vec(name_strategy, 1usize..3)).prop_flat_map(|(type_name, fields)| {
+        let field_count = fields.len();
+        proptest::collection::vec(proptest::collection::vec(cell_strategy(), 0usize..field_count + 2), 0usize..4)
+            .prop_map(move |rows| (type_name.clone(), fields.clone(), rows))
+    })
+}
+
+proptest! {
+    #[test]
+    fn render_toon_succeeds_iff_invariants_hold(
+        (type_name, fields, rows) in mismatched_doc_strategy(),
+    ) {
+        let structural = [',', '[', ']', '{', '}', '\n', '\r'];
+        let type_name_ok = !type_name.chars().any(|c| structural.contains(&c));
+        let fields_ok = fields.iter().all(|f| !f.chars().any(|c| structural.contains(&c)));
+        let rows_ok = rows.iter().all(|r| r.len() == fields.len());
+        let expected_ok = type_name_ok && fields_ok && rows_ok;
+
+        let rows_values: Vec<Vec<Value>> = rows.iter().map(|row| row.iter().map(|c| Value::Str(c.clone().into())).collect()).collect();
+        let opts = ToonOptions::new(type_name, fields, rows_values);
+        let actual_ok = render_toon(&opts).is_ok();
+        prop_assert_eq!(actual_ok, expected_ok);
     }
 }
