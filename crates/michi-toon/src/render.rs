@@ -1,7 +1,7 @@
 use compact_str::CompactString;
 use std::fmt::Write as _;
 
-use super::escape::{escape_value, sanitize_header_token, sanitize_hint};
+use super::escape::{escape_value, sanitize_header_token, sanitize_hint, STRUCTURAL};
 
 /// A single cell value in a TOON row.
 #[derive(Debug, Clone, PartialEq)]
@@ -217,6 +217,50 @@ pub(crate) fn render(
     }
 
     out
+}
+
+/// Proof that a `ToonOptions` value has passed structural validation.
+///
+/// The only function that produces a `ToonDocument` is [`ToonDocument::validate`],
+/// declared in this same module alongside the private field, so no code inside
+/// or outside this crate can obtain one without validation having returned `Ok`.
+/// Borrows `&'a ToonOptions` immutably, so the validated options cannot be
+/// mutated while the proof is live.
+pub struct ToonDocument<'a> {
+    opts: &'a crate::ToonOptions,
+}
+
+impl<'a> ToonDocument<'a> {
+    /// Validate `opts` and return a proof it satisfies every structural
+    /// invariant [`ToonDocument::render`] depends on.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::ToonError::InvalidTypeName`] if `type_name` contains a
+    /// structural character, [`crate::ToonError::InvalidFieldName`] if any
+    /// field name contains a structural character, or
+    /// [`crate::ToonError::RowLengthMismatch`] if any row's length differs
+    /// from `fields.len()`.
+    pub fn validate(opts: &'a crate::ToonOptions) -> Result<Self, crate::ToonError> {
+        if opts.type_name.chars().any(|c| STRUCTURAL.contains(&c)) {
+            return Err(crate::ToonError::InvalidTypeName { name: opts.type_name.clone() });
+        }
+        for field in &opts.fields {
+            if field.chars().any(|c| STRUCTURAL.contains(&c)) {
+                return Err(crate::ToonError::InvalidFieldName { name: field.clone() });
+            }
+        }
+        for (i, row) in opts.rows.iter().enumerate() {
+            if row.len() != opts.fields.len() {
+                return Err(crate::ToonError::RowLengthMismatch {
+                    row_index: i,
+                    expected: opts.fields.len(),
+                    actual: row.len(),
+                });
+            }
+        }
+        Ok(Self { opts })
+    }
 }
 
 #[cfg(test)]
@@ -578,5 +622,34 @@ mod tests {
             200,
         );
         assert_eq!(out_none, out_null);
+    }
+}
+
+/// Proof that a `ToonOptions` value has passed structural validation.
+#[cfg(test)]
+mod invariant_guard_tests {
+    #[test]
+    fn sole_constructor_for_toon_document() {
+        let render_src = include_str!("render.rs");
+        let lib_src = include_str!("lib.rs");
+        let render_non_test = render_src.split("#[cfg(test)]").next().unwrap_or(render_src);
+        let lib_non_test = lib_src.split("#[cfg(test)]").next().unwrap_or(lib_src);
+
+        let known_ctor = render_non_test.matches("-> Result<Self, crate::ToonError>").count();
+        assert_eq!(known_ctor, 1, "exactly one function must be ToonDocument's sole constructor; found {known_ctor}");
+        let other_ctor_shapes = render_non_test.matches("-> ToonDocument").count();
+        assert_eq!(
+            other_ctor_shapes, 0,
+            "no other function may return ToonDocument directly; found {other_ctor_shapes}"
+        );
+
+        let render_scan = render_non_test.to_lowercase().replace("unsafe_code", "");
+        let lib_scan = lib_non_test.to_lowercase().replace("unsafe_code", "");
+        for bad in ["unchecked", "unsafe", "raw", "assume"] {
+            assert!(
+                !render_scan.contains(bad) && !lib_scan.contains(bad),
+                "escape-hatch name pattern {bad:?} must not appear in michi-toon src/"
+            );
+        }
     }
 }
