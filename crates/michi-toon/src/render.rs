@@ -866,6 +866,22 @@ mod invariant_guard_tests {
             vec!["validate", "render"],
             "proof's impl block must contain exactly these two fns, in this order; found: {fn_names:?}"
         );
+        // fn_names only sees items introduced by the literal token `fn `.
+        // A `const`/`static` item, or a function-pointer-typed const
+        // (`fn(...)  ->  ToonDocument`, no space before the paren) can
+        // produce a ToonDocument without ever containing that token --
+        // proven by exit-gate review: `pub const MAKE: for<'x> fn(&'x
+        // ToonOptions) -> ToonDocument<'x> = |o| ToonDocument { opts: o };`
+        // compiled, passed every check above, and rendered unvalidated
+        // data through a crate-internal caller.
+        for banned in ["const ", "static ", "fn("] {
+            assert_eq!(
+                proof_body.matches(banned).count(),
+                0,
+                "proof may declare no {banned:?} item -- a const/static/fn-pointer can produce \
+                 a ToonDocument without ever introducing a `fn ` token for the fn-name check above to see"
+            );
+        }
 
         // Module privacy only closes external bypass shapes AS LONG AS the
         // field itself stays bare-private (no `pub`/`pub(in ...)`/
