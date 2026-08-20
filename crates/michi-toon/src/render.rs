@@ -125,100 +125,6 @@ impl std::fmt::Display for Value {
     }
 }
 
-/// Render a TOON document string from its parts.
-pub(crate) fn render(
-    type_name: &str,
-    fields: &[String],
-    rows: &[Vec<Value>],
-    total_count: Option<usize>,
-    hints: &[String],
-    max_cell_len: usize,
-) -> String {
-    let row_count = rows.len();
-    let field_count = fields.len();
-
-    #[cfg(debug_assertions)]
-    for row in rows {
-        debug_assert!(
-            row.len() == field_count,
-            "row length {} does not match field count {field_count} (fields: {fields:?})",
-            row.len()
-        );
-    }
-
-    let capacity = 60 + row_count * (field_count * 12 + 10) + hints.len() * 60;
-    let mut out = String::with_capacity(capacity);
-
-    // type_name[count]{field,field,...}:
-    out.push_str(&sanitize_header_token(type_name));
-    out.push('[');
-    out.push_str(&row_count.to_string());
-    out.push_str("]{");
-    for (i, field) in fields.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str(&sanitize_header_token(field));
-    }
-    out.push_str("}:\n");
-
-    // rows
-    for row in rows {
-        out.push_str("  ");
-        for i in 0..field_count {
-            if i > 0 {
-                out.push(',');
-            }
-            match row.get(i) {
-                Some(Value::Str(s)) => {
-                    if s.len() <= max_cell_len {
-                        out.push_str(&escape_value(s));
-                    } else {
-                        let truncated = michi_truncate::truncate_inline(s, max_cell_len, "full=true");
-                        out.push_str(&escape_value(&truncated));
-                    }
-                }
-                Some(Value::Int(n)) => {
-                    let _ = write!(out, "{n}");
-                }
-                Some(Value::Float(f)) => {
-                    if f.is_nan() || f.is_infinite() {
-                        // NaN and Inf are not valid TOON scalars — render as quoted strings
-                        let s = f.to_string();
-                        let _ = write!(out, "\"{s}\"");
-                    } else {
-                        let _ = write!(out, "{f}");
-                    }
-                }
-                Some(Value::Bool(b)) => out.push_str(if *b { "true" } else { "false" }),
-                Some(Value::Null) | None => {} // Null or missing cell → empty
-            }
-        }
-        out.push('\n');
-    }
-
-    // totalCount
-    if let Some(total) = total_count {
-        out.push_str("totalCount: ");
-        out.push_str(&total.to_string());
-        out.push('\n');
-    }
-
-    // help[N]: hints
-    if !hints.is_empty() {
-        out.push_str("help[");
-        out.push_str(&hints.len().to_string());
-        out.push_str("]:\n");
-        for hint in hints {
-            out.push_str("  ");
-            out.push_str(&sanitize_hint(hint));
-            out.push('\n');
-        }
-    }
-
-    out
-}
-
 /// Proof that a `ToonOptions` value has passed structural validation.
 ///
 /// The only function that produces a `ToonDocument` is [`ToonDocument::validate`],
@@ -266,7 +172,7 @@ impl<'a> ToonDocument<'a> {
     /// Render `self` to a TOON document string. Infallible and total by
     /// construction: `self.opts`'s row arity was already proven equal to
     /// `self.opts.fields.len()` by `validate`, so this iterates rows and
-    /// fields in lockstep instead of indexing with a fallible `row.get(i)`.
+    /// fields in lockstep instead of indexing by position, which could fail.
     #[must_use]
     pub fn render(&self) -> String {
         let opts = self.opts;
@@ -351,6 +257,25 @@ mod tests {
     use super::Value;
     use compact_str::CompactString;
 
+    fn render(
+        type_name: &str,
+        fields: &[String],
+        rows: &[Vec<Value>],
+        total_count: Option<usize>,
+        hints: &[String],
+        max_cell_len: usize,
+    ) -> String {
+        let opts = crate::ToonOptions {
+            type_name: type_name.to_string(),
+            fields: fields.to_vec(),
+            rows: rows.to_vec(),
+            total_count,
+            hints: hints.to_vec(),
+            max_cell_len,
+        };
+        crate::ToonDocument::validate(&opts).expect("test render() shim: options must validate").render()
+    }
+
     #[test]
     fn from_str_slice() {
         let v: Value = "hello".into();
@@ -364,20 +289,8 @@ mod tests {
     }
 
     #[test]
-    fn type_name_with_newline_is_sanitized() {
-        let out = super::render("foo\nbar", &[], &[], None, &[], 200);
-        assert!(out.starts_with("foo_bar[0]{}:"), "got: {out}");
-    }
-
-    #[test]
-    fn field_with_comma_is_sanitized() {
-        let out = super::render("t", &["a,b".to_string()], &[vec![Value::from("v")]], None, &[], 200);
-        assert!(out.contains("{a_b}"), "got: {out}");
-    }
-
-    #[test]
     fn float_nan_renders_as_quoted_string() {
-        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::NAN)]], None, &[], 200);
+        let out = render("t", &["v".to_string()], &[vec![Value::Float(f64::NAN)]], None, &[], 200);
         // NaN must not appear as bare token
         assert!(!out.contains(",NaN") && !out.contains("  NaN\n"), "got: {out}");
         // Must be quoted
@@ -386,13 +299,13 @@ mod tests {
 
     #[test]
     fn float_inf_renders_as_quoted_string() {
-        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::INFINITY)]], None, &[], 200);
+        let out = render("t", &["v".to_string()], &[vec![Value::Float(f64::INFINITY)]], None, &[], 200);
         assert!(out.contains('"'), "inf must be quoted, got: {out}");
     }
 
     #[test]
     fn hint_with_newline_is_sanitized() {
-        let out = super::render("t", &[], &[], None, &["line1\nline2".to_string()], 200);
+        let out = render("t", &[], &[], None, &["line1\nline2".to_string()], 200);
         // hint must not inject a raw newline into the output
         let hint_section: String =
             out.lines().skip_while(|l| !l.starts_with("help[")).skip(1).collect::<Vec<_>>().join("\n");
@@ -404,55 +317,8 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(debug_assertions), ignore = "AC-006a only fires when debug_assertions is enabled")]
-    #[should_panic(expected = "row length 1 does not match field count 2")]
-    fn ac006a_short_row_panics_in_debug() {
-        super::render("t", &["a".to_string(), "b".to_string()], &[vec![Value::from("x")]], None, &[], 200);
-    }
-
-    #[test]
-    #[cfg(not(debug_assertions))]
-    fn ac006b_short_row_renders_empty_cell_in_release() {
-        let out = super::render("t", &["a".to_string(), "b".to_string()], &[vec![Value::from("x")]], None, &[], 200);
-        assert_eq!(out, "t[1]{a,b}:\n  x,\n");
-    }
-
-    #[test]
-    #[cfg_attr(not(debug_assertions), ignore = "AC-007a only fires when debug_assertions is enabled")]
-    #[should_panic(expected = "row length 2 does not match field count 1")]
-    fn ac007a_long_row_panics_in_debug() {
-        super::render("t", &["a".to_string()], &[vec![Value::from("x"), Value::from("y")]], None, &[], 200);
-    }
-
-    #[test]
-    #[cfg(not(debug_assertions))]
-    fn ac007b_long_row_drops_extra_cells_in_release() {
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from("x"), Value::from("y")]], None, &[], 200);
-        assert_eq!(out, "t[1]{a}:\n  x\n");
-        // byte-equal to the render of a row truncated to fields.len() cells
-        let truncated_row_out = super::render("t", &["a".to_string()], &[vec![Value::from("x")]], None, &[], 200);
-        assert_eq!(out, truncated_row_out);
-    }
-
-    #[test]
-    #[cfg(not(debug_assertions))]
-    fn ac018_null_and_missing_cell_render_identically_in_release() {
-        let null_row = super::render(
-            "t",
-            &["a".to_string(), "b".to_string()],
-            &[vec![Value::from("x"), Value::Null]],
-            None,
-            &[],
-            200,
-        );
-        let missing_row =
-            super::render("t", &["a".to_string(), "b".to_string()], &[vec![Value::from("x")]], None, &[], 200);
-        assert_eq!(null_row, missing_row);
-    }
-
-    #[test]
     fn ac011_truncated_cell_content_is_exact() {
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], 200);
+        let out = render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], 200);
         let expected_prefix = "a".repeat(162);
         assert_eq!(out, format!("t[1]{{a}}:\n  {expected_prefix} (500 chars truncated — use full=true)\n"));
     }
@@ -461,7 +327,7 @@ mod tests {
     fn ac011_truncated_cell_strips_newlines_from_kept_prefix() {
         let content = "a\n".repeat(300);
         assert_eq!(content.chars().count(), 600);
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from(content)]], None, &[], 200);
+        let out = render("t", &["a".to_string()], &[vec![Value::from(content)]], None, &[], 200);
         let expected_prefix = "a".repeat(81);
         assert_eq!(out, format!("t[1]{{a}}:\n  {expected_prefix} (600 chars truncated — use full=true)\n"));
         let cell = out.strip_prefix("t[1]{a}:\n  ").unwrap().strip_suffix('\n').unwrap();
@@ -473,7 +339,7 @@ mod tests {
         let content = "日".repeat(100);
         assert_eq!(content.chars().count(), 100);
         assert_eq!(content.len(), 300);
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from(content.clone())]], None, &[], 200);
+        let out = render("t", &["a".to_string()], &[vec![Value::from(content.clone())]], None, &[], 200);
         assert_eq!(
             out,
             format!("t[1]{{a}}:\n  {content}\n"),
@@ -483,19 +349,19 @@ mod tests {
 
     #[test]
     fn ac011c_max_cell_len_smaller_than_suffix_yields_suffix_prefix_only() {
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(50))]], None, &[], 10);
+        let out = render("t", &["a".to_string()], &[vec![Value::from("a".repeat(50))]], None, &[], 10);
         assert_eq!(out, "t[1]{a}:\n   (50 chars\n");
     }
 
     #[test]
     fn ac008_render_level_comma_cell_is_quoted_when_untruncated() {
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from("x,y")]], None, &[], 200);
+        let out = render("t", &["a".to_string()], &[vec![Value::from("x,y")]], None, &[], 200);
         assert_eq!(out, "t[1]{a}:\n  \"x,y\"\n");
     }
 
     #[test]
     fn ac009_render_level_quote_cell_is_wrapped_and_escaped_when_untruncated() {
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from(r#"say "hi""#)]], None, &[], 200);
+        let out = render("t", &["a".to_string()], &[vec![Value::from(r#"say "hi""#)]], None, &[], 200);
         assert_eq!(out, "t[1]{a}:\n  \"say \\\"hi\\\"\"\n");
     }
 
@@ -503,32 +369,13 @@ mod tests {
     fn ac008b_ac011d_truncated_cell_with_comma_in_kept_prefix_is_quoted() {
         let content = "a,".repeat(300);
         assert_eq!(content.chars().count(), 600);
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from(content)]], None, &[], 200);
+        let out = render("t", &["a".to_string()], &[vec![Value::from(content)]], None, &[], 200);
         let expected_kept: String = "a,".repeat(300).chars().take(162).collect();
         let expected = format!("t[1]{{a}}:\n  \"{expected_kept} (600 chars truncated — use full=true)\"\n");
         assert_eq!(out, expected);
         let cell = out.strip_prefix("t[1]{a}:\n  ").unwrap().strip_suffix('\n').unwrap();
         assert_eq!(cell.chars().count(), 202);
         assert!(cell.starts_with('"') && cell.ends_with('"'));
-    }
-
-    #[test]
-    fn ac005_structural_type_name_sanitizes_without_panicking_when_rows_well_formed() {
-        let out = super::render(
-            "ty[pe",
-            &["a".to_string(), "b".to_string()],
-            &[vec![Value::from("x"), Value::from("y")]],
-            None,
-            &[],
-            200,
-        );
-        assert_eq!(out, "ty_pe[1]{a,b}:\n  x,y\n");
-    }
-
-    #[test]
-    fn ac020_structural_type_name_is_sanitized_not_preserved_in_header() {
-        let out = super::render("ty[pe", &["a".to_string()], &[], None, &[], 200);
-        assert_eq!(out, "ty_pe[0]{a}:\n");
     }
 
     #[test]
@@ -560,13 +407,13 @@ mod tests {
 
     #[test]
     fn ac021_row_line_leading_space_in_cell_content_stacks_with_row_prefix() {
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from(" x")]], None, &[], 200);
+        let out = render("t", &["a".to_string()], &[vec![Value::from(" x")]], None, &[], 200);
         assert_eq!(out, "t[1]{a}:\n   x\n");
     }
 
     #[test]
     fn ac023_hint_line_leading_space_stacks_with_hint_prefix() {
-        let out = super::render("t", &[], &[], None, &[" h".to_string()], 200);
+        let out = render("t", &[], &[], None, &[" h".to_string()], 200);
         assert_eq!(out, "t[0]{}:\nhelp[1]:\n   h\n");
     }
 
@@ -576,7 +423,7 @@ mod tests {
         assert_eq!(v, Value::Int(i64::MAX));
         let v: Value = usize::MAX.into();
         assert_eq!(v, Value::Int(i64::MAX));
-        let out = super::render("t", &["n".to_string()], &[vec![u64::MAX.into()]], None, &[], 200);
+        let out = render("t", &["n".to_string()], &[vec![u64::MAX.into()]], None, &[], 200);
         assert_eq!(out, "t[1]{n}:\n  9223372036854775807\n");
     }
 
@@ -586,31 +433,31 @@ mod tests {
         assert_eq!(v, Value::Int(42));
         let v: Value = 42usize.into();
         assert_eq!(v, Value::Int(42));
-        let out = super::render("t", &["n".to_string()], &[vec![42u64.into()]], None, &[], 200);
+        let out = render("t", &["n".to_string()], &[vec![42u64.into()]], None, &[], 200);
         assert_eq!(out, "t[1]{n}:\n  42\n");
     }
 
     #[test]
     fn ac015_nan_renders_as_exact_quoted_text() {
-        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::NAN)]], None, &[], 200);
+        let out = render("t", &["v".to_string()], &[vec![Value::Float(f64::NAN)]], None, &[], 200);
         assert_eq!(out, "t[1]{v}:\n  \"NaN\"\n");
     }
 
     #[test]
     fn ac016_infinity_renders_as_exact_quoted_text() {
-        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::INFINITY)]], None, &[], 200);
+        let out = render("t", &["v".to_string()], &[vec![Value::Float(f64::INFINITY)]], None, &[], 200);
         assert_eq!(out, "t[1]{v}:\n  \"inf\"\n");
     }
 
     #[test]
     fn ac016b_neg_infinity_renders_as_exact_quoted_text() {
-        let out = super::render("t", &["v".to_string()], &[vec![Value::Float(f64::NEG_INFINITY)]], None, &[], 200);
+        let out = render("t", &["v".to_string()], &[vec![Value::Float(f64::NEG_INFINITY)]], None, &[], 200);
         assert_eq!(out, "t[1]{v}:\n  \"-inf\"\n");
     }
 
     #[test]
     fn ac023_empty_hints_produce_no_help_line() {
-        let out = super::render("t", &[], &[], None, &[], 200);
+        let out = render("t", &[], &[], None, &[], 200);
         // A genuine `help[N]:` block line contains no `{` (the header, in
         // contrast, always contains `]{`); check for that exact form's absence.
         assert!(!out.lines().any(|l| l.starts_with("help[") && l.ends_with(':') && !l.contains('{')), "got: {out}");
@@ -622,14 +469,14 @@ mod tests {
         // itself of the form `help[N]:` as a standalone line -- it's the header,
         // which always contains "]{" and ends with "}:". This must not be
         // mistaken for a real help[N]: block.
-        let out = super::render("help", &[], &[], None, &[], 200);
+        let out = render("help", &[], &[], None, &[], 200);
         assert_eq!(out, "help[0]{}:\n");
         assert!(!out.lines().any(|l| l.starts_with("help[") && l.ends_with(':') && !l.contains('{')), "got: {out}");
     }
 
     #[test]
     fn ac022_type_name_totalcount_does_not_falsely_trigger_the_negative_check() {
-        let out = super::render("totalCount:", &[], &[], None, &[], 200);
+        let out = render("totalCount:", &[], &[], None, &[], 200);
         assert_eq!(out, "totalCount:[0]{}:\n");
         // A genuine `totalCount: N` line contains no `{`.
         assert!(!out.lines().any(|l| l.starts_with("totalCount: ") && !l.contains('{')), "got: {out}");
@@ -637,7 +484,7 @@ mod tests {
 
     #[test]
     fn ac043_truncation_suffix_format_is_exact() {
-        let out = super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], 200);
+        let out = render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], 200);
         assert!(out.ends_with(" (500 chars truncated — use full=true)\n"), "got: {out:?}");
         assert!(out.contains('\u{2014}'), "must use EM DASH U+2014, got: {out:?}");
         assert!(!out.contains('-'), "must not contain a hyphen anywhere in the suffix, got: {out:?}");
@@ -649,15 +496,14 @@ mod tests {
         let suffix_chars = suffix.chars().count();
         let max_cell_len = 200usize;
         let expected_kept = max_cell_len - suffix_chars;
-        let out =
-            super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], max_cell_len);
+        let out = render("t", &["a".to_string()], &[vec![Value::from("a".repeat(500))]], None, &[], max_cell_len);
         let cell = out.strip_prefix("t[1]{a}:\n  ").unwrap().strip_suffix('\n').unwrap();
         assert_eq!(cell.chars().count(), max_cell_len, "total cell content must be exactly max_cell_len chars");
         let kept: String = cell.chars().take_while(|c| *c == 'a').collect();
         assert_eq!(kept.chars().count(), expected_kept);
 
         // Saturating-at-0 case (per AC-011c): suffix char count > max_cell_len.
-        let out10 = super::render("t", &["a".to_string()], &[vec![Value::from("a".repeat(50))]], None, &[], 10);
+        let out10 = render("t", &["a".to_string()], &[vec![Value::from("a".repeat(50))]], None, &[], 10);
         let cell10 = out10.strip_prefix("t[1]{a}:\n  ").unwrap().strip_suffix('\n').unwrap();
         assert!(!cell10.starts_with('a'), "kept prefix must saturate to 0 chars, got: {cell10:?}");
         assert!(cell10.chars().count() <= 10);
@@ -670,7 +516,7 @@ mod tests {
         let none_via_option: Value = None::<String>.into();
         assert_eq!(none_via_option, Value::Null);
 
-        let out_some = super::render(
+        let out_some = render(
             "t",
             &["a".to_string(), "b".to_string()],
             &[vec![some_via_option, Value::from("y")]],
@@ -678,7 +524,7 @@ mod tests {
             &[],
             200,
         );
-        let out_str = super::render(
+        let out_str = render(
             "t",
             &["a".to_string(), "b".to_string()],
             &[vec![Value::from("x"), Value::from("y")]],
@@ -688,7 +534,7 @@ mod tests {
         );
         assert_eq!(out_some, out_str);
 
-        let out_none = super::render(
+        let out_none = render(
             "t",
             &["a".to_string(), "b".to_string()],
             &[vec![none_via_option, Value::from("y")]],
@@ -696,14 +542,8 @@ mod tests {
             &[],
             200,
         );
-        let out_null = super::render(
-            "t",
-            &["a".to_string(), "b".to_string()],
-            &[vec![Value::Null, Value::from("y")]],
-            None,
-            &[],
-            200,
-        );
+        let out_null =
+            render("t", &["a".to_string(), "b".to_string()], &[vec![Value::Null, Value::from("y")]], None, &[], 200);
         assert_eq!(out_none, out_null);
     }
 }
@@ -746,5 +586,38 @@ mod invariant_guard_tests {
         .hints(vec!["h".to_string()]);
         let doc = super::ToonDocument::validate(&opts).expect("valid options must validate");
         assert_eq!(doc.render(), "t[1]{a,b}:\n  x,1\ntotalCount: 5\nhelp[1]:\n  h\n");
+    }
+
+    #[test]
+    fn no_loose_parameter_render_fn() {
+        let src = include_str!("render.rs");
+        assert!(
+            !src.contains("fields: &[String],\n    rows: &[Vec<Value>],"),
+            "the loose-parameter render(type_name, fields, rows, ...) function must not exist"
+        );
+    }
+
+    #[test]
+    fn no_profile_dependent_behavior() {
+        let src = include_str!("render.rs");
+        let non_test = src.split("#[cfg(test)]").next().unwrap_or(src);
+        let debug_assert_needle = ["debug", "_", "assert", "!"].concat();
+        let debug_assert_eq_needle = ["debug", "_", "assert", "_", "eq", "!"].concat();
+        let debug_assert_ne_needle = ["debug", "_", "assert", "_", "ne", "!"].concat();
+        let cfg_debug_needle = ["cfg", "(", "debug_assertions", ")"].concat();
+        for token in [&debug_assert_needle, &debug_assert_eq_needle, &debug_assert_ne_needle, &cfg_debug_needle] {
+            assert!(!non_test.contains(token.as_str()), "found profile-dependent token {token:?} in render.rs");
+        }
+    }
+
+    #[test]
+    fn render_has_no_missing_cell_path() {
+        let src = include_str!("render.rs");
+        let non_test = src.split("#[cfg(test)]").next().unwrap_or(src);
+        let row_get_needle = ["row", ".", "get", "("].concat();
+        assert!(
+            !non_test.contains(&row_get_needle),
+            "ToonDocument::render must iterate cells directly, not via row.get(i)"
+        );
     }
 }
