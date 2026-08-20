@@ -9,9 +9,33 @@ bump-severity = "patch"
 peer-escalation = true
 preserve-npm-ranges = true
 
-# Rust library crates — published to crates.io
-[[package-set]]
-match = "crates/*"
+# Rust library crates — published to crates.io.
+# [[package-set]] globs match by package NAME, not directory path, so
+# "crates/*" would never match a package here (none are literally named
+# "crates/..."). Explicit per-crate [[package]] blocks match by path
+# instead, same as the root and michi-node entries below.
+[[package]]
+match = "crates/michi-core"
+publish-to = ["crates-io"]
+release-trigger = "changeset"
+
+[[package]]
+match = "crates/michi-pipeline"
+publish-to = ["crates-io"]
+release-trigger = "changeset"
+
+[[package]]
+match = "crates/michi-resilience"
+publish-to = ["crates-io"]
+release-trigger = "changeset"
+
+[[package]]
+match = "crates/michi-toon"
+publish-to = ["crates-io"]
+release-trigger = "changeset"
+
+[[package]]
+match = "crates/michi-truncate"
 publish-to = ["crates-io"]
 release-trigger = "changeset"
 
