@@ -598,16 +598,37 @@ pub(crate) mod test_scan {
     /// prefix split -- a prefix split silently stops scanning at the first
     /// test module even if real (non-test) code follows it later in the
     /// file.
+    ///
+    /// `is_test_cfg_attr` requires `test` as the leading, positive conjunct
+    /// of an `all(...)` -- `#[cfg(all(test, ...))]` -- rather than merely
+    /// checking whether the attribute's text contains the substring
+    /// `"test"` anywhere. A substring check is a real, previously-shipped
+    /// bug: `#[cfg(all(not(test), ...))]` also contains `"test"`, so it
+    /// would be misclassified as test-only and stripped from this scan,
+    /// even though rustc compiles it into every *non*-test build -- the
+    /// opposite of test-only. Any other `#[cfg(` line whose text contains
+    /// `"test"` and isn't one of the two recognized positive forms trips
+    /// the assertion below instead of being silently mishandled in either
+    /// direction.
     pub(crate) fn strip_test_modules(src: &str) -> String {
-        fn is_test_cfg_attr(trimmed: &str) -> bool {
-            trimmed == "#[cfg(test)]" || (trimmed.starts_with("#[cfg(all(") && trimmed.contains("test"))
+        fn is_recognized_test_cfg_attr(trimmed: &str) -> bool {
+            trimmed == "#[cfg(test)]"
+                || trimmed.starts_with("#[cfg(all(test,")
+                || trimmed.starts_with("#[cfg(all(test)")
         }
 
         let lines: Vec<&str> = src.lines().collect();
         let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
         let mut i = 0usize;
         while i < lines.len() {
-            if is_test_cfg_attr(lines[i].trim_start()) {
+            let trimmed = lines[i].trim_start();
+            if trimmed.starts_with("#[cfg(") && trimmed.contains("test") {
+                assert!(
+                    is_recognized_test_cfg_attr(trimmed),
+                    "unrecognized cfg attribute mentioning \"test\": {trimmed:?} -- add it to \
+                     is_recognized_test_cfg_attr only if it is genuinely test-only; a `not(test)` \
+                     predicate must NOT be treated as test-only"
+                );
                 let mod_line = i + 1;
                 assert!(
                     lines[mod_line].trim_start().contains("mod ") && lines[mod_line].ends_with('{'),
