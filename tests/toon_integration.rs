@@ -206,3 +206,112 @@ fn render_toon_errors_on_row_arity_mismatch() {
         render_toon(&long).expect_err("a 3-value row against 2 fields must be rejected, no value dropped silently");
     assert_eq!(err, michi::toon::ToonError::RowLengthMismatch { row_index: 0, expected: 2, actual: 3 });
 }
+
+#[test]
+fn render_toon_is_profile_invariant() {
+    let valid = ToonOptions::new(
+        "issue",
+        vec!["a".to_string(), "b".to_string()],
+        vec![vec![Value::from("x"), Value::from("y")]],
+    );
+    assert_eq!(render_toon(&valid).unwrap(), "issue[1]{a,b}:\n  x,y\n");
+
+    let short = ToonOptions::new("issue", vec!["a".to_string(), "b".to_string()], vec![vec![Value::from("x")]]);
+    assert_eq!(
+        render_toon(&short).unwrap_err(),
+        michi::toon::ToonError::RowLengthMismatch { row_index: 0, expected: 2, actual: 1 }
+    );
+
+    let long = ToonOptions::new("issue", vec!["a".to_string()], vec![vec![Value::from("x"), Value::from("y")]]);
+    assert_eq!(
+        render_toon(&long).unwrap_err(),
+        michi::toon::ToonError::RowLengthMismatch { row_index: 0, expected: 1, actual: 2 }
+    );
+
+    let bad_type = ToonOptions::new("a[b", vec!["x".to_string()], vec![vec![Value::from("v")]]);
+    assert_eq!(
+        render_toon(&bad_type).unwrap_err(),
+        michi::toon::ToonError::InvalidTypeName { name: "a[b".to_string() }
+    );
+
+    let bad_field = ToonOptions::new("t", vec!["a,b".to_string()], vec![vec![Value::from("v")]]);
+    assert_eq!(
+        render_toon(&bad_field).unwrap_err(),
+        michi::toon::ToonError::InvalidFieldName { name: "a,b".to_string() }
+    );
+}
+
+#[test]
+fn all_toon_rendering_goes_through_toon_document() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    // Only the free function `render_toon(&ToonOptions) -> Result<String, ToonError>`
+    // is in scope here -- its call sites always look like `render_toon(&x)`.
+    // This deliberately excludes: its own `fn render_toon(` definitions (in
+    // michi-toon/src/lib.rs and src/napi.rs -- a different, NAPI-layer
+    // `render_toon` that has always returned `napi::Result<String>`, unaffected
+    // by this spec); `AgentResponse::render_toon(&self) -> String`, a distinct,
+    // deliberately-infallible method (its own call sites are `.render_toon()`,
+    // with no `&`-prefixed argument); and prose in comments/string literals
+    // that never happens to contain the literal substring `render_toon(&`.
+    // Built via concat() rather than a literal so this test's own source
+    // doesn't self-match its own trigger/definition-marker strings.
+    let trigger = ["render_toon", "(&"].concat();
+    let definition_marker = ["fn ", "render_toon", "("].concat();
+    let bound_markers = [
+        "?",
+        ".map(",
+        ".map_err(",
+        ".is_err(",
+        ".is_ok(",
+        ".expect(",
+        ".expect_err(",
+        ".unwrap(",
+        ".unwrap_err(",
+        "match ",
+        "if let ",
+        "assert_eq!",
+        "assert_ne!",
+    ];
+    let mut violations = Vec::new();
+    for dir in ["src", "crates", "benches", "examples", "tests"] {
+        visit_rs_files(&root.join(dir), &mut |path, contents| {
+            // tests/ui/*.rs are trybuild compile-fail fixtures: their whole
+            // point is to contain code that must NOT compile as written
+            // (e.g. AC-004b's render_toon_is_fallible.rs deliberately binds
+            // render_toon's Result to a bare String), so they are exempt.
+            if path.components().any(|c| c.as_os_str() == "ui") {
+                return;
+            }
+            for (i, line) in contents.lines().enumerate() {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                if line.contains(trigger.as_str())
+                    && !line.contains(definition_marker.as_str())
+                    && !bound_markers.iter().any(|m| line.contains(m))
+                {
+                    violations.push(format!("{}:{}: {}", path.display(), i + 1, line.trim()));
+                }
+            }
+        });
+    }
+    assert!(violations.is_empty(), "unbound render_toon call site(s) found:\n{}", violations.join("\n"));
+}
+
+fn visit_rs_files(dir: &std::path::Path, f: &mut impl FnMut(&std::path::Path, &str)) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if path.file_name().and_then(|n| n.to_str()) == Some("target") {
+                continue;
+            }
+            visit_rs_files(&path, f);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            if let Ok(contents) = std::fs::read_to_string(&path) {
+                f(&path, &contents);
+            }
+        }
+    }
+}

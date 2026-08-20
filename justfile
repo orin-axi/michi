@@ -24,6 +24,9 @@ test-rust:
 test-rust-all:
     cargo nextest run --workspace --all-features
 
+test-rust-release:
+    cargo nextest run --workspace --release
+
 test-node: build-node
     cd packages/michi-node && pnpm test
 
@@ -115,4 +118,4 @@ hooks:
 # ── CI Verification Pipeline ───────────────────────────────────────────────
 check-all: ci
 
-ci: fmt-check lint test audit doc-check check-wasm
+ci: fmt-check lint test test-rust-release audit doc-check check-wasm
