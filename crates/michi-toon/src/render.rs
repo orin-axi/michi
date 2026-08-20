@@ -552,26 +552,97 @@ mod tests {
 mod invariant_guard_tests {
     #[test]
     fn sole_constructor_for_toon_document() {
-        let render_src = include_str!("render.rs");
-        let lib_src = include_str!("lib.rs");
-        let render_non_test = render_src.split("#[cfg(test)]").next().unwrap_or(render_src);
-        let lib_non_test = lib_src.split("#[cfg(test)]").next().unwrap_or(lib_src);
+        // Finds the index of the line that closes the block opened by
+        // `lines[open_line_idx]`, exploiting this workspace's rustfmt
+        // guarantee (`cargo fmt --all -- --check` is a hard CI gate) that a
+        // block's closing brace is always alone on its own line, indented
+        // exactly `indent` columns -- the same indentation as the opening
+        // line. This sidesteps counting `{`/`}` characters that appear
+        // inside string/char literals entirely (raw strings, `'{'`/`'}'`
+        // char literals, `'\u{XXXX}'` escapes, doubled `{{`/`}}` in format
+        // strings), none of which rustfmt ever places alone on a line by
+        // themselves at a meaningful indentation.
+        fn find_closing_line(lines: &[&str], open_line_idx: usize, indent: usize) -> usize {
+            let close = " ".repeat(indent) + "}";
+            (open_line_idx + 1..lines.len())
+                .find(|&i| lines[i] == close)
+                .expect("no closing brace line found at the opening line's indentation")
+        }
 
-        let known_ctor = render_non_test.matches("-> Result<Self, crate::ToonError>").count();
-        assert_eq!(known_ctor, 1, "exactly one function must be ToonDocument's sole constructor; found {known_ctor}");
-        let other_ctor_shapes = render_non_test.matches("-> ToonDocument").count();
+        fn indent_of(line: &str) -> usize {
+            line.len() - line.trim_start().len()
+        }
+
+        // Strips every `#[cfg(test)] mod ... { ... }` block from `src`,
+        // not via a first-occurrence prefix split -- a prefix split
+        // silently stops scanning at the first test module even if real
+        // (non-test) code follows it later in the file.
+        fn strip_test_modules(src: &str) -> String {
+            let lines: Vec<&str> = src.lines().collect();
+            let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
+            let mut i = 0usize;
+            while i < lines.len() {
+                if lines[i].trim_start() == "#[cfg(test)]" {
+                    let mod_line = i + 1;
+                    assert!(
+                        lines[mod_line].trim_start().starts_with("mod ") && lines[mod_line].ends_with('{'),
+                        "expected a `mod ... {{` line immediately after #[cfg(test)], got: {:?}",
+                        lines[mod_line]
+                    );
+                    let close = find_closing_line(&lines, mod_line, indent_of(lines[i]));
+                    i = close + 1;
+                } else {
+                    kept.push(lines[i]);
+                    i += 1;
+                }
+            }
+            kept.join("\n")
+        }
+
+        // Extracts the body of `impl<'a> ToonDocument<'a> { ... }`.
+        fn extract_toon_document_impl_block(src: &str) -> String {
+            let lines: Vec<&str> = src.lines().collect();
+            let open = lines
+                .iter()
+                .position(|l| l.trim_end() == "impl<'a> ToonDocument<'a> {")
+                .expect("ToonDocument's impl block must exist in render.rs");
+            let close = find_closing_line(&lines, open, indent_of(lines[open]));
+            lines[open + 1..close].join("\n")
+        }
+
+        let render_src = strip_test_modules(include_str!("render.rs"));
+        let lib_src = strip_test_modules(include_str!("lib.rs"));
+        let escape_src = strip_test_modules(include_str!("escape.rs"));
+
+        // The impl block that owns ToonDocument's private field must contain
+        // exactly one associated function (a `fn` whose first parameter is
+        // not `self`/`&self`/`&mut self`): `validate`. Counting associated
+        // functions structurally -- rather than matching a specific return
+        // type substring -- catches a bypass constructor regardless of what
+        // it returns or is named, e.g. a `pub(crate) fn wrap(...) -> Self`
+        // that a substring match on `-> Result<Self, crate::ToonError>` or
+        // `-> ToonDocument` would silently miss.
+        let impl_block = extract_toon_document_impl_block(&render_src);
+        let associated_fns = impl_block
+            .split("fn ")
+            .skip(1)
+            .filter(|rest| {
+                let params = rest.split_once('(').map_or("", |(_, p)| p).trim_start();
+                !(params.starts_with("self") || params.starts_with("&self") || params.starts_with("&mut self"))
+            })
+            .count();
         assert_eq!(
-            other_ctor_shapes, 0,
-            "no other function may return ToonDocument directly; found {other_ctor_shapes}"
+            associated_fns, 1,
+            "ToonDocument's impl block must contain exactly one associated function (validate); found {associated_fns}"
         );
 
-        let render_scan = render_non_test.to_lowercase().replace("unsafe_code", "");
-        let lib_scan = lib_non_test.to_lowercase().replace("unsafe_code", "");
-        for bad in ["unchecked", "unsafe", "raw", "assume"] {
-            assert!(
-                !render_scan.contains(bad) && !lib_scan.contains(bad),
-                "escape-hatch name pattern {bad:?} must not appear in michi-toon src/"
-            );
+        for (file, src) in
+            [("render.rs", render_src.as_str()), ("lib.rs", lib_src.as_str()), ("escape.rs", escape_src.as_str())]
+        {
+            let scan = src.to_lowercase().replace("unsafe_code", "");
+            for bad in ["unchecked", "unsafe", "raw", "assume"] {
+                assert!(!scan.contains(bad), "escape-hatch name pattern {bad:?} must not appear in {file}");
+            }
         }
     }
 
