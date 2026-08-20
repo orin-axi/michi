@@ -11,7 +11,7 @@ mod escape;
 pub(crate) mod render;
 
 pub use escape::{escape_value, escape_value_quoted};
-pub use render::Value;
+pub use render::{ToonDocument, Value};
 
 /// Error returned by [`ToonOptions::validate()`] when structural invariants are violated.
 #[derive(Debug, Clone, PartialEq)]
@@ -265,8 +265,15 @@ mod ac032_public_surface_tests {
                 top_level_pub_names.push(rest.split(['(', '<']).next().unwrap_or(rest));
             }
         }
-        let mut expected =
-            vec!["escape_value", "escape_value_quoted", "Value", "ToonError", "ToonOptions", "render_toon"];
+        let mut expected = vec![
+            "escape_value",
+            "escape_value_quoted",
+            "Value",
+            "ToonError",
+            "ToonOptions",
+            "ToonDocument",
+            "render_toon",
+        ];
         if cfg!(feature = "serde") {
             expected.push("list");
         }
