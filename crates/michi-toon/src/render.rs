@@ -536,7 +536,7 @@ mod tests {
         // Constructed via ToonOptions::new + render_toon (not super::render with a
         // literal 200) so a regression to ToonOptions::new's actual default is caught.
         let opts = crate::ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("a".repeat(500))]]);
-        let out = crate::render_toon(&opts);
+        let out = crate::render_toon(&opts).unwrap();
         let expected_prefix = "a".repeat(162);
         assert_eq!(out, format!("t[1]{{a}}:\n  {expected_prefix} (500 chars truncated — use full=true)\n"));
     }
@@ -553,7 +553,7 @@ mod tests {
     fn ac012b_untruncated_cell_at_150_chars_near_boundary() {
         let content = "a".repeat(150);
         let opts = crate::ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from(content.clone())]]);
-        let out = crate::render_toon(&opts);
+        let out = crate::render_toon(&opts).unwrap();
         assert_eq!(out, format!("t[1]{{a}}:\n  {content}\n"));
         assert!(!out.contains("chars truncated"));
     }

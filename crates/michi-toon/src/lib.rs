@@ -146,10 +146,16 @@ impl Default for ToonOptions {
     }
 }
 
+const _: fn(&ToonOptions) -> Result<String, ToonError> = render_toon;
+
 /// Render a TOON document to a string.
-#[must_use]
-pub fn render_toon(opts: &ToonOptions) -> String {
-    render::render(&opts.type_name, &opts.fields, &opts.rows, opts.total_count, &opts.hints, opts.max_cell_len)
+///
+/// # Errors
+///
+/// Returns [`ToonError`] if `opts` fails structural validation — see
+/// [`ToonOptions::validate`] for the exact conditions.
+pub fn render_toon(opts: &ToonOptions) -> Result<String, ToonError> {
+    opts.validate().map(|doc| doc.render())
 }
 
 #[cfg(feature = "serde")]
@@ -270,7 +276,10 @@ mod ac032_public_surface_tests {
             src.contains("#[must_use]\n    pub fn new("),
             "ToonOptions::new must carry #[must_use] per api_surface"
         );
-        assert!(src.contains("#[must_use]\npub fn render_toon("), "render_toon must carry #[must_use] per api_surface");
+        assert!(
+            src.contains("pub fn render_toon(opts: &ToonOptions) -> Result<String, ToonError>"),
+            "render_toon must be the fallible signature per api_surface, with no #[must_use] (Result is already must_use)"
+        );
         assert!(
             src.contains("pub fn list<T: serde::Serialize>(type_name: impl Into<String>, items: &[T])"),
             "list's first parameter must be impl Into<String>, not &str, per api_surface"
@@ -415,9 +424,9 @@ mod validate_tests {
     #[test]
     fn ac035_default_renders_exact_empty_document() {
         let opts = ToonOptions::default();
-        assert_eq!(render_toon(&opts), "[0]{}:\n");
+        assert_eq!(render_toon(&opts).unwrap(), "[0]{}:\n");
         let equivalent = ToonOptions::new(String::new(), Vec::new(), Vec::new());
-        assert_eq!(render_toon(&opts), render_toon(&equivalent));
+        assert_eq!(render_toon(&opts).unwrap(), render_toon(&equivalent).unwrap());
     }
 
     #[test]
@@ -440,12 +449,12 @@ mod validate_tests {
         let mut opts = ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("x")]]);
         opts.total_count = Some(5);
         opts.hints = vec!["h".to_string()];
-        let via_mutation = render_toon(&opts);
+        let via_mutation = render_toon(&opts).unwrap();
 
         let via_builder = ToonOptions::new("t", vec!["a".to_string()], vec![vec![Value::from("x")]])
             .total_count(Some(5))
             .hints(vec!["h".to_string()]);
-        assert_eq!(via_mutation, render_toon(&via_builder));
+        assert_eq!(via_mutation, render_toon(&via_builder).unwrap());
     }
 
     #[test]
@@ -494,7 +503,7 @@ mod list_tests {
             .total_count(Some(5))
             .hints(vec!["h".to_string()])
             .max_cell_len(10);
-        assert_eq!(render_toon(&opts), "t[1]{a}:\n   (50 chars\ntotalCount: 5\nhelp[1]:\n  h\n");
+        assert_eq!(render_toon(&opts).unwrap(), "t[1]{a}:\n   (50 chars\ntotalCount: 5\nhelp[1]:\n  h\n");
     }
 
     #[test]
