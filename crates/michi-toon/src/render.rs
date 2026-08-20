@@ -548,81 +548,123 @@ mod tests {
     }
 }
 
+/// Text-based scanning helpers shared by this crate's structural guard
+/// tests. `pub(crate)` (not private) so both `render`'s own guard tests
+/// and `lib.rs`'s (e.g. the AC-013 docs guard) can reuse the same,
+/// independently-hardened implementation instead of each maintaining its
+/// own copy that can drift out of sync or regress individually.
+#[cfg(test)]
+pub(crate) mod test_scan {
+    /// Finds the index of the line that closes the block opened by
+    /// `lines[open_line_idx]`, exploiting this workspace's rustfmt
+    /// guarantee (`cargo fmt --all -- --check` is a hard CI gate) that a
+    /// block's closing brace is always alone on its own line, indented
+    /// exactly `indent` columns -- the same indentation as the opening
+    /// line. This sidesteps counting `{`/`}` characters that appear inside
+    /// string/char literals entirely (raw strings, `'{'`/`'}'` char
+    /// literals, `'\u{XXXX}'` escapes, doubled `{{`/`}}` in format
+    /// strings), none of which rustfmt ever places alone on a line by
+    /// themselves at a meaningful indentation.
+    pub(crate) fn find_closing_line(lines: &[&str], open_line_idx: usize, indent: usize) -> usize {
+        let close = " ".repeat(indent) + "}";
+        (open_line_idx + 1..lines.len())
+            .find(|&i| lines[i] == close)
+            .expect("no closing brace line found at the opening line's indentation")
+    }
+
+    pub(crate) fn indent_of(line: &str) -> usize {
+        line.len() - line.trim_start().len()
+    }
+
+    /// Strips every `#[cfg(test)]`/`#[cfg(all(test, ...))]`-gated
+    /// `mod ... { ... }` block from `src`, not via a first-occurrence
+    /// prefix split -- a prefix split silently stops scanning at the first
+    /// test module even if real (non-test) code follows it later in the
+    /// file.
+    pub(crate) fn strip_test_modules(src: &str) -> String {
+        fn is_test_cfg_attr(trimmed: &str) -> bool {
+            trimmed == "#[cfg(test)]" || (trimmed.starts_with("#[cfg(all(") && trimmed.contains("test"))
+        }
+
+        let lines: Vec<&str> = src.lines().collect();
+        let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
+        let mut i = 0usize;
+        while i < lines.len() {
+            if is_test_cfg_attr(lines[i].trim_start()) {
+                let mod_line = i + 1;
+                assert!(
+                    lines[mod_line].trim_start().contains("mod ") && lines[mod_line].ends_with('{'),
+                    "expected a `[pub(...)] mod ... {{` line immediately after a test cfg attribute, got: {:?}",
+                    lines[mod_line]
+                );
+                let close = find_closing_line(&lines, mod_line, indent_of(lines[i]));
+                i = close + 1;
+            } else {
+                kept.push(lines[i]);
+                i += 1;
+            }
+        }
+        kept.join("\n")
+    }
+}
+
 #[cfg(test)]
 mod invariant_guard_tests {
+    use super::test_scan::{find_closing_line, indent_of, strip_test_modules};
+
     #[test]
     fn sole_constructor_for_toon_document() {
-        // Finds the index of the line that closes the block opened by
-        // `lines[open_line_idx]`, exploiting this workspace's rustfmt
-        // guarantee (`cargo fmt --all -- --check` is a hard CI gate) that a
-        // block's closing brace is always alone on its own line, indented
-        // exactly `indent` columns -- the same indentation as the opening
-        // line. This sidesteps counting `{`/`}` characters that appear
-        // inside string/char literals entirely (raw strings, `'{'`/`'}'`
-        // char literals, `'\u{XXXX}'` escapes, doubled `{{`/`}}` in format
-        // strings), none of which rustfmt ever places alone on a line by
-        // themselves at a meaningful indentation.
-        fn find_closing_line(lines: &[&str], open_line_idx: usize, indent: usize) -> usize {
-            let close = " ".repeat(indent) + "}";
-            (open_line_idx + 1..lines.len())
-                .find(|&i| lines[i] == close)
-                .expect("no closing brace line found at the opening line's indentation")
-        }
-
-        fn indent_of(line: &str) -> usize {
-            line.len() - line.trim_start().len()
-        }
-
-        // Strips every `#[cfg(test)] mod ... { ... }` block from `src`,
-        // not via a first-occurrence prefix split -- a prefix split
-        // silently stops scanning at the first test module even if real
-        // (non-test) code follows it later in the file.
-        fn strip_test_modules(src: &str) -> String {
-            let lines: Vec<&str> = src.lines().collect();
-            let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
-            let mut i = 0usize;
-            while i < lines.len() {
-                if lines[i].trim_start() == "#[cfg(test)]" {
-                    let mod_line = i + 1;
-                    assert!(
-                        lines[mod_line].trim_start().starts_with("mod ") && lines[mod_line].ends_with('{'),
-                        "expected a `mod ... {{` line immediately after #[cfg(test)], got: {:?}",
-                        lines[mod_line]
-                    );
-                    let close = find_closing_line(&lines, mod_line, indent_of(lines[i]));
-                    i = close + 1;
-                } else {
-                    kept.push(lines[i]);
-                    i += 1;
-                }
-            }
-            kept.join("\n")
-        }
-
-        // Extracts the body of `impl<'a> ToonDocument<'a> { ... }`.
-        fn extract_toon_document_impl_block(src: &str) -> String {
+        // Extracts the body of the one legitimate `impl<'a> ToonDocument<'a>
+        // { ... }` block, and returns the source with that block's lines
+        // removed (so the residual scan below never re-inspects it).
+        fn extract_and_remove_toon_document_impl_block(src: &str) -> (String, String) {
             let lines: Vec<&str> = src.lines().collect();
             let open = lines
                 .iter()
                 .position(|l| l.trim_end() == "impl<'a> ToonDocument<'a> {")
                 .expect("ToonDocument's impl block must exist in render.rs");
             let close = find_closing_line(&lines, open, indent_of(lines[open]));
-            lines[open + 1..close].join("\n")
+            let block = lines[open + 1..close].join("\n");
+            let residual: String =
+                lines[..open].iter().chain(lines[close + 1..].iter()).copied().collect::<Vec<_>>().join("\n");
+            (block, residual)
         }
 
         let render_src = strip_test_modules(include_str!("render.rs"));
         let lib_src = strip_test_modules(include_str!("lib.rs"));
         let escape_src = strip_test_modules(include_str!("escape.rs"));
 
-        // The impl block that owns ToonDocument's private field must contain
-        // exactly one associated function (a `fn` whose first parameter is
-        // not `self`/`&self`/`&mut self`): `validate`. Counting associated
-        // functions structurally -- rather than matching a specific return
-        // type substring -- catches a bypass constructor regardless of what
-        // it returns or is named, e.g. a `pub(crate) fn wrap(...) -> Self`
-        // that a substring match on `-> Result<Self, crate::ToonError>` or
-        // `-> ToonDocument` would silently miss.
-        let impl_block = extract_toon_document_impl_block(&render_src);
+        // Exactly one impl header in the crate may mention ToonDocument at
+        // all, and it must be the inherent block -- not a second inherent
+        // impl block (which would evade the associated-fn count below,
+        // since that count only inspects the FIRST block found) and not a
+        // trait impl such as `impl From<&ToonOptions> for ToonDocument`,
+        // which would construct one without going through `validate` at
+        // all while still compiling and passing every other test, proven
+        // by exit-gate review: `ToonDocument::from(&opts).render()` emitted
+        // a silently truncated document for a row-arity mismatch that
+        // `render_toon(&opts)` correctly rejected.
+        let toon_document_impl_headers: Vec<&str> = [render_src.as_str(), lib_src.as_str(), escape_src.as_str()]
+            .iter()
+            .flat_map(|src| src.lines())
+            .map(str::trim)
+            .filter(|line| line.starts_with("impl") && line.contains("ToonDocument") && line.ends_with('{'))
+            .collect();
+        assert_eq!(
+            toon_document_impl_headers,
+            vec!["impl<'a> ToonDocument<'a> {"],
+            "exactly one impl block may exist for ToonDocument, and it must be this inherent one; found: {toon_document_impl_headers:?}"
+        );
+
+        let (impl_block, residual_src) = extract_and_remove_toon_document_impl_block(&render_src);
+
+        // Within that one legitimate block, exactly one associated function
+        // (a `fn` whose first parameter is not `self`/`&self`/`&mut self`)
+        // may exist: `validate`. Counting structurally -- rather than
+        // matching a specific return-type substring -- catches a bypass
+        // constructor regardless of what it returns or is named, e.g. a
+        // `pub(crate) fn wrap(...) -> Self` that a substring match on
+        // `-> Result<Self, crate::ToonError>` would silently miss.
         let associated_fns = impl_block
             .split("fn ")
             .skip(1)
@@ -635,6 +677,22 @@ mod invariant_guard_tests {
             associated_fns, 1,
             "ToonDocument's impl block must contain exactly one associated function (validate); found {associated_fns}"
         );
+
+        // Outside that one block, nothing anywhere in the crate may produce
+        // a ToonDocument: no free function or second-impl-block function
+        // returning `-> ToonDocument` (the impl-header check above already
+        // rules out a second inherent block, but a free function is a
+        // distinct bypass shape), and no `for ToonDocument` (a trait impl).
+        for (file, src) in
+            [("render.rs", residual_src.as_str()), ("lib.rs", lib_src.as_str()), ("escape.rs", escape_src.as_str())]
+        {
+            for needle in ["-> ToonDocument", "for ToonDocument"] {
+                assert!(
+                    !src.contains(needle),
+                    "found {needle:?} outside ToonDocument's sole legitimate impl block, in {file}"
+                );
+            }
+        }
 
         for (file, src) in
             [("render.rs", render_src.as_str()), ("lib.rs", lib_src.as_str()), ("escape.rs", escape_src.as_str())]
@@ -670,8 +728,7 @@ mod invariant_guard_tests {
 
     #[test]
     fn no_profile_dependent_behavior() {
-        let src = include_str!("render.rs");
-        let non_test = src.split("#[cfg(test)]").next().unwrap_or(src);
+        let non_test = strip_test_modules(include_str!("render.rs"));
         let debug_assert_needle = ["debug", "_", "assert", "!"].concat();
         let debug_assert_eq_needle = ["debug", "_", "assert", "_", "eq", "!"].concat();
         let debug_assert_ne_needle = ["debug", "_", "assert", "_", "ne", "!"].concat();
@@ -683,8 +740,7 @@ mod invariant_guard_tests {
 
     #[test]
     fn render_has_no_missing_cell_path() {
-        let src = include_str!("render.rs");
-        let non_test = src.split("#[cfg(test)]").next().unwrap_or(src);
+        let non_test = strip_test_modules(include_str!("render.rs"));
         let row_get_needle = ["row", ".", "get", "("].concat();
         assert!(
             !non_test.contains(&row_get_needle),

@@ -643,10 +643,11 @@ mod list_tests {
 
 #[cfg(test)]
 mod ac013_docs_guard_tests {
+    use crate::render::test_scan::strip_test_modules;
+
     #[test]
     fn validate_docs_do_not_claim_opt_in() {
-        let src = include_str!("lib.rs");
-        let non_test = src.split("#[cfg(test)]").next().unwrap_or(src);
+        let non_test = strip_test_modules(include_str!("lib.rs"));
         let opt_in_needle = ["Caller", "opt-in"].join(" ");
         assert!(!non_test.contains(&opt_in_needle), "validate's rustdoc must not describe validation as opt-in");
         let principles_needle = ["PRINCIPLES.md", "§1"].join(" ");
