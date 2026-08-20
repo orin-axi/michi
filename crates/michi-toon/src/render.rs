@@ -137,6 +137,25 @@ impl std::fmt::Display for Value {
 /// `pub`, so external code cannot even name `render::proof::ToonDocument`
 /// directly; the type is reachable only through the `pub use` re-export
 /// below.
+///
+/// **Known, accepted residual:** this guarantee covers every bypass shape
+/// written as ordinary source text, but not one hidden behind
+/// `macro_rules!` expansion -- a `some_macro!();` item-position invocation
+/// inside this module's own `impl` block is, after expansion, code that
+/// genuinely lives inside `proof` and therefore has real field access, the
+/// same way `validate` does. No text scan can see through macro expansion
+/// (`include_str!`, which every guard test here reads from, captures
+/// source as written, before expansion), so this is a limit of the
+/// mechanism, not a missed pattern. Per this invariant's own design
+/// record, the property being enforced is that a maintainer *following
+/// this codebase's patterns* cannot reintroduce the defect by accident;
+/// a maintainer deliberately writing macro-hidden field access to evade
+/// this exact module boundary is choosing to defeat it, not accidentally
+/// tripping over it, and is outside what a source-level guard can
+/// mechanically prevent. Closing that residual for real would mean
+/// asserting over post-expansion, cfg-resolved output (e.g. via
+/// `cargo-expand`) rather than unexpanded source text -- a deliberate
+/// scope decision, not an oversight.
 mod proof {
     /// Proof that a `ToonOptions` value has passed structural validation.
     ///
@@ -670,6 +689,14 @@ mod invariant_guard_tests {
         // `pub fn rebind(&self, opts) -> ToonDocument` inside the impl
         // block itself evaded a fn count that filtered out every
         // self-taking method).
+        //
+        // This test cannot see through macro_rules! expansion -- an item-
+        // position macro invocation inside proof's impl block expands to
+        // real code with real field access, but include_str! (which this
+        // test and strip_test_modules both read from) captures source
+        // exactly as written, before expansion. See `proof`'s own doc
+        // comment for why this is an accepted, documented scope boundary
+        // rather than a gap this test is meant to close.
         let render_src = strip_test_modules(include_str!("render.rs"));
 
         let lines: Vec<&str> = render_src.lines().collect();
