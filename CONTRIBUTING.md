@@ -1,5 +1,7 @@
 # Contributing to michi
 
+By participating in this project, you agree to abide by the [Code of Conduct](./CODE_OF_CONDUCT.md). Found a security issue? See [SECURITY.md](./SECURITY.md) instead of opening a public issue.
+
 Thanks for building with us. `michi` is a narrow workspace of response formatting primitives for developer and agent tools.
 
 If you are proposing a new primitive, read [`PRINCIPLES.md`](PRINCIPLES.md) first to understand the inclusion gates.
