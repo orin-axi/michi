@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.3-nightly.202608220610.6bf587d66",
+  "checkpoint_id": "01M0RERFV45ZR7E52GWKF6T30Q",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 16,
+  "files_touched": [
+    ".moon/tasks/rust.yml",
+    "CLAUDE.md",
+    "crates/michi-core/moon.yml",
+    "crates/michi-resilience/moon.yml",
+    "crates/michi-toon/moon.yml",
+    "crates/michi-truncate/moon.yml",
+    "justfile",
+    "moon.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10128,
+    "cache_creation_tokens": 15909051,
+    "cache_read_tokens": 1459232307,
+    "output_tokens": 2346134,
+    "api_call_count": 3094,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
