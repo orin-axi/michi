@@ -95,6 +95,24 @@ doc-check:
 check-wasm:
     moon run :check-wasm
 
+# API SemVer check against the last published baseline. Not yet meaningful:
+# michi has never published to crates.io, and the only existing tag
+# (v0.1.0) predates the Cargo-workspace crate split (see
+# docs/spec/06-decisions.md's "Resolved at v0.1 — Cargo workspace crate
+# splitting"), so comparing against it produces false "removed" findings
+# for every re-exported item (verified: `--baseline-rev v0.1.0` reports 100%
+# of the public API as removed, since semver-checks can't see through a
+# cross-crate re-export the way it can a same-crate `pub use`). Becomes
+# meaningful starting from the first real crates.io publish onward -- run
+# ahead of any release after that; no --baseline-rev needed once published,
+# since the default baseline is whatever's live on crates.io.
+check-api:
+    cargo semver-checks check-release --workspace
+
+# Unused-dependency check.
+machete:
+    cargo machete
+
 # ── Examples & Benchmarks ──────────────────────────────────────────────────
 examples:
     moon run :examples
@@ -113,6 +131,13 @@ bench:
 
 bench-baseline:
     cargo bench --workspace -- --save-baseline main
+
+# Mutation testing sweep, workspace-wide. Complements the per-task mutation
+# checks the implementation workflow already runs during development
+# (surviving mutants get precision tests before a task's exit gate) with a
+# standing, repeatable local/CI command over the whole tree.
+mutants:
+    cargo mutants --workspace
 
 # ── Continuous Development ──────────────────────────────────────────────────
 watch:

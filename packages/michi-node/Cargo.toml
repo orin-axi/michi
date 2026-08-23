@@ -9,6 +9,12 @@ license.workspace      = true
 [lints]
 workspace = true
 
+# cargo-machete flags napi/napi-derive as unused (no direct import in this
+# crate's own source) -- see the [dependencies] comment below for why
+# they're required anyway.
+[package.metadata.cargo-machete]
+ignored = ["napi", "napi-derive"]
+
 [lib]
 crate-type = ["cdylib"]
 
