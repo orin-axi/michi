@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 michi-core = { path = "../michi-core", version = "0.1.0" }
 michi-resilience = { path = "../michi-resilience", version = "0.1.0" }

@@ -4,7 +4,6 @@
 //! retry math, and writes each step's real outcome back into
 //! `PipelineStep.status`.
 
-#![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::unwrap_used, clippy::expect_used)]
 #![warn(clippy::disallowed_types)]

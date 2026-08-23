@@ -35,6 +35,25 @@ codegen-units = 1
 inherits = "release"
 debug    = true
 
+# Single source of truth for unsafe_code -- every crate in this workspace
+# opts in via `[lints]`/`workspace = true`, replacing a hand-copied
+# `#![deny(unsafe_code)]` at the top of every lib.rs. Stays "deny" (not
+# "forbid") so the napi boundary's local `#![allow(unsafe_code)]` can still
+# override it -- see CLAUDE.md's "No unsafe outside napi boundary".
+#
+# missing_docs / clippy::unwrap_used / clippy::expect_used /
+# clippy::disallowed_types stay as per-crate `#![warn(...)]` inner
+# attributes in each lib.rs instead of living here: `[lints]` applies to
+# every target in a package (every integration test, bench, and example,
+# not just the lib target), and those four lints are specifically meant to
+# apply to library code only -- CLAUDE.md's "no unwrap/expect in lib code"
+# rule was never meant to cover benches/examples, and doc-coverage doesn't
+# make sense for internal test binaries. unsafe_code is the one lint here
+# with no such exception (nothing outside the documented napi boundary
+# should ever contain unsafe), so it's the only one safe to centralize.
+[workspace.lints.rust]
+unsafe_code = "deny"
+
 [package]
 name        = "michi"
 version     = "0.1.0"
@@ -46,6 +65,9 @@ edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
 repository.workspace   = true
+
+[lints]
+workspace = true
 
 [features]
 default  = []

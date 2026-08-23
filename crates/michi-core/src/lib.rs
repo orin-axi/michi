@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::unwrap_used, clippy::expect_used)]
 #![warn(clippy::disallowed_types)]
@@ -61,12 +60,23 @@ mod tests {
         let src = include_str!("lib.rs");
         let prologue: Vec<&str> = src.lines().take_while(|l| !l.starts_with("//!")).collect();
         assert!(
-            prologue.iter().any(|l| l.trim() == "#![deny(unsafe_code)]"),
-            "missing #![deny(unsafe_code)] in prologue"
-        );
-        assert!(
             prologue.iter().any(|l| l.trim() == "#![warn(missing_docs)]"),
             "missing #![warn(missing_docs)] in prologue"
+        );
+
+        // unsafe_code = "deny" lives in the workspace root's
+        // [workspace.lints.rust] (Cargo.toml), not a #![deny(unsafe_code)]
+        // attribute here -- see the root Cargo.toml's comment on why only
+        // unsafe_code is centralized this way.
+        let root_cargo_toml = include_str!("../../../Cargo.toml");
+        assert!(
+            root_cargo_toml.contains("unsafe_code = \"deny\""),
+            "root Cargo.toml's [workspace.lints.rust] must set unsafe_code = \"deny\""
+        );
+        let own_cargo_toml = include_str!("../Cargo.toml");
+        assert!(
+            own_cargo_toml.contains("[lints]\nworkspace = true"),
+            "this crate's Cargo.toml must opt into workspace lints via [lints]\\nworkspace = true"
         );
     }
 

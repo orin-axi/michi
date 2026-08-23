@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::unwrap_used, clippy::expect_used)]
 #![warn(clippy::disallowed_types)]

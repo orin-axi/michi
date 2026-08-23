@@ -1749,8 +1749,18 @@ mod tests {
 
     #[test]
     fn ac033b_deny_and_allow_unsafe_code_attributes_present() {
-        let lib_src = include_str!("lib.rs");
-        assert!(lib_src.contains("#![deny(unsafe_code)]"), "src/lib.rs must contain #![deny(unsafe_code)]");
+        // unsafe_code = "deny" lives in [workspace.lints.rust] (Cargo.toml),
+        // not a #![deny(unsafe_code)] attribute in lib.rs -- see Cargo.toml's
+        // comment on why only unsafe_code is centralized this way.
+        let cargo_toml = include_str!("../Cargo.toml");
+        assert!(
+            cargo_toml.contains("unsafe_code = \"deny\""),
+            "Cargo.toml's [workspace.lints.rust] must set unsafe_code = \"deny\""
+        );
+        assert!(
+            cargo_toml.contains("[lints]\nworkspace = true"),
+            "Cargo.toml's [package] must opt into workspace lints via [lints]\\nworkspace = true"
+        );
 
         let napi_src = include_str!("napi.rs");
         let idx = napi_src.find("#![allow(unsafe_code)]").expect("src/napi.rs must contain #![allow(unsafe_code)]");
