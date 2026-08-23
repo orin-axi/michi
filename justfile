@@ -36,6 +36,30 @@ check: fmt-check clippy deny typos fmt-md-check
 lint:
     moon run :lint
 
+# Affected-only lint: uses moon's dependency-graph-aware affected-project
+# detection to build the crate scope, then feeds it into ONE cargo
+# invocation with multiple -p flags. This is the incremental counterpart to
+# `lint` (which lints the whole workspace in one shot) -- it exists so a
+# pre-push hook doesn't have to choose between "lint everything every time"
+# and "fan out one cargo process per crate" (the latter serializes behind
+# Cargo's shared target/ lock; see .moon/tasks/rust.yml). Only lints the
+# affected crates' own source, not their downstream dependents -- clippy
+# warnings are about a crate's own code, not its callers.
+lint-affected:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    projects=$(moon query projects --affected 2>/dev/null | jq -r '.projects[].id // empty')
+    if [ -z "$projects" ]; then
+        echo "No affected crates; skipping lint."
+        exit 0
+    fi
+    args=()
+    while IFS= read -r p; do
+        args+=(-p "$p")
+    done <<< "$projects"
+    echo "Linting affected crates: ${args[*]}"
+    cargo clippy "${args[@]}" --all-targets --all-features -- -D warnings
+
 clippy:
     cargo clippy --workspace --all-features --all-targets -- -D warnings
 
@@ -106,7 +130,7 @@ clean:
 # ── Git Hooks & Pre-push ───────────────────────────────────────────────────
 pre-commit: fmt-check
 
-pre-push: fmt-check lint
+pre-push: fmt-check lint-affected
 
 hooks:
     @echo '#!/bin/sh\njust pre-commit' > .git/hooks/pre-commit

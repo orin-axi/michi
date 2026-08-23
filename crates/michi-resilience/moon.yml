@@ -3,20 +3,8 @@ $schema: "https://moonrepo.dev/schemas/project.json"
 language: rust
 
 tasks:
-  build:
-    command: just build
-    inputs:
-      - "src/**/*"
-      - "Cargo.toml"
-  test:
-    command: just test-rust-all
-    inputs:
-      - "src/**/*"
-      - "Cargo.toml"
-  check-wasm:
-    command: just check-wasm
-    inputs:
-      - "src/**/*"
-      - "Cargo.toml"
+  # build/test/check-wasm are intentionally absent -- see
+  # .moon/tasks/rust.yml for why. Root `moon.yml` owns these as the single
+  # workspace-wide invocation.
   publish:
     # No internal workspace deps — publishes first.

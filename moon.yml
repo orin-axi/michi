@@ -21,7 +21,7 @@ tasks:
       - build
 
   lint:
-    script: "cargo clippy --workspace --all-features -- -D warnings"
+    script: "cargo clippy --workspace --all-features --all-targets -- -D warnings"
     inputs:
       - "src/**/*"
       - "crates/**/*"

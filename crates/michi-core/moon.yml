@@ -3,21 +3,9 @@ $schema: "https://moonrepo.dev/schemas/project.json"
 language: rust
 
 tasks:
-  build:
-    command: just build
-    inputs:
-      - "src/**/*"
-      - "Cargo.toml"
-  test:
-    command: just test-rust-all
-    inputs:
-      - "src/**/*"
-      - "Cargo.toml"
-  check-wasm:
-    command: just check-wasm
-    inputs:
-      - "src/**/*"
-      - "Cargo.toml"
+  # build/test/check-wasm intentionally absent -- see .moon/tasks/rust.yml.
+  # (A prior `command:` override here never took effect against the
+  # inherited `script:`-based task, so don't re-add one expecting it to.)
   publish:
     deps:
       - "michi-toon:publish"
