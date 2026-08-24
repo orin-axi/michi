@@ -1,6 +1,6 @@
 [package]
 name        = "michi-toon"
-version     = "0.1.0"
+version     = "0.2.0"
 description = "Token-Optimized Object Notation (TOON) format renderer and parser for michi and AXI"
 edition.workspace      = true
 rust-version.workspace = true
