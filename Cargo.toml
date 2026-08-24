@@ -56,7 +56,7 @@ unsafe_code = "deny"
 
 [package]
 name        = "michi"
-version     = "0.1.0"
+version     = "0.2.0"
 description = "AXI response primitives for agent-ergonomic tools"
 readme      = "README.md"
 keywords    = ["axi", "agent", "mcp", "cli", "llm"]
@@ -79,7 +79,7 @@ miette   = ["michi-core/miette"]
 [dependencies]
 michi-truncate   = { path = "crates/michi-truncate", version = "0.1.0" }
 michi-resilience = { path = "crates/michi-resilience", version = "0.1.0" }
-michi-toon       = { path = "crates/michi-toon", version = "0.1.0" }
+michi-toon       = { path = "crates/michi-toon", version = "0.2.0" }
 michi-core       = { path = "crates/michi-core", version = "0.1.0" }
 
 # napi feature

@@ -1,6 +1,6 @@
 [package]
 name        = "michi-core"
-version     = "0.1.0"
+version     = "0.1.1"
 description = "AXI response primitives, AgentResponse builder, Audience routing, and structured diagnostics"
 edition.workspace      = true
 rust-version.workspace = true
@@ -13,7 +13,7 @@ workspace = true
 [dependencies]
 michi-truncate   = { path = "../michi-truncate", version = "0.1.0" }
 michi-resilience = { path = "../michi-resilience", version = "0.1.0" }
-michi-toon       = { path = "../michi-toon", version = "0.1.0" }
+michi-toon       = { path = "../michi-toon", version = "0.2.0" }
 thiserror.workspace = true
 
 serde      = { workspace = true, optional = true }
