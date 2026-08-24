@@ -306,3 +306,7 @@ FYI: it failed https://github.com/orin-axi/michi/actions/runs/32749447247/job/97
 ---
 
 Are these issues with callisto, the callisto GH action or on our side? Where are they best tackled? Seems like the pnpm setup is on michi right? what about lock staleness? Also we should leverage the callisto matrix for the binaries no?
+
+---
+
+Looking into the lockfile. Is there a quick workaround for now?
