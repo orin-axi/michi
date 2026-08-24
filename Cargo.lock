@@ -370,7 +370,7 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
 name = "michi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "divan",
  "insta",
@@ -387,7 +387,7 @@ dependencies = [
 
 [[package]]
 name = "michi-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "michi-resilience",
  "michi-toon",
@@ -402,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "michi-node"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "michi",
  "napi",
@@ -422,14 +422,14 @@ dependencies = [
 
 [[package]]
 name = "michi-resilience"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "trybuild",
 ]
 
 [[package]]
 name = "michi-toon"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "compact_str",
  "michi-truncate",
