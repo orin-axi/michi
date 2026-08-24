@@ -160,3 +160,7 @@ Can we change the visibility of the NPM_TOKEN?
 ---
 
 I updated it myself
+
+---
+
+Ready to attempt publish?
