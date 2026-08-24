@@ -140,3 +140,7 @@ Let's commit with split concerns. Commits go with their concerns and their own c
 ---
 
 We've released 0.4.1 of callisto which should fix our prior issues. Can we try using that now?
+
+---
+
+Same with the GH action workflow and setup? Are we ready to attempt to release michi?
