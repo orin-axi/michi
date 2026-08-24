@@ -1,6 +1,5 @@
 /target
 /packages/michi-node/target
-Cargo.lock
 *.node
 *.snap.new
 /node_modules
