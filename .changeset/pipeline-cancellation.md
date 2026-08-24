@@ -1,5 +1,5 @@
 ---
-michi-pipeline: major
+michi-pipeline: minor
 ---
 
 `execute_pipeline()` and `execute_pipeline_parallel()` each take a new trailing `cancellation: &CancellationToken` parameter, letting a caller cooperatively cancel an in-flight or not-yet-started run. Steps that haven't started when cancellation is observed are marked `Skipped`; an already-running step completes to its own real terminal status rather than being interrupted. A cancelled run returns `Err(ExecutionError::Cancelled)` (a new, `#[non_exhaustive]`-safe variant on `ExecutionError`).
