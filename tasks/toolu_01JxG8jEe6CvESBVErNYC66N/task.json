@@ -1,0 +1,11 @@
+{
+  "tool_use_id": "toolu_01JxG8jEe6CvESBVErNYC66N",
+  "subagent_type": "delta:release-summarizer",
+  "task_description": "Aggregate changesets into release notes",
+  "files": [
+    ".changeset/pipeline-cancellation.md"
+  ],
+  "started_at": "2026-08-23T21:37:35.650678-07:00",
+  "completed_at": "2026-08-23T21:37:35.65809-07:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}
