@@ -318,3 +318,7 @@ callisto is working on fixes to the matrix too
 ---
 
 Did the publish succeed?
+
+---
+
+We’ve released an updated version of Callisto that should have fixed the matrix problem.
