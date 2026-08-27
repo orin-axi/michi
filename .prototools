@@ -2,7 +2,6 @@ node = "26"
 pnpm = "10"
 rust = "1"
 moon = "2"
-just = "1"
 cargo-deny = "0.16"
 
 [plugins]
