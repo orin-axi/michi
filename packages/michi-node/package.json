@@ -13,6 +13,14 @@
   "publishConfig": {
     "access": "public"
   },
+  "napi": {
+    "binaryName": "michi",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl"
+    ]
+  },
   "scripts": {
     "build": "napi build --platform --js index.js --dts index.d.ts",
     "test": "node --test __test__/index.test.mjs",
