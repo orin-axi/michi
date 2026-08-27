@@ -334,3 +334,12 @@ Ready for a PR to merge?
 ---
 
 Pr merged, what now?
+
+---
+
+<task-notification>
+<task-id>b66ew8yqo</task-id>
+<summary>Monitor event: "release.yml rerun 33038065455 completion"</summary>
+<event>completed failure</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
