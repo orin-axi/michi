@@ -415,3 +415,7 @@ track it in monokl and prism, make sure our proper setup is made in both repos b
 ---
 
 First make sure we have the existing repos all setup
+
+---
+
+Everything cached as much as possible for these?
