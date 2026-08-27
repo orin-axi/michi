@@ -355,3 +355,15 @@ Our PR has wrapped description, wtf and why???? How did that happen and how do w
 ---
 
 WTF https://github.com/orin-axi/michi/actions/runs/33080474674
+
+---
+
+Can we make sure all our other repos are appropriatelly setup?
+
+---
+
+I understand just perhaps and maybe cargo-deny but what's the point of proto then??
+
+---
+
+Shouldn't we manage node pnpm and rust in proto???? I understand just perhaps and maybe cargo-deny but what's the point of proto then??
