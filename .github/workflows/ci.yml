@@ -45,9 +45,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: moonrepo/setup-toolchain@v0
         with:
-          node-version: 22
+          auto-install: true
       - name: Assert Cargo.toml and package.json versions match
         run: |
           CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"(.*)"/\1/')
@@ -111,14 +111,9 @@ jobs:
         working-directory: packages/michi-node
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: moonrepo/setup-toolchain@v0
         with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: packages/michi-node/pnpm-lock.yaml
+          auto-install: true
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
@@ -142,14 +137,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: packages/michi-node/pnpm-lock.yaml
+      - uses: moonrepo/setup-toolchain@v0
+      - run: proto install node && proto install pnpm
       - run: pnpm install --frozen-lockfile
         working-directory: packages/michi-node
       - name: Install cargo-zigbuild (cross-compile targets only)

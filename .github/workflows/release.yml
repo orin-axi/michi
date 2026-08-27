@@ -76,14 +76,8 @@ jobs:
         with:
           targets: ${{ matrix.triple }}
       - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: packages/michi-node/pnpm-lock.yaml
+      - uses: moonrepo/setup-toolchain@v0
+      - run: proto install node && proto install pnpm
       - run: pnpm install --frozen-lockfile
         working-directory: packages/michi-node
       - name: Install cargo-zigbuild (cross-compile targets only)
@@ -116,14 +110,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: packages/michi-node/pnpm-lock.yaml
+      - uses: moonrepo/setup-toolchain@v0
+      - run: proto install node && proto install pnpm
 
       - name: Run Callisto Release Action
         uses: orin-dx/callisto/.github/actions/callisto-action@main
