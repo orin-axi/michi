@@ -8,19 +8,33 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
   INSTA_UPDATE: "no"
   RUST_BACKTRACE: 1
 
 jobs:
+  # Cheap, standalone check that .prototools is fully proto-installable.
+  # This is the ONLY thing in this file that exercises the same
+  # moonrepo/setup-toolchain -> proto install path release.yml's
+  # callisto-action uses internally -- without this job, .prototools could
+  # break silently and only surface at actual release time (which is what
+  # happened: multiple tools here had no working proto plugin, and CI
+  # stayed green through all of it since nothing here ever touched proto).
+  prototools:
+    name: .prototools is installable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: moonrepo/setup-toolchain@v0
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: orin-dx/actions/setup-rust@v1.1
         with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+          components: rustfmt,clippy
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-features --all-targets -- -D warnings
       - name: typos
@@ -31,9 +45,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: moonrepo/setup-toolchain@v0
         with:
-          node-version: 22
+          auto-install: true
       - name: Assert Cargo.toml and package.json versions match
         run: |
           CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"(.*)"/\1/')
@@ -50,8 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: orin-dx/actions/setup-rust@v1.1
       - uses: taiki-e/install-action@nextest
       - run: cargo nextest run --workspace
       - run: cargo nextest run --workspace --all-features
@@ -68,10 +81,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: orin-dx/actions/setup-rust@v1.1
         with:
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: taiki-e/install-action@nextest
       - run: cargo llvm-cov nextest --workspace --all-features --lcov --output-path lcov.info
@@ -85,8 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: orin-dx/actions/setup-rust@v1.1
       - run: cargo bench --no-run --workspace
 
   lint-js:
@@ -97,14 +108,9 @@ jobs:
         working-directory: packages/michi-node
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: orin-dx/actions/setup-proto-node-pnpm@v1.1
         with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: packages/michi-node/pnpm-lock.yaml
+          working-directory: packages/michi-node
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
@@ -124,23 +130,28 @@ jobs:
             cross: true
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: orin-dx/actions/setup-rust@v1.1
         with:
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
+          cache-key: ${{ matrix.target }}
+      - uses: orin-dx/actions/setup-proto-node-pnpm@v1.1
         with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: packages/michi-node/pnpm-lock.yaml
+          working-directory: packages/michi-node
       - run: pnpm install --frozen-lockfile
         working-directory: packages/michi-node
-      - name: Install cargo-zigbuild (cross-compile targets only)
+      - name: Install ziglang (cross-compile targets only)
         if: matrix.cross
-        run: pip install ziglang && cargo install cargo-zigbuild --locked
+        run: pip install ziglang
+      - name: Cache cargo-zigbuild binary (cross-compile targets only)
+        if: matrix.cross
+        id: zigbuild-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-zigbuild
+          key: ${{ runner.os }}-cargo-zigbuild-${{ matrix.target }}
+      - name: Install cargo-zigbuild (cross-compile targets only)
+        if: matrix.cross && steps.zigbuild-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-zigbuild --locked
       - run: pnpm build --target ${{ matrix.target }} ${{ matrix.cross && '--cross-compile' || '' }}
         working-directory: packages/michi-node
       - run: node --test __test__/index.test.mjs
