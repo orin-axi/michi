@@ -387,3 +387,7 @@ Doesn't proto help us install those things??? Seems like we're running more comm
 ---
 
 Are you sure? What are the best practices for proto + moon in GH? Do we just setup proto? How does moon get installed if proto does it but calling moon ci is not there. Think through these basic issues that you're rushing
+
+---
+
+Verify with michi first before applying across all repos
