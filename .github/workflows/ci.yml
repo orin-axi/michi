@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
   INSTA_UPDATE: "no"
   RUST_BACKTRACE: 1
 
@@ -111,18 +112,7 @@ jobs:
         working-directory: packages/michi-node
     steps:
       - uses: actions/checkout@v4
-      - uses: moonrepo/setup-toolchain@v0
-        with:
-          auto-install: true
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('packages/michi-node/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
@@ -148,18 +138,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - uses: moonrepo/setup-toolchain@v0
-      - run: proto install node && proto install pnpm
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        working-directory: packages/michi-node
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('packages/michi-node/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+      - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm install --frozen-lockfile
         working-directory: packages/michi-node
       - name: Install ziglang (cross-compile targets only)
