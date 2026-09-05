@@ -1,6 +1,6 @@
 # michi (道)
 
-[![CI](https://github.com/orin-axi/michi/actions/workflows/ci.yml/badge.svg)](https://github.com/orin-axi/michi/actions/workflows/ci.yml) [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
+[![CI](https://github.com/orin-axi/michi/actions/workflows/ci.yml/badge.svg)](https://github.com/orin-axi/michi/actions/workflows/ci.yml) [![License: FSL-1.1-MIT](https://img.shields.io/badge/license-FSL--1.1--MIT-blue.svg)](LICENSE)
 
 AXI response primitives for agent-ergonomic tools — TOON lists, key-value blocks, truncation, structured errors, status, and `help[]` hints.
 
@@ -146,4 +146,4 @@ just bench       # Run Divan performance benchmarks
 
 ## License
 
-AGPL-3.0-or-later. See [`LICENSE`](LICENSE).
+FSL-1.1-MIT — Functional Source License, converting to MIT two years after each release. See [`LICENSE`](LICENSE).

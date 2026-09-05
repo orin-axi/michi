@@ -12,8 +12,9 @@ The technical reference for the `michi` crate — what it does, how it's shaped,
 | [04-mcp-and-napi.md](04-mcp-and-napi.md) | The `mcp` module, the NAPI/npm boundary, and the builder-across-FFI problem |
 | [05-scope-and-quality.md](05-scope-and-quality.md) | What's formalized vs. what stays in your app, feature flags, versioning, performance, testing |
 | [06-decisions.md](06-decisions.md) | Open questions and the reasoning behind everything that isn't obvious from the code |
+| [07-wisp-and-monokl-envelope.md](07-wisp-and-monokl-envelope.md) | The multi-section envelope Wisp briefings and monokl batch results need: `Section`, michi's own `BudgetSummary` and `ProvenanceBlock` slots, index-bearing per-op outcomes, `structuredContent` and `outputSchema` |
 
-New to the crate? Read 01 → 02 → 03 in order — that's the whole mental model. 04–06 are reference, read as needed.
+New to the crate? Read 01 → 02 → 03 in order — that's the whole mental model. 04–07 are reference, read as needed.
 
 ## Known gaps
 
@@ -23,7 +24,10 @@ New to the crate? Read 01 → 02 → 03 in order — that's the whole mental mod
 - Whether it holds up on retrieval accuracy across model sizes is untested.
 - See [06-decisions.md](06-decisions.md).
 
-**No real consumer depends on michi yet.** crates.io publish is explicitly gated on that happening first — see [05-scope-and-quality.md](05-scope-and-quality.md) for current status.
+**No real consumer depends on michi yet.** crates.io publish is gated on a count, not a roster: at least one consumer outside this repository integrating against a tagged commit, whichever lands first (see [05-scope-and-quality.md](05-scope-and-quality.md) for current status). Consumers are not enumerated in advance and the gate does not name them.
+
+- What an integration needs from michi is specified in [07-wisp-and-monokl-envelope.md](07-wisp-and-monokl-envelope.md): repeatable sections, a `BudgetSummary` slot, a `ProvenanceBlock` slot, index-bearing per-op outcomes, and the extended `structuredContent`/`outputSchema`. None of it is built yet. All of it is michi's own types — michi takes no dependency on any consumer to hold them.
+- The gate runs one way. **michi publishes first.** No consumer's own publish proceeds until michi has a **versioned release** it can depend on, for any consumer using a local path dependency during coordinated development; the integration that earns michi's publish is exercised against that path dependency before the release, not after it. Nothing in michi's manifest waits on a consumer's crate. A tagged git dependency is the documented interim step.
 
 **`cli` isn't a Cargo feature of this crate at all.** Reserved name for future terminal-aware rendering, in a separate crate, not implemented.
 

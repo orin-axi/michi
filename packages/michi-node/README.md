@@ -90,4 +90,4 @@ Prebuilt native binaries: `darwin-arm64`, `linux-x64-musl`. Building from source
 
 ## License
 
-AGPL-3.0-or-later. See [`LICENSE`](LICENSE).
+FSL-1.1-MIT — Functional Source License, converting to MIT two years after each release. See [`LICENSE`](LICENSE).

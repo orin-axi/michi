@@ -1,5 +1,9 @@
 # michi
 
+## [Unreleased]
+
+- License changed to FSL-1.1-MIT (from AGPL-3.0-or-later), for suite consistency with Lumen and Wisp and to remove the FSL/AGPL linking conflict. See [06-decisions.md](docs/spec/06-decisions.md).
+
 ## 0.2.0
 
 - `nextRetryDelay` now rejects `NaN` and `Infinity` for `jitterFactor` and `jitterSeed` with a clear error. Previously, these values silently zeroed jitter and caused synchronized retry storms. `RetryConfig::new` is hardened the same way for Rust callers.
