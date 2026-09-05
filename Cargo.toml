@@ -13,7 +13,7 @@ resolver = "2"
 [workspace.package]
 edition      = "2021"
 rust-version = "1.96"
-license      = "AGPL-3.0-or-later"
+license      = "FSL-1.1-MIT"
 repository   = "https://github.com/orin-axi/michi"
 authors      = ["orin-axi"]
 
